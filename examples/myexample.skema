@@ -1,0 +1,95 @@
+spec 1;
+
+import "./common.erp" as base;
+
+Project {
+  mode: "draft"; # strict
+  dialect: "generic"; # postgres, mysql, oracledb
+  note: "";
+
+  Style @project {
+    fontSize: 2em;
+  }
+
+  Style @table {
+    headerBackgroundColor: "#cc0000";
+    headerTextColor: "white";
+  }
+}
+
+Document shop {
+  version: "";
+  note: "";
+  author: "";
+  
+  Style @document {
+    backgroundColor: "blue";
+  }
+}
+
+Partital common_base {
+  id int [pk, not_null];
+  publicId uuid [unique];
+  created_at timestamp [default: `now()`];
+}
+
+Enum OrderStatus {
+  draft   { label: "Draft" }
+  paid    { label: "Paid" }
+  shipped { label: "Shipped" }
+  cancelled;
+}
+
+Table Ceustomer {
+  use common_base;
+  email varchar;
+
+  Index {
+    (email) [unique];
+  }
+}
+
+Table Order {
+  use common_base;
+  
+  customer >shop.Customer.id
+  oder_status shop.OrderStatus.id
+
+  sum float [required] {
+    note: "The full Sum",
+    regex:"",
+    exampleValue: "",
+    "x-customkey": "Foobar"
+  }
+
+  gross_sum decimal(10, 2);
+
+
+  Meta {
+    author: "";
+    note: "";
+    styleClasses: [highlight];
+  }
+}
+
+Group Shop {
+  Table shop.User;
+  Table shop.Order;
+  Enum shop.OrderStatus;
+}
+
+Datatype decimal(precision,comma) {
+  precision: "Gesamtzahl"
+  comma: "Anzahl der festen Nachkomma Stellen"
+
+  field {
+    type: float;
+    default: 12;
+    note: "More presice float";
+  }
+
+  dialect {
+    postgres: "numeric({precision}, comma)";
+    mysql: "DECIMAL({precision}, comma)";
+  }
+}
