@@ -21,6 +21,7 @@
       "rustfmt"
       "rust-analyzer"
       "rust-src" # rust-analyzer needs the std sources for go-to-definition
+      "llvm-tools" # needed by `cargo llvm-cov` (test coverage)
     ];
     # `crates/skema-wasm` compiles the core to WASM for the browser.
     targets = [ "wasm32-unknown-unknown" ];
@@ -33,6 +34,22 @@
     # Builds/tests crates/skema-wasm's browser bindings.
     pkgs.wasm-pack
     pkgs.nodejs
+
+    # crates/skema-py (pyo3) needs a Python to build and link against.
+    pkgs.python3
+    # Packages crates/skema-py into an actual wheel (`maturin build`); doing
+    # this via Nix instead of `pip install maturin` keeps the version pinned
+    # in devenv.lock like everything else here.
+    pkgs.maturin
+
+    # Renders docs/ (mdBook) and generates the rustdoc API reference for
+    # GitLab Pages.
+    pkgs.mdbook
+
+    # Test coverage (`cargo llvm-cov`) and dependency vulnerability
+    # scanning (`cargo audit`) for CI.
+    pkgs.cargo-llvm-cov
+    pkgs.cargo-audit
   ];
 
   # ---------------------------------------------------------------------------
