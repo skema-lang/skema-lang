@@ -1,7 +1,15 @@
 ## skema — GitLab CI/CD
 ##
+## Every job runs through the project's own devenv.nix instead of a
+## hand-rolled image + apt-get/rustup/pip setup. That's the single source of
+## truth for the toolchain (Rust via rust-overlay, Python, maturin, mdbook,
+## cargo-llvm-cov, cargo-audit — see devenv.nix) shared with local
+## development: `devenv test` in CI is the exact same command contributors
+## run locally as `check`.
+##
 ## Pipeline sources: merge requests, the default branch, and tags.
-## - MRs / default branch : lint, test, coverage, build (fast feedback loop)
+## - MRs / default branch : devenv test (fmt+clippy+test), audit, coverage,
+##                           build (fast feedback loop)
 ## - tags (vX.Y.Z)         : additionally publish binaries + the Python wheel
 ##                           to the Package Registry, publish the library
 ##                           crates to the Cargo registry, and push a
@@ -20,18 +28,37 @@ workflow:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 stages:
-  - lint
-  - test
+  - check
   - build
   - package
   - pages
 
-default:
-  image: rust:1.85-bookworm
-
 variables:
   CARGO_HOME: ${CI_PROJECT_DIR}/.cargo-home
-  CARGO_TERM_COLOR: always
+  NIX_CONFIG: |
+    experimental-features = nix-command flakes
+    sandbox = false
+
+# Single-user Nix install: the job container has no init system/daemon
+# supervisor, so `--no-daemon` avoids managing a nix-daemon service. Running
+# as root, "single-user" is really "root owns the whole store" — which also
+# sidesteps any trusted-users friction when devenv adds its own Cachix
+# substituter (https://devenv.cachix.org) for prebuilt toolchain artifacts.
+# `sandbox = false` (set via NIX_CONFIG above) because Nix's build sandbox
+# needs user namespaces that an unprivileged Docker-executor container
+# usually can't create.
+#
+# This reruns on every job (fresh container each time), fetching the
+# toolchain from cache.nixos.org / devenv.cachix.org / static.rust-lang.org
+# rather than compiling from source, so it's a download, not a build. If
+# pipeline latency becomes a problem, the next step is a custom runner image
+# with Nix preinstalled and a persistent /nix.
+.devenv_setup: &devenv_setup
+  - apt-get update -qq
+  - apt-get install -y --no-install-recommends curl xz-utils ca-certificates git >/dev/null
+  - sh <(curl -L https://nixos.org/nix/install) --no-daemon
+  - . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+  - nix profile install nixpkgs#devenv
 
 .rust_cache: &rust_cache
   - key:
@@ -44,65 +71,37 @@ variables:
     paths:
       - target/
 
-# skema-py (pyo3) is part of the workspace, so any `cargo` invocation that
-# touches the whole workspace (clippy/test/build/coverage, but not fmt) needs
-# a Python interpreter present for pyo3's build script.
-.with_python: &with_python
-  before_script:
-    - apt-get update -qq
-    - apt-get install -y --no-install-recommends python3 python3-dev python3-venv pkg-config >/dev/null
+default:
+  image: debian:bookworm-slim
+  before_script: *devenv_setup
 
 # --------------------------------------------------------------------------
-# lint
+# check
 # --------------------------------------------------------------------------
 
-fmt:
-  stage: lint
-  script:
-    - cargo fmt --all --check
-
-clippy:
-  stage: lint
-  <<: *with_python
+# fmt + clippy (-D warnings) + test --workspace, defined once in devenv.nix
+# (`enterTest`) and reused here verbatim.
+check:
+  stage: check
   cache: *rust_cache
   script:
-    - cargo clippy --workspace --all-targets -- -D warnings
+    - devenv test
 
 # Advisory only: dependency vulnerabilities shouldn't block every push, but
 # should be visible. Flip `allow_failure` to false once the crate graph has
 # been swept once and the team wants this to gate merges.
 audit:
-  stage: lint
-  image: rustsec/cargo-audit:latest
+  stage: check
   allow_failure: true
   script:
-    - cargo audit
-
-# --------------------------------------------------------------------------
-# test
-# --------------------------------------------------------------------------
-
-# skema-py builds with pyo3's `extension-module` feature. pyo3's build script
-# detects `cargo test` (via CARGO_CFG_TEST) and links libpython for that case
-# regardless, so this runs across the whole workspace unmodified — it just
-# needs python3-dev present for the linker to find libpython against.
-test:
-  stage: test
-  <<: *with_python
-  cache: *rust_cache
-  script:
-    - cargo test --workspace
+    - devenv shell -- cargo audit
 
 coverage:
-  stage: test
+  stage: check
   cache: *rust_cache
-  before_script:
-    - !reference [.with_python, before_script]
-    - rustup component add llvm-tools-preview
-    - cargo install cargo-llvm-cov --locked
   script:
-    - cargo llvm-cov --workspace --cobertura --output-path cobertura.xml
-    - cargo llvm-cov report --summary-only
+    - devenv shell -- cargo llvm-cov --workspace --cobertura --output-path cobertura.xml
+    - devenv shell -- cargo llvm-cov report --summary-only
   coverage: '/^TOTAL.*\s(\d+\.\d+)%/'
   artifacts:
     reports:
@@ -119,10 +118,9 @@ coverage:
 # build-python-wheel below.
 build:
   stage: build
-  <<: *with_python
   cache: *rust_cache
   script:
-    - cargo build --release --workspace --exclude skema-py
+    - devenv shell -- cargo build --release --workspace --exclude skema-py
   artifacts:
     paths:
       - target/release/skema
@@ -131,21 +129,18 @@ build:
 
 build-python-wheel:
   stage: build
-  before_script:
-    - apt-get update -qq
-    - apt-get install -y --no-install-recommends python3 python3-venv >/dev/null
-    - python3 -m venv .venv
-    - . .venv/bin/activate
-    - pip install --upgrade pip maturin
+  cache: *rust_cache
   script:
-    - . .venv/bin/activate
-    # `--compatibility linux` produces a wheel tagged for this build image's
-    # glibc, not a portable manylinux wheel. Good enough for an internal
-    # registry; switch to maturin's manylinux container image if the wheel
-    # needs to run on arbitrary end-user machines.
-    - maturin build --release --manifest-path crates/skema-py/Cargo.toml --out dist --compatibility linux
-    - pip install dist/*.whl
-    - python3 -c "import json, skema; print(json.dumps(skema.check('examples/myexample.skema'))[:200])"
+    - devenv shell -- maturin build --release --manifest-path crates/skema-py/Cargo.toml --out dist
+    - devenv shell -- python3 -m venv .venv
+    - |
+      . .venv/bin/activate
+      pip install dist/*.whl
+      python3 - <<'PYEOF'
+      import json
+      import skema
+      print(json.dumps(skema.check("examples/myexample.skema"))[:200])
+      PYEOF
   artifacts:
     paths:
       - dist/*.whl
@@ -155,11 +150,14 @@ build-python-wheel:
 # package (tags only)
 # --------------------------------------------------------------------------
 
+# Runtime-only image build (Dockerfile just copies the binaries built above),
+# so this doesn't need devenv/Rust at all.
 docker-build:
   stage: package
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
     entrypoint: [""]
+  before_script: []
   needs:
     - job: build
       artifacts: true
@@ -174,9 +172,11 @@ docker-build:
       --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
       --destination "${CI_REGISTRY_IMAGE}:latest"
 
+# Just uploads pre-built artifacts, no Rust/devenv needed.
 publish-generic-package:
   stage: package
   image: curlimages/curl:latest
+  before_script: []
   needs:
     - job: build
       artifacts: true
@@ -194,8 +194,7 @@ publish-generic-package:
 
 # Publishes the library crates (skema-syntax, skema-hir, skema-loader) to
 # GitLab's own Cargo registry so other projects on this GitLab instance can
-# depend on them via `cargo add --registry gitlab skema-syntax`. Requires the
-# `version` fields noted at the top of this file.
+# depend on them via `cargo add --registry gitlab skema-syntax`.
 publish-cargo-registry:
   stage: package
   rules:
@@ -212,9 +211,9 @@ publish-cargo-registry:
     # against the registry copy of its path dependencies, which isn't
     # indexed yet a few seconds after `cargo publish` returns. Publishing in
     # dependency order and skipping verify sidesteps that race.
-    - cargo publish --registry gitlab --no-verify -p skema-syntax
-    - cargo publish --registry gitlab --no-verify -p skema-hir
-    - cargo publish --registry gitlab --no-verify -p skema-loader
+    - devenv shell -- cargo publish --registry gitlab --no-verify -p skema-syntax
+    - devenv shell -- cargo publish --registry gitlab --no-verify -p skema-hir
+    - devenv shell -- cargo publish --registry gitlab --no-verify -p skema-loader
 
 # --------------------------------------------------------------------------
 # pages (default branch only)
@@ -226,9 +225,8 @@ pages:
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   script:
-    - cargo install mdbook --locked
-    - mdbook build docs
-    - cargo doc --workspace --no-deps --exclude skema-py
+    - devenv shell -- mdbook build docs
+    - devenv shell -- cargo doc --workspace --no-deps --exclude skema-py
     - mkdir -p public
     - cp -r docs/book/* public/
     - mkdir -p public/api

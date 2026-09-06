@@ -618,10 +618,7 @@ mod tests {
     fn ok(src: &str) -> SourceFile {
         let (file, messages) = parse(src);
         let text: Vec<_> = messages.iter().map(|d| d.message.clone()).collect();
-        assert!(
-            text.is_empty(),
-            "unexpected messages in {src:?}: {text:#?}"
-        );
+        assert!(text.is_empty(), "unexpected messages in {src:?}: {text:#?}");
         file
     }
 

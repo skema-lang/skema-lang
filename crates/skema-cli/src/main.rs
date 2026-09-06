@@ -18,11 +18,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(
-    name = "skema",
-    version,
-    about = "Checks and exports .skema projects"
-)]
+#[command(name = "skema", version, about = "Checks and exports .skema projects")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

@@ -26,7 +26,10 @@ fn example_model_has_no_lexer_errors() {
         .map(|t| format!("{:?} at {:?}: {:?}", t.kind, t.span, t.text(EXAMPLE)))
         .collect();
 
-    assert!(errors.is_empty(), "lexer errors in the example:\n{errors:#?}");
+    assert!(
+        errors.is_empty(),
+        "lexer errors in the example:\n{errors:#?}"
+    );
 }
 
 #[test]
@@ -57,7 +60,10 @@ fn example_model_parses_without_messages() {
             )
         })
         .collect();
-    assert!(text.is_empty(), "parser messages in the example:\n{text:#?}");
+    assert!(
+        text.is_empty(),
+        "parser messages in the example:\n{text:#?}"
+    );
 }
 
 #[test]
