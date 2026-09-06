@@ -1,0 +1,25 @@
+[package]
+name = "skema-wasm"
+description = "WASM bindings for skema: browser-facing check/export API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+skema-syntax.workspace = true
+skema-hir.workspace = true
+
+serde = { version = "1", features = ["derive"] }
+wasm-bindgen = "0.2"
+tsify-next = { version = "0.5", default-features = false, features = ["js"] }
+console_error_panic_hook = "0.1"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[lints]
+workspace = true

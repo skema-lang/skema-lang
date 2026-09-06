@@ -1,0 +1,17 @@
+[package]
+name = "skema-hir"
+description = "Name resolution and semantic checking for the skema DSL"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+skema-syntax.workspace = true
+# Only the serialization framework, no `serde_json`: the model should be
+# exportable to JSON, but HOW (file, stdout, HTTP response) is up to the
+# calling crates (`skema-cli`, `skema-lsp`, `skema-py`).
+serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true

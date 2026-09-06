@@ -1,10 +1,10 @@
 spec 1;
 
 /*
- * Wurzeldatei des Beispielprojekts.
+ * Root file of the example project.
  *
- * Sie traegt den einzigen Project-Block und importiert alles, was zum
- * Projekt gehoert. Werkzeuge bekommen genau diese Datei uebergeben:
+ * It carries the single Project block and imports everything that
+ * belongs to the project. Tools are handed exactly this file:
  *
  *     erplang check examples/generic/project.skema
  */
@@ -12,8 +12,8 @@ spec 1;
 Document library {
   Meta {
     version = "1.0.0";
-    author  = "beispiel";
-    note    = "Bibliotheksverwaltung - Katalog und Ausleihe";
+    author  = "example";
+    note    = "Library management - catalog and lending";
   }
 }
 
@@ -38,7 +38,7 @@ Project {
   }
 
   Meta {
-    note      = "Beispielmodell zur Sprachdemonstration";
+    note      = "Example model demonstrating the language";
     "x-jira"  = "DOC-1";
   }
 
@@ -55,13 +55,13 @@ Project {
     lineColor = "#888888";
   }
 
-  # Klassen tragen kein @ - sie werden ueber Meta.styleClasses zugewiesen
-  Style kern {
+  # Classes carry no @ - they are assigned via Meta.styleClasses
+  Style core {
     borderColor = "#1f4e79";
     borderWidth = "3px";
   }
 
-  Style historisch {
+  Style historical {
     backgroundColor = "#f0f0f0";
   }
 }

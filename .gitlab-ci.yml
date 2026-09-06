@@ -1,0 +1,251 @@
+## skema — GitLab CI/CD
+##
+## Pipeline sources: merge requests, the default branch, and tags.
+## - MRs / default branch : lint, test, coverage, build (fast feedback loop)
+## - tags (vX.Y.Z)         : additionally publish binaries + the Python wheel
+##                           to the Package Registry, publish the library
+##                           crates to the Cargo registry, and push a
+##                           container image
+## - default branch only   : (re-)publish the documentation to GitLab Pages
+##
+## Prerequisites in the GitLab project settings:
+##   - Container Registry enabled (for the `docker-build` job)
+##   - GitLab >= 16.x for the Cargo registry (`publish-cargo-registry`); if
+##     unavailable, drop that job and keep the generic-package upload
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+stages:
+  - lint
+  - test
+  - build
+  - package
+  - pages
+
+default:
+  image: rust:1.85-bookworm
+
+variables:
+  CARGO_HOME: ${CI_PROJECT_DIR}/.cargo-home
+  CARGO_TERM_COLOR: always
+
+.rust_cache: &rust_cache
+  - key:
+      files:
+        - Cargo.lock
+    paths:
+      - .cargo-home/registry/index
+      - .cargo-home/registry/cache
+  - key: "target-$CI_JOB_NAME"
+    paths:
+      - target/
+
+# skema-py (pyo3) is part of the workspace, so any `cargo` invocation that
+# touches the whole workspace (clippy/test/build/coverage, but not fmt) needs
+# a Python interpreter present for pyo3's build script.
+.with_python: &with_python
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends python3 python3-dev python3-venv pkg-config >/dev/null
+
+# --------------------------------------------------------------------------
+# lint
+# --------------------------------------------------------------------------
+
+fmt:
+  stage: lint
+  script:
+    - cargo fmt --all --check
+
+clippy:
+  stage: lint
+  <<: *with_python
+  cache: *rust_cache
+  script:
+    - cargo clippy --workspace --all-targets -- -D warnings
+
+# Advisory only: dependency vulnerabilities shouldn't block every push, but
+# should be visible. Flip `allow_failure` to false once the crate graph has
+# been swept once and the team wants this to gate merges.
+audit:
+  stage: lint
+  image: rustsec/cargo-audit:latest
+  allow_failure: true
+  script:
+    - cargo audit
+
+# --------------------------------------------------------------------------
+# test
+# --------------------------------------------------------------------------
+
+# skema-py builds with pyo3's `extension-module` feature. pyo3's build script
+# detects `cargo test` (via CARGO_CFG_TEST) and links libpython for that case
+# regardless, so this runs across the whole workspace unmodified — it just
+# needs python3-dev present for the linker to find libpython against.
+test:
+  stage: test
+  <<: *with_python
+  cache: *rust_cache
+  script:
+    - cargo test --workspace
+
+coverage:
+  stage: test
+  cache: *rust_cache
+  before_script:
+    - !reference [.with_python, before_script]
+    - rustup component add llvm-tools-preview
+    - cargo install cargo-llvm-cov --locked
+  script:
+    - cargo llvm-cov --workspace --cobertura --output-path cobertura.xml
+    - cargo llvm-cov report --summary-only
+  coverage: '/^TOTAL.*\s(\d+\.\d+)%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: cobertura.xml
+
+# --------------------------------------------------------------------------
+# build
+# --------------------------------------------------------------------------
+
+# skema-py is excluded on purpose: it's not a standalone binary, and its
+# proper build path (correct ABI tag, wheel packaging) is maturin, handled by
+# build-python-wheel below.
+build:
+  stage: build
+  <<: *with_python
+  cache: *rust_cache
+  script:
+    - cargo build --release --workspace --exclude skema-py
+  artifacts:
+    paths:
+      - target/release/skema
+      - target/release/skema-lsp
+    expire_in: 1 week
+
+build-python-wheel:
+  stage: build
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends python3 python3-venv >/dev/null
+    - python3 -m venv .venv
+    - . .venv/bin/activate
+    - pip install --upgrade pip maturin
+  script:
+    - . .venv/bin/activate
+    # `--compatibility linux` produces a wheel tagged for this build image's
+    # glibc, not a portable manylinux wheel. Good enough for an internal
+    # registry; switch to maturin's manylinux container image if the wheel
+    # needs to run on arbitrary end-user machines.
+    - maturin build --release --manifest-path crates/skema-py/Cargo.toml --out dist --compatibility linux
+    - pip install dist/*.whl
+    - python3 -c "import json, skema; print(json.dumps(skema.check('examples/myexample.skema'))[:200])"
+  artifacts:
+    paths:
+      - dist/*.whl
+    expire_in: 1 week
+
+# --------------------------------------------------------------------------
+# package (tags only)
+# --------------------------------------------------------------------------
+
+docker-build:
+  stage: package
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  needs:
+    - job: build
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - mkdir -p /kaniko/.docker
+    - printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" "$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context "dir://${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
+      --destination "${CI_REGISTRY_IMAGE}:latest"
+
+publish-generic-package:
+  stage: package
+  image: curlimages/curl:latest
+  needs:
+    - job: build
+      artifacts: true
+    - job: build-python-wheel
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - |
+      for f in target/release/skema target/release/skema-lsp dist/*.whl; do
+        name=$(basename "$f")
+        curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/skema/${CI_COMMIT_TAG}/${name}"
+      done
+
+# Publishes the library crates (skema-syntax, skema-hir, skema-loader) to
+# GitLab's own Cargo registry so other projects on this GitLab instance can
+# depend on them via `cargo add --registry gitlab skema-syntax`. Requires the
+# `version` fields noted at the top of this file.
+publish-cargo-registry:
+  stage: package
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - mkdir -p "$CARGO_HOME"
+    - |
+      cat > "$CARGO_HOME/config.toml" <<EOF
+      [registries.gitlab]
+      index = "sparse+${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/cargo/config.json/"
+      EOF
+    - export CARGO_REGISTRIES_GITLAB_TOKEN="Bearer ${CI_JOB_TOKEN}"
+    # --no-verify: cargo's default verify step rebuilds the packaged crate
+    # against the registry copy of its path dependencies, which isn't
+    # indexed yet a few seconds after `cargo publish` returns. Publishing in
+    # dependency order and skipping verify sidesteps that race.
+    - cargo publish --registry gitlab --no-verify -p skema-syntax
+    - cargo publish --registry gitlab --no-verify -p skema-hir
+    - cargo publish --registry gitlab --no-verify -p skema-loader
+
+# --------------------------------------------------------------------------
+# pages (default branch only)
+# --------------------------------------------------------------------------
+
+pages:
+  stage: pages
+  cache: *rust_cache
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - cargo install mdbook --locked
+    - mdbook build docs
+    - cargo doc --workspace --no-deps --exclude skema-py
+    - mkdir -p public
+    - cp -r docs/book/* public/
+    - mkdir -p public/api
+    - cp -r target/doc/* public/api/
+    - |
+      cat > public/api/index.html <<'EOF'
+      <!doctype html><meta charset="utf-8">
+      <title>skema — API reference</title>
+      <h1>skema — API reference</h1>
+      <ul>
+        <li><a href="skema_syntax/index.html">skema-syntax</a></li>
+        <li><a href="skema_hir/index.html">skema-hir</a></li>
+        <li><a href="skema_loader/index.html">skema-loader</a></li>
+        <li><a href="skema_cli/index.html">skema-cli</a></li>
+        <li><a href="skema_lsp/index.html">skema-lsp</a></li>
+      </ul>
+      EOF
+  artifacts:
+    paths:
+      - public

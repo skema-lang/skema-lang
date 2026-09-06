@@ -1,24 +1,24 @@
 spec 1;
 
 /*
- * Bausteine, die im ganzen Projekt wiederverwendet werden.
- * Namensraum dieser Datei: types
+ * Building blocks reused throughout the project.
+ * Namespace of this file: types
  */
 
 Document types {
   Meta {
-    note = "Projektweite Datentypen und Feldgruppen";
+    note = "Project-wide data types and field groups";
   }
 }
 
-# --- Datentypen ------------------------------------------------------------
+# --- Data types -------------------------------------------------------------
 
-# Ohne Parameter: ein fachlicher Name fuer eine Beschraenkung.
+# Without parameters: a domain name for a constraint.
 Datatype Isbn {
   Field {
     type  = string;
     regex = "^97[89][0-9]{10}$";
-    note  = "ISBN-13 ohne Trennzeichen";
+    note  = "ISBN-13 without separators";
   }
 }
 
@@ -26,41 +26,41 @@ Datatype Email {
   Field {
     type  = string;
     regex = "^[^@]+@[^@]+$";
-    note  = "Nicht auf Zustellbarkeit geprueft";
+    note  = "Not checked for deliverability";
   }
 }
 
-# Mit Parametern: Argumente werden wie Felder deklariert und beschrieben.
+# With parameters: arguments are declared and described like fields.
 Datatype decimal(precision int, scale int) {
-  precision { note = "Gesamtzahl der Stellen"; }
-  scale     { note = "Feste Nachkommastellen"; default = 2; }
+  precision { note = "Total number of digits"; }
+  scale     { note = "Fixed decimal places"; default = 2; }
 
   Field {
     type    = float;
     default = 0;
-    note    = "Dezimalzahl mit fester Genauigkeit";
+    note    = "Decimal number with fixed precision";
   }
 
   Dialect @postgres { sql = "numeric({precision}, {scale})"; }
   Dialect @mysql    { sql = "DECIMAL({precision}, {scale})"; }
 }
 
-# Aufbauend auf einem anderen Typ - decimal(10) nutzt scale = 2.
+# Built on another type - decimal(10) uses scale = 2.
 Datatype Money {
   Field {
     type = decimal(10);
-    note = "Betrag in Hauswaehrung";
+    note = "Amount in home currency";
   }
 }
 
-# --- Feldgruppen -----------------------------------------------------------
+# --- Field groups ------------------------------------------------------------
 
 Partial Identity {
   id        int  [pk];
   public_id uuid [unique];
 
   Meta {
-    note = "Technischer und oeffentlicher Schluessel";
+    note = "Technical and public key";
   }
 }
 
@@ -69,7 +69,7 @@ Partial Timestamps {
   updated_at timestamp;
 }
 
-# Ein Partial darf andere einbinden.
+# A partial may include others.
 Partial Base {
   use Identity;
   use Timestamps;

@@ -1,0 +1,20 @@
+[package]
+name = "skema-syntax"
+description = "Lexer, parser, and AST for the skema DSL"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Every dependency here must stay compilable to WASM: no I/O, no
+# Tokio, nothing platform-specific. `serde` satisfies that (pure
+# traits/codegen) and is needed for the JSON serialization of `Span` in
+# diagnostics (`skema-hir`, `skema-cli --json`).
+serde = { version = "1", features = ["derive"] }
+
+# Conceivable later additions:
+#   rowan   – if we switch to a lossless syntax tree
+
+[lints]
+workspace = true

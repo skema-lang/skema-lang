@@ -1,0 +1,22 @@
+[package]
+name = "skema-cli"
+description = "Command-line tool for skema: check, export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "skema"
+path = "src/main.rs"
+
+[dependencies]
+skema-syntax.workspace = true
+skema-hir.workspace = true
+skema-loader.workspace = true
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true

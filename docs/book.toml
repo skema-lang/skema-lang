@@ -1,0 +1,17 @@
+[book]
+title = "skema Documentation"
+description = "Technical reference for skema, a declarative language for describing entity-relationship models."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "light"
+# git-repository-url = "https://gitlab.example.com/<namespace>/skema"
+# ^ uncomment and point at this project's actual GitLab URL to get an
+# "edit this page" / repo link in the rendered book's header.
+
+[output.html.search]
+enable = true

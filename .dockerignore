@@ -1,0 +1,8 @@
+# The Dockerfile only needs the two release binaries built by CI; everything
+# else (source, .git, docs, other target/ profiles) would just slow down
+# sending the build context to kaniko for no benefit.
+*
+!target
+!target/release
+!target/release/skema
+!target/release/skema-lsp

@@ -1,13 +1,13 @@
 spec 1;
 
 /*
- * Die Ausleihe: wer was wie lange hat.
- * Namensraum dieser Datei: lending
+ * Lending: who has what, and for how long.
+ * Namespace of this file: lending
  */
 
 Document lending {
   Meta {
-    note = "Mitglieder und Ausleihvorgaenge";
+    note = "Members and loan transactions";
   }
 
   Database {
@@ -16,7 +16,7 @@ Document lending {
 }
 
 import "./types.skema";
-import "./catalog.skema" as cat;   # Alias: kuerzer als "catalog"
+import "./catalog.skema" as cat;   # Alias: shorter than "catalog"
 
 Table Member {
   use types.Base;
@@ -32,17 +32,17 @@ Table Member {
   }
 
   Meta {
-    note         = "Ausleihberechtigte Person";
-    styleClasses = [kern];
+    note         = "Person entitled to borrow";
+    styleClasses = [core];
   }
 }
 
 /*
- * Viele-zu-viele zwischen Member und Copy.
+ * Many-to-many between Member and Copy.
  *
- * Es gibt keinen n:m-Pfeil in der Sprache - die Zwischentabelle wird
- * hingeschrieben. Der Gewinn zeigt sich sofort: due_on und returned_at
- * haben von Anfang an einen Platz.
+ * There is no n:m arrow in the language - the join table is written
+ * out explicitly. The benefit shows immediately: due_on and returned_at
+ * have a place from the start.
  */
 Table Loan {
   use types.Base;
@@ -59,7 +59,7 @@ Table Loan {
   }
 
   Meta {
-    note = "Ein Ausleihvorgang. returned_at leer = laeuft noch.";
+    note = "A loan transaction. returned_at empty = still ongoing.";
   }
 }
 
@@ -72,12 +72,12 @@ Table LoanArchive {
   returned_at      timestamp [required];
 
   Meta {
-    note         = "Entkoppelte Historie, ueberlebt das Loeschen von Mitgliedern";
-    styleClasses = [historisch];
+    note         = "Decoupled history, survives deletion of members";
+    styleClasses = [historical];
   }
 }
 
-Group Ausleihe {
+Group Lending {
   Table Member;
   Table Loan;
   Table LoanArchive;

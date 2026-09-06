@@ -1,0 +1,10 @@
+# The `unwrap_used`, `expect_used`, and `panic` lints are enabled in
+# Cargo.toml because a parser must NEVER panic – by definition, it receives
+# broken input.
+#
+# In tests, exactly the opposite holds: there, a panic IS the error message.
+# `assert!`, `expect("…")`, and `let … else { panic!() }` are the usual and
+# most readable way to write that.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true

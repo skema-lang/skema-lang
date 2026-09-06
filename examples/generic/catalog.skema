@@ -1,17 +1,17 @@
 spec 1;
 
 /*
- * Der Katalog: was die Bibliothek besitzt.
- * Namensraum dieser Datei: catalog
+ * The catalog: what the library owns.
+ * Namespace of this file: catalog
  */
 
 Document catalog {
   Meta {
-    note = "Werke, Ausgaben und koerperliche Exemplare";
+    note = "Works, editions, and physical copies";
   }
 
-  # Alle Tabellen dieser Datei liegen im Schema "catalog",
-  # statt im projektweiten "public".
+  # All tables in this file live in the "catalog" schema,
+  # instead of the project-wide "public".
   Database {
     schema = "catalog";
   }
@@ -23,13 +23,13 @@ Enum CopyState {
   Field {
     type    = string;
     default = available;
-    note    = "Zustand eines koerperlichen Exemplars";
+    note    = "State of a physical copy";
   }
 
-  available   { label = "Verfuegbar"; }
-  lent        { label = "Ausgeliehen"; }
-  damaged     { label = "Beschaedigt"; }
-  lost        { label = "Verloren"; value = "X"; }
+  available   { label = "Available"; }
+  lent        { label = "Lent"; }
+  damaged     { label = "Damaged"; }
+  lost        { label = "Lost"; value = "X"; }
   withdrawn;
 }
 
@@ -39,7 +39,7 @@ Table Author {
   name       varchar(120) [required];
   birth_year int;
 
-  # Rueckverweis: erzeugt KEINE Spalte, der Schluessel liegt in Book.
+  # Back-reference: creates NO column, the key lives in Book.
   books <Book.author;
 
   Index {
@@ -47,8 +47,8 @@ Table Author {
   }
 
   Meta {
-    note         = "Urheber eines Werks";
-    styleClasses = [kern];
+    note         = "Creator of a work";
+    styleClasses = [core];
   }
 }
 
@@ -69,9 +69,9 @@ Table Book {
   }
 
   Meta {
-    author       = "beispiel";
-    note         = "Bibliografische Ausgabe, nicht das einzelne Exemplar";
-    styleClasses = [kern];
+    author       = "example";
+    note         = "Bibliographic edition, not the individual copy";
+    styleClasses = [core];
     "x-domain"   = "catalog";
   }
 }
@@ -84,17 +84,17 @@ Table Copy {
   state    CopyState;
   shelf    varchar(16);
 
-  # Physischer Tabellenname weicht vom fachlichen ab.
+  # Physical table name differs from the domain name.
   Database {
     table = "book_copy";
   }
 
   Meta {
-    note = "Ein einzelnes, ausleihbares Stueck";
+    note = "A single, loanable item";
   }
 }
 
-Group Katalog {
+Group Catalog {
   Table Author;
   Table Book;
   Table Copy;

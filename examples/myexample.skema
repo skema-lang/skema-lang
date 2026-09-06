@@ -1,7 +1,5 @@
 spec 1;
 
-import "./common.skema" as base;
-
 Document shop {
   Meta {
     version = "";
@@ -46,7 +44,7 @@ Project {
     headerTextColor       = "white";
   }
 
-  # Klasse, kein Selektor: wird ueber Meta.styleClasses zugewiesen
+  # Class, not a selector: assigned via Meta.styleClasses
   Style highlight {
     borderColor = "#cc0000";
     borderWidth = "3px";
@@ -63,7 +61,7 @@ Enum OrderStatus {
   Field {
     type    = string;
     default = paid;
-    note    = "Zustaende einer Bestellung";
+    note    = "States of an order";
   }
 
   draft     { label = "Draft"; }
@@ -76,7 +74,7 @@ Table Customer {
   use common_base;
 
   email   Email             [required];
-  country base.CountryCode;
+  country varchar(2)        { note = "ISO 3166-1 alpha-2"; }
 
   Index {
     ix_customer_email (email) [unique];
@@ -118,17 +116,17 @@ Datatype Email {
   Field {
     type  = string;
     regex = "^[^@]+@[^@]+$";
-    note  = "E-Mail-Adresse, nicht auf Zustellbarkeit geprueft";
+    note  = "Email address, not checked for deliverability";
   }
 }
 
 Datatype decimal(precision int, scale int) {
-  precision { note = "Gesamtzahl der Stellen"; }
-  scale     { note = "Anzahl der festen Nachkommastellen"; default = 2; }
+  precision { note = "Total number of digits"; }
+  scale     { note = "Number of fixed decimal places"; default = 2; }
 
   Field {
     type = float;
-    note = "Dezimalzahl mit fester Genauigkeit";
+    note = "Decimal number with fixed precision";
   }
 
   Dialect @postgres { sql = "numeric({precision}, {scale})"; }

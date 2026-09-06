@@ -1,0 +1,21 @@
+[package]
+name = "skema-py"
+description = "Python bindings for skema (pyo3)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "skema"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+skema-syntax.workspace = true
+skema-hir.workspace = true
+skema-loader.workspace = true
+pyo3 = { version = "0.24", features = ["extension-module", "abi3-py39"] }
+serde_json = "1"
+
+[lints]
+workspace = true

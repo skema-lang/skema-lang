@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+
+  # Needed by `languages.rust.channel = "stable"`. rust-overlay provides the
+  # official Rust releases (including clippy, rustfmt, rust-analyzer,
+  # rust-src) as Nix packages – unlike nixpkgs, where the toolchain is tied
+  # firmly to the nixpkgs revision.
+  rust-overlay:
+    url: github:oxalica/rust-overlay
+    inputs:
+      nixpkgs:
+        follows: nixpkgs

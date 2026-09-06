@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/skema-syntax",
+    "crates/skema-hir",
+    "crates/skema-loader",
+    "crates/skema-cli",
+    "crates/skema-lsp",
+    "crates/skema-py",
+    "crates/skema-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+
+# `version` sits next to `path` even though only `path` is used inside the
+# workspace: `cargo publish` requires a version on every dependency, so
+# without it neither skema-hir nor skema-loader could be published to a
+# registry (see the GitLab Cargo registry job in .gitlab-ci.yml).
+[workspace.dependencies]
+skema-syntax = { path = "crates/skema-syntax", version = "0.1.0" }
+skema-hir = { path = "crates/skema-hir", version = "0.1.0" }
+skema-loader = { path = "crates/skema-loader", version = "0.1.0" }
+
+[workspace.lints.rust]
+# Public types without Debug are a pain in a compiler frontend, because you
+# constantly want to print intermediate results.
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# A parser must NEVER panic – by definition, it receives broken input.
+# These lints make every unwrap/panic visible, so you have to decide
+# deliberately instead of crashing by accident.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "allow" # used deliberately in the lexer, invariants are documented
