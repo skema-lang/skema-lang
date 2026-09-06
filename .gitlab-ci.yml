@@ -39,14 +39,17 @@ variables:
     experimental-features = nix-command flakes
     sandbox = false
 
-# Single-user Nix install: the job container has no init system/daemon
-# supervisor, so `--no-daemon` avoids managing a nix-daemon service. Running
-# as root, "single-user" is really "root owns the whole store" — which also
-# sidesteps any trusted-users friction when devenv adds its own Cachix
-# substituter (https://devenv.cachix.org) for prebuilt toolchain artifacts.
+# The classic Nix installer's single-user mode refuses to run as root
+# ("installing Nix as root is not supported by this script"), which is
+# exactly what every GitLab CI job container does. The Determinate Systems
+# installer's `--init none` mode is built for precisely this case (root, no
+# systemd) and still sets up a working nix-daemon without one. Verified
+# end-to-end in a plain, unprivileged `debian:bookworm-slim` container.
 # `sandbox = false` (set via NIX_CONFIG above) because Nix's build sandbox
 # needs user namespaces that an unprivileged Docker-executor container
-# usually can't create.
+# usually can't create — moot here in practice since every package used in
+# this project resolves from a binary cache instead of building from source,
+# but set defensively in case that ever changes.
 #
 # This reruns on every job (fresh container each time), fetching the
 # toolchain from cache.nixos.org / devenv.cachix.org / static.rust-lang.org
@@ -56,8 +59,9 @@ variables:
 .devenv_setup: &devenv_setup
   - apt-get update -qq
   - apt-get install -y --no-install-recommends curl xz-utils ca-certificates git >/dev/null
-  - sh <(curl -L https://nixos.org/nix/install) --no-daemon
-  - . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+  - curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix -o /tmp/install-nix.sh
+  - sh /tmp/install-nix.sh install linux --init none --no-confirm
+  - . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
   - nix profile install nixpkgs#devenv
 
 .rust_cache: &rust_cache
@@ -240,8 +244,9 @@ pages:
         <li><a href="skema_syntax/index.html">skema-syntax</a></li>
         <li><a href="skema_hir/index.html">skema-hir</a></li>
         <li><a href="skema_loader/index.html">skema-loader</a></li>
-        <li><a href="skema_cli/index.html">skema-cli</a></li>
+        <li><a href="skema/index.html">skema-cli (binary target is named "skema")</a></li>
         <li><a href="skema_lsp/index.html">skema-lsp</a></li>
+        <li><a href="skema_wasm/index.html">skema-wasm</a></li>
       </ul>
       EOF
   artifacts:
