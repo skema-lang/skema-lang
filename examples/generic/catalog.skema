@@ -1,0 +1,102 @@
+spec 1;
+
+/*
+ * Der Katalog: was die Bibliothek besitzt.
+ * Namensraum dieser Datei: catalog
+ */
+
+Document catalog {
+  Meta {
+    note = "Werke, Ausgaben und koerperliche Exemplare";
+  }
+
+  # Alle Tabellen dieser Datei liegen im Schema "catalog",
+  # statt im projektweiten "public".
+  Database {
+    schema = "catalog";
+  }
+}
+
+import "./types.skema";
+
+Enum CopyState {
+  Field {
+    type    = string;
+    default = available;
+    note    = "Zustand eines koerperlichen Exemplars";
+  }
+
+  available   { label = "Verfuegbar"; }
+  lent        { label = "Ausgeliehen"; }
+  damaged     { label = "Beschaedigt"; }
+  lost        { label = "Verloren"; value = "X"; }
+  withdrawn;
+}
+
+Table Author {
+  use types.Base;
+
+  name       varchar(120) [required];
+  birth_year int;
+
+  # Rueckverweis: erzeugt KEINE Spalte, der Schluessel liegt in Book.
+  books <Book.author;
+
+  Index {
+    ix_author_name (name);
+  }
+
+  Meta {
+    note         = "Urheber eines Werks";
+    styleClasses = [kern];
+  }
+}
+
+Table Book {
+  use types.Base;
+
+  isbn      types.Isbn   [required, unique];
+  title     varchar(200) [required];
+  author    >Author.id   [required, onDelete=restrict];
+  price     types.Money;
+  blurb     text;
+
+  copies <Copy.book;
+
+  Index {
+    ix_book_title (title);
+    ix_book_author_title (author, title);
+  }
+
+  Meta {
+    author       = "beispiel";
+    note         = "Bibliografische Ausgabe, nicht das einzelne Exemplar";
+    styleClasses = [kern];
+    "x-domain"   = "catalog";
+  }
+}
+
+Table Copy {
+  use types.Base;
+
+  book     >Book.id [required, onDelete=cascade];
+  barcode  varchar(32) [required, unique];
+  state    CopyState;
+  shelf    varchar(16);
+
+  # Physischer Tabellenname weicht vom fachlichen ab.
+  Database {
+    table = "book_copy";
+  }
+
+  Meta {
+    note = "Ein einzelnes, ausleihbares Stueck";
+  }
+}
+
+Group Katalog {
+  Table Author;
+  Table Book;
+  Table Copy;
+  Enum  CopyState;
+}

@@ -1,0 +1,56 @@
+version 1; Version der sprache
+
+namespace = Damit es bei der verwendung von Imports zu keinen Kollisionen kommt
+
+Project {
+  mode = Wenn draft: einfacher datentyp = string, int, float, bool bei strict wird der dialect und complexere datentypen erzwungen
+  dialect = Wählt vordefinierte datentypen für die jeweilige engine aus
+  version = Version des dokuments. Nicht der Sprache.
+  note = "Beschreibung des Projekts"
+}
+
+Style @specialhook { Kann nur im Project Block oder im Document Block definiert werden
+  @specialhook kann project, document, ttable, enum, group sein.
+  styles sind key: value; pairs. Die genauen keys können frei definiert werden.
+}
+
+
+
+Project, Partial, Enum, Table, Group, Datatype, ( Object? ) als Keywords
+
+
+Partial, Table {
+  fieldname datatype [flags] {sonstiges: json,}
+  usee einbinden eines partitals;
+  fieldname namespace.Enum              Referenz auf ein enum
+  fieldname >namespace.Table.fieldname   One to many referenz
+
+  fielname <>ref  # Many to Many relation
+  fieldname -ref # One to One
+  fieldname <ref # Many to One
+  fieldname >ref # OneToMany
+
+  # flags können pk, required, unique, default=VALUE on_delete=CASCADE, on_update=RESTRICTED sein
+  # {} enthält weitere Informationen meta Informationen
+
+  Meta {
+    author: "Wer hat die Tabelle Entworfen? Praktisch für Colbaoration";
+    note: "Beschreibung was die Tablle macht";
+    styleClasses: [namen der im project Definierten Styles];
+  }
+}
+
+Enum {
+  dbvalue: "Alternativer Wert. z.B. Menschenlesbar"
+}
+
+
+Datatype name(argA, argB) {
+  argA: "beschreibung was das argument tun soll";
+  argB: "beschreibung was das argument tun soll";
+
+  Meta {
+    author: "";
+    note: "";
+  }
+}

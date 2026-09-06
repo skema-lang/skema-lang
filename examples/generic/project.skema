@@ -1,0 +1,67 @@
+spec 1;
+
+/*
+ * Wurzeldatei des Beispielprojekts.
+ *
+ * Sie traegt den einzigen Project-Block und importiert alles, was zum
+ * Projekt gehoert. Werkzeuge bekommen genau diese Datei uebergeben:
+ *
+ *     erplang check examples/generic/project.skema
+ */
+
+Document library {
+  Meta {
+    version = "1.0.0";
+    author  = "beispiel";
+    note    = "Bibliotheksverwaltung - Katalog und Ausleihe";
+  }
+}
+
+import "./types.skema";
+import "./catalog.skema";
+import "./lending.skema";
+
+Project {
+  mode    = draft;     // draft | strict
+  dialect = generic;   // generic | postgres | mysql | oracledb
+
+  Database {
+    database = "library";
+    schema   = "public";
+  }
+
+  Lint {
+    fieldNaming = snake_case;
+    tableNaming = PascalCase;
+    enumNaming  = PascalCase;
+    danglingRef = error;
+  }
+
+  Meta {
+    note      = "Beispielmodell zur Sprachdemonstration";
+    "x-jira"  = "DOC-1";
+  }
+
+  Style @project {
+    fontSize = "1.1em";
+  }
+
+  Style @table {
+    headerBackgroundColor = "#1f4e79";
+    headerTextColor       = "white";
+  }
+
+  Style @relation {
+    lineColor = "#888888";
+  }
+
+  # Klassen tragen kein @ - sie werden ueber Meta.styleClasses zugewiesen
+  Style kern {
+    borderColor = "#1f4e79";
+    borderWidth = "3px";
+  }
+
+  Style historisch {
+    backgroundColor = "#f0f0f0";
+  }
+}

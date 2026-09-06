@@ -1,95 +1,136 @@
 spec 1;
 
-import "./common.erp" as base;
+import "./common.skema" as base;
+
+Document shop {
+  Meta {
+    version = "";
+    author  = "";
+    note    = "";
+    styleClasses = [highlight];
+  }
+
+  Style @document {
+    backgroundColor = "blue";
+  }
+}
 
 Project {
-  mode: "draft"; # strict
-  dialect: "generic"; # postgres, mysql, oracledb
-  note: "";
+  mode    = draft;   # strict
+  dialect = generic; # postgres, mysql, oracledb
+
+  Meta {
+    version = "";
+    author  = "";
+    note    = "";
+    styleClasses = [highlight];
+  }
+
+  Database {
+    database = "shopsystem";
+    schema   = "public";
+  }
+
+  Lint {
+    fieldNaming = snake_case;
+    tableNaming = PascalCase;
+    danglingRef = error;
+  }
 
   Style @project {
-    fontSize: 2em;
+    fontSize = "2em";
   }
 
   Style @table {
-    headerBackgroundColor: "#cc0000";
-    headerTextColor: "white";
+    headerBackgroundColor = "#cc0000";
+    headerTextColor       = "white";
+  }
+
+  # Klasse, kein Selektor: wird ueber Meta.styleClasses zugewiesen
+  Style highlight {
+    borderColor = "#cc0000";
+    borderWidth = "3px";
   }
 }
 
-Document shop {
-  version: "";
-  note: "";
-  author: "";
-  
-  Style @document {
-    backgroundColor: "blue";
-  }
-}
-
-Partital common_base {
-  id int [pk, not_null];
-  publicId uuid [unique];
-  created_at timestamp [default: `now()`];
+Partial common_base {
+  id         int       [pk];
+  public_id  uuid      [unique];
+  created_at timestamp [required, default=`now()`];
 }
 
 Enum OrderStatus {
-  draft   { label: "Draft" }
-  paid    { label: "Paid" }
-  shipped { label: "Shipped" }
+  Field {
+    type    = string;
+    default = paid;
+    note    = "Zustaende einer Bestellung";
+  }
+
+  draft     { label = "Draft"; }
+  paid      { label = "Paid"; }
+  shipped   { label = "Shipped"; value = "S"; }
   cancelled;
 }
 
-Table Ceustomer {
+Table Customer {
   use common_base;
-  email varchar;
+
+  email   Email             [required];
+  country base.CountryCode;
 
   Index {
-    (email) [unique];
+    ix_customer_email (email) [unique];
   }
 }
 
 Table Order {
   use common_base;
-  
-  customer >shop.Customer.id
-  oder_status shop.OrderStatus.id
+
+  customer     >Customer.id [required, onDelete=cascade];
+  order_status OrderStatus;
 
   sum float [required] {
-    note: "The full Sum",
-    regex:"",
-    exampleValue: "",
-    "x-customkey": "Foobar"
+    note          = "The full Sum";
+    exampleValue  = "19.99";
+    "x-customkey" = "Foobar";
   }
 
   gross_sum decimal(10, 2);
 
+  Database {
+    table = "order";
+  }
 
   Meta {
-    author: "";
-    note: "";
-    styleClasses: [highlight];
+    author = "";
+    note   = "";
+    styleClasses = [highlight];
   }
 }
 
 Group Shop {
-  Table shop.User;
-  Table shop.Order;
-  Enum shop.OrderStatus;
+  Table Customer;
+  Table Order;
+  Enum  OrderStatus;
 }
 
-Datatype decimal(precision,comma) {
-  precision: "Gesamtzahl"
-  comma: "Anzahl der festen Nachkomma Stellen"
+Datatype Email {
+  Field {
+    type  = string;
+    regex = "^[^@]+@[^@]+$";
+    note  = "E-Mail-Adresse, nicht auf Zustellbarkeit geprueft";
+  }
+}
 
-  field {
-    type: float;
-    default: 12;
-    note: "More presice float";
+Datatype decimal(precision int, scale int) {
+  precision { note = "Gesamtzahl der Stellen"; }
+  scale     { note = "Anzahl der festen Nachkommastellen"; default = 2; }
+
+  Field {
+    type = float;
+    note = "Dezimalzahl mit fester Genauigkeit";
   }
 
-  dialect {
-    postgres: "numeric({precision}, comma)";
-    mysql: "DECIMAL({precision}, comma)";
-  }
+  Dialect @postgres { sql = "numeric({precision}, {scale})"; }
+  Dialect @mysql    { sql = "DECIMAL({precision}, {scale})"; }
 }

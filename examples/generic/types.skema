@@ -1,0 +1,76 @@
+spec 1;
+
+/*
+ * Bausteine, die im ganzen Projekt wiederverwendet werden.
+ * Namensraum dieser Datei: types
+ */
+
+Document types {
+  Meta {
+    note = "Projektweite Datentypen und Feldgruppen";
+  }
+}
+
+# --- Datentypen ------------------------------------------------------------
+
+# Ohne Parameter: ein fachlicher Name fuer eine Beschraenkung.
+Datatype Isbn {
+  Field {
+    type  = string;
+    regex = "^97[89][0-9]{10}$";
+    note  = "ISBN-13 ohne Trennzeichen";
+  }
+}
+
+Datatype Email {
+  Field {
+    type  = string;
+    regex = "^[^@]+@[^@]+$";
+    note  = "Nicht auf Zustellbarkeit geprueft";
+  }
+}
+
+# Mit Parametern: Argumente werden wie Felder deklariert und beschrieben.
+Datatype decimal(precision int, scale int) {
+  precision { note = "Gesamtzahl der Stellen"; }
+  scale     { note = "Feste Nachkommastellen"; default = 2; }
+
+  Field {
+    type    = float;
+    default = 0;
+    note    = "Dezimalzahl mit fester Genauigkeit";
+  }
+
+  Dialect @postgres { sql = "numeric({precision}, {scale})"; }
+  Dialect @mysql    { sql = "DECIMAL({precision}, {scale})"; }
+}
+
+# Aufbauend auf einem anderen Typ - decimal(10) nutzt scale = 2.
+Datatype Money {
+  Field {
+    type = decimal(10);
+    note = "Betrag in Hauswaehrung";
+  }
+}
+
+# --- Feldgruppen -----------------------------------------------------------
+
+Partial Identity {
+  id        int  [pk];
+  public_id uuid [unique];
+
+  Meta {
+    note = "Technischer und oeffentlicher Schluessel";
+  }
+}
+
+Partial Timestamps {
+  created_at timestamp [required, default=`now()`];
+  updated_at timestamp;
+}
+
+# Ein Partial darf andere einbinden.
+Partial Base {
+  use Identity;
+  use Timestamps;
+}

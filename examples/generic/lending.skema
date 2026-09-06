@@ -1,0 +1,84 @@
+spec 1;
+
+/*
+ * Die Ausleihe: wer was wie lange hat.
+ * Namensraum dieser Datei: lending
+ */
+
+Document lending {
+  Meta {
+    note = "Mitglieder und Ausleihvorgaenge";
+  }
+
+  Database {
+    schema = "lending";
+  }
+}
+
+import "./types.skema";
+import "./catalog.skema" as cat;   # Alias: kuerzer als "catalog"
+
+Table Member {
+  use types.Base;
+
+  email      types.Email  [required, unique];
+  name       varchar(120) [required];
+  joined_on  date         [required];
+
+  loans <Loan.member;
+
+  Index {
+    ix_member_email (email) [unique];
+  }
+
+  Meta {
+    note         = "Ausleihberechtigte Person";
+    styleClasses = [kern];
+  }
+}
+
+/*
+ * Viele-zu-viele zwischen Member und Copy.
+ *
+ * Es gibt keinen n:m-Pfeil in der Sprache - die Zwischentabelle wird
+ * hingeschrieben. Der Gewinn zeigt sich sofort: due_on und returned_at
+ * haben von Anfang an einen Platz.
+ */
+Table Loan {
+  use types.Base;
+
+  member      >Member.id     [required, onDelete=restrict];
+  copy        >cat.Copy.id   [required, onDelete=restrict];
+  lent_on     date           [required, default=`now()`];
+  due_on      date           [required];
+  returned_at timestamp;
+
+  Index {
+    ix_loan_member (member);
+    ix_loan_due    (due_on);
+  }
+
+  Meta {
+    note = "Ein Ausleihvorgang. returned_at leer = laeuft noch.";
+  }
+}
+
+Table LoanArchive {
+  use types.Identity;
+
+  member_public_id uuid [required];
+  copy_barcode     varchar(32) [required];
+  lent_on          date [required];
+  returned_at      timestamp [required];
+
+  Meta {
+    note         = "Entkoppelte Historie, ueberlebt das Loeschen von Mitgliedern";
+    styleClasses = [historisch];
+  }
+}
+
+Group Ausleihe {
+  Table Member;
+  Table Loan;
+  Table LoanArchive;
+}
