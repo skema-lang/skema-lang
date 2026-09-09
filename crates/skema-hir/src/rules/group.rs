@@ -85,6 +85,7 @@ pub(crate) fn check(ctx: &Ctx<'_>, diags: &mut Vec<Diagnostic>) -> Vec<model::Gr
             }
 
             out.push(model::Group {
+                file: file.id,
                 name: (*group_name).to_owned(),
                 members,
                 span: *item_span,

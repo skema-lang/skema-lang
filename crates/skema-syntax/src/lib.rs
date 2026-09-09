@@ -78,6 +78,7 @@ mod dump;
 mod grammar;
 mod lexer;
 mod parser;
+mod semantic;
 mod span;
 mod token;
 
@@ -85,6 +86,7 @@ pub use diagnostic::{Diagnostic, Severity};
 pub use dump::dump;
 pub use lexer::{Lexer, tokenize};
 pub use parser::Parser;
+pub use semantic::{SemanticKind, classify};
 pub use span::{Span, TextSize};
 pub use token::{Token, TokenKind, keyword_from_str};
 

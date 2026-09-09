@@ -40,7 +40,7 @@
 //! and is the reason modern IDE frontends work at all. The checking phase
 //! belongs later in the `skema-hir` crate.
 
-use crate::Span;
+use crate::{Span, TextSize};
 
 // ===========================================================================
 // Building blocks
@@ -115,6 +115,40 @@ pub struct Key {
 pub struct Value {
     pub kind: ValueKind,
     pub span: Span,
+}
+
+impl Value {
+    /// The value as plain text, as a tool would pass it on: a string
+    /// without its quotes, a raw expression without its backticks, a list
+    /// as its comma-joined elements.
+    ///
+    /// Deliberately **not** `dump::value`'s rendering, which keeps quotes
+    /// and backticks precisely so a debug dump stays unambiguous. This one
+    /// is the "what does this value *say*" form, used by the model export
+    /// (`skema-hir`) and by tools reading a `Meta` entry back out
+    /// (`skema-wasm`) alike – both want the content, not the notation.
+    pub fn to_text(&self) -> String {
+        match &self.kind {
+            ValueKind::Path(p) => p.to_dotted(),
+            ValueKind::Str(s) => s.clone(),
+            ValueKind::Int(n) => n.to_string(),
+            ValueKind::Float(f) => f.to_string(),
+            ValueKind::Raw(r) => r.clone(),
+            ValueKind::List(items) => items
+                .iter()
+                .map(Value::to_text)
+                .collect::<Vec<_>>()
+                .join(", "),
+            ValueKind::Type { path, args } => format!(
+                "{}({})",
+                path.to_dotted(),
+                args.iter()
+                    .map(Value::to_text)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -276,7 +310,37 @@ pub struct Block {
     pub name: Option<Path>,
     /// The parameters of a `Datatype`: `decimal(precision int, scale int)`.
     pub params: Vec<Param>,
+    /// The `{` that opens the body.
+    ///
+    /// Not optional: a `Block` is only built when a body actually follows
+    /// (without one, the same syntax is a [`Ref`] instead — see
+    /// `grammar::parse_block_or_ref`), so there is always exactly one.
+    ///
+    /// Recorded because the parser is the only place that ever sees this
+    /// token: [`Item::span`] covers keyword-through-`}` and says nothing
+    /// about where the *body* starts, so every consumer that wants to
+    /// insert something into a block (an editor adding a `Meta { … }` to a
+    /// table, a formatter, a code action) would otherwise have to re-lex
+    /// the source to find it.
+    pub body_brace: Span,
     pub items: Vec<Item>,
+}
+
+impl Block {
+    /// The first direct sub-block of a given kind, e.g. the `Meta` inside a
+    /// `Table` or the `Lint` inside a `Project`.
+    pub fn child(&self, kind: BlockKind) -> Option<&Block> {
+        self.items.iter().find_map(|item| match &item.kind {
+            ItemKind::Block(b) if b.kind == kind => Some(b),
+            _ => None,
+        })
+    }
+
+    /// Byte offset just past the opening `{` — where this block's body
+    /// content begins, and thus where new content can be inserted.
+    pub const fn body_start(&self) -> TextSize {
+        self.body_brace.end
+    }
 }
 
 /// A parameter of a `Datatype`: `precision int` in
@@ -459,6 +523,24 @@ impl SourceFile {
         self.items.iter().filter_map(|i| match &i.kind {
             ItemKind::Block(b) => Some(b),
             _ => None,
+        })
+    }
+
+    /// The first top-level block of `kind` declared under `name`, e.g. the
+    /// `Table Customer` of a file.
+    ///
+    /// Purely syntactic: it matches the name as written, without namespace
+    /// resolution or duplicate checking – that's `skema-hir`'s job (see
+    /// `symbols::collect_file_facts`, which builds a full declaration table
+    /// instead). This is the cheap lookup for a tool that already knows
+    /// which declaration it is looking for.
+    pub fn declaration(&self, kind: BlockKind, name: &str) -> Option<&Block> {
+        self.blocks().find(|b| {
+            b.kind == kind
+                && b.name
+                    .as_ref()
+                    .and_then(Path::as_ident)
+                    .is_some_and(|i| i.text == name)
         })
     }
 

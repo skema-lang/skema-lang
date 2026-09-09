@@ -231,6 +231,7 @@ impl Parser<'_> {
         };
 
         if self.at(T::LBrace) {
+            let body_brace = self.current().span;
             let items = self.parse_body();
             self.eat(T::Semi); // `};` is tolerated, the formatter cleans it up
             ItemKind::Block(Block {
@@ -239,6 +240,7 @@ impl Parser<'_> {
                 selector,
                 name,
                 params,
+                body_brace,
                 items,
             })
         } else if let Some(path) = name {

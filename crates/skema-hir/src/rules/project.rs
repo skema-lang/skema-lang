@@ -83,8 +83,8 @@ pub(crate) fn check<'a>(
         ));
     }
 
-    let lint = find_child(block, BlockKind::Lint);
-    let database = find_child(block, BlockKind::Database);
+    let lint = block.child(BlockKind::Lint);
+    let database = block.child(BlockKind::Database);
 
     Some(ProjectSettings {
         file: owner,
@@ -92,15 +92,6 @@ pub(crate) fn check<'a>(
         dialect: dialect.unwrap_or(Dialect::Generic),
         lint,
         database,
-    })
-}
-
-/// The first direct sub-block of a given kind, e.g. `Lint` or `Database`
-/// in `Project`.
-pub(crate) fn find_child(block: &ast::Block, kind: BlockKind) -> Option<&ast::Block> {
-    block.items.iter().find_map(|item| match &item.kind {
-        ast::ItemKind::Block(b) if b.kind == kind => Some(b),
-        _ => None,
     })
 }
 

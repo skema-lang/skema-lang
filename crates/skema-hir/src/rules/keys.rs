@@ -16,26 +16,11 @@
 
 use skema_syntax::ast::{self, BlockKind};
 
+use crate::catalog::{
+    COLUMN_BODY_KEYS, DATABASE_KEYS, ENTRY_BODY_KEYS, FIELD_BLOCK_KEYS, FLAG_KEYS, INDEX_FLAG_KEYS,
+    LINT_KEYS, META_KEYS, PARAM_BODY_KEYS, PROJECT_KEYS,
+};
 use crate::{Diagnostic, FileId};
-
-const META_KEYS: &[&str] = &["author", "note", "version", "styleClasses"];
-const LINT_KEYS: &[&str] = &[
-    "fieldNaming",
-    "tableNaming",
-    "enumNaming",
-    "unusedImport",
-    "danglingRef",
-];
-const DATABASE_KEYS: &[&str] = &["database", "schema", "table"];
-const PROJECT_KEYS: &[&str] = &["mode", "dialect"];
-const FIELD_BLOCK_KEYS: &[&str] = &["type", "default", "regex", "note"];
-const PARAM_BODY_KEYS: &[&str] = &["note", "default"];
-const ENTRY_BODY_KEYS: &[&str] = &["label", "value"];
-const COLUMN_BODY_KEYS: &[&str] = &["note", "exampleValue"];
-const FLAG_KEYS: &[&str] = &[
-    "pk", "unique", "required", "optional", "default", "column", "onDelete", "onUpdate",
-];
-const INDEX_FLAG_KEYS: &[&str] = &["unique"];
 
 /// Known keys for the *direct* settings of a block, e.g. `mode`/`dialect`
 /// in `Project`.

@@ -6,32 +6,10 @@ use std::collections::HashMap;
 use skema_syntax::Span;
 use skema_syntax::ast::{self, BlockKind, RelationOp, ValueKind};
 
-use super::project::find_child;
 use super::{Ctx, Dialect, ProjectSettings};
+use crate::catalog::BUILTIN_TYPES;
 use crate::model;
 use crate::{Diagnostic, FileId};
-
-/// The built-in, dialect-independent types (`docs/02`, `docs/06`).
-///
-/// `docs/02` describes `mode = draft` as "simple types suffice: string,
-/// int, float, bool" – the reference project `examples/generic/` (itself
-/// `mode = draft`) also uses `uuid`, `timestamp`, `varchar(n)`, `text`,
-/// `date` throughout. Read as "suffices, but doesn't forbid anything more
-/// specific" rather than as a closed allowlist – that's the reading that
-/// fits the reference project, and the one that applies here. `mode` thus
-/// no longer decides the type catalog, only `Lint` (`docs/04`) and the
-/// future catalog extension per `dialect` do.
-const BUILTIN_TYPES: &[&str] = &[
-    "string",
-    "int",
-    "float",
-    "bool",
-    "varchar",
-    "text",
-    "uuid",
-    "date",
-    "timestamp",
-];
 
 /// Bundles what every resolution function needs, so the signatures don't
 /// drown under the sheer parameter count.
@@ -91,13 +69,14 @@ pub(crate) fn run<'a>(
             let indexes = build_indexes(flat, diags);
             let document_database = file
                 .document
-                .and_then(|(_, _, b)| find_child(b, BlockKind::Database));
-            let table_database = find_child(decl.block, BlockKind::Database);
+                .and_then(|(_, _, b)| b.child(BlockKind::Database));
+            let table_database = decl.block.child(BlockKind::Database);
             let physical = resolve_physical(project_database, document_database, table_database);
             let namespace = file
                 .document
                 .map_or_else(String::new, |(n, ..)| n.to_owned());
             tables.push(model::Table {
+                file: file.id,
                 namespace,
                 name: name.to_owned(),
                 physical,
@@ -255,6 +234,7 @@ fn build_indexes(flat: &Flattened<'_>, diags: &mut Vec<Diagnostic>) -> Vec<model
                 }
             }
             model::Index {
+                file: owner,
                 name: e.name.as_ref().map(|n| n.text.clone()),
                 columns: e.columns.iter().map(|c| c.text.clone()).collect(),
                 flags: build_flags(&e.flags),
@@ -318,6 +298,7 @@ fn resolve_field<'a>(
     let note = string_setting(&f.items, "note");
 
     model::Field {
+        file: owner,
         name: f.name.text.clone(),
         ty,
         flags,
@@ -419,8 +400,8 @@ fn resolve_relation<'a>(
                     ),
                 ));
             }
-            "onDelete" => on_delete = attr.value.as_ref().map(stringify_value),
-            "onUpdate" => on_update = attr.value.as_ref().map(stringify_value),
+            "onDelete" => on_delete = attr.value.as_ref().map(ast::Value::to_text),
+            "onUpdate" => on_update = attr.value.as_ref().map(ast::Value::to_text),
             _ => {}
         }
     }
@@ -431,6 +412,11 @@ fn resolve_relation<'a>(
             RelationOp::ManyToOne => model::RelationKind::ManyToOne,
             RelationOp::OneToOne => model::RelationKind::OneToOne,
         },
+        target_namespace: env
+            .ctx
+            .file(table_owner)
+            .and_then(|f| f.document)
+            .map_or_else(String::new, |(name, ..)| name.to_owned()),
         target_table: table_name.to_owned(),
         target_field: field_name.to_owned(),
         on_delete,
@@ -448,7 +434,7 @@ fn resolve_named_type(
     diags: &mut Vec<Diagnostic>,
 ) -> model::TypeRef {
     let dotted = path.to_dotted();
-    let str_args: Vec<String> = args.iter().map(stringify_value).collect();
+    let str_args: Vec<String> = args.iter().map(ast::Value::to_text).collect();
 
     if let Some(bare) = path.as_ident().map(|i| i.text.as_str()) {
         if BUILTIN_TYPES.contains(&bare) {
@@ -597,7 +583,7 @@ fn resolve_enum<'a>(
     span: Span,
     diags: &mut Vec<Diagnostic>,
 ) -> model::Enum {
-    let field_block = find_child(block, BlockKind::Field);
+    let field_block = block.child(BlockKind::Field);
     let stored_type = field_block
         .and_then(|b| {
             b.items.iter().find_map(|i| match &i.kind {
@@ -640,6 +626,7 @@ fn resolve_enum<'a>(
         .collect();
 
     model::Enum {
+        file: file.id,
         namespace: file
             .document
             .map_or_else(String::new, |(n, ..)| n.to_owned()),
@@ -692,7 +679,7 @@ fn string_setting(items: &[ast::Item], key: &str) -> Option<String> {
 
 fn value_setting(items: &[ast::Item], key: &str) -> Option<String> {
     items.iter().find_map(|item| match &item.kind {
-        ast::ItemKind::Setting(a) if a.key.text == key => a.value.as_ref().map(stringify_value),
+        ast::ItemKind::Setting(a) if a.key.text == key => a.value.as_ref().map(ast::Value::to_text),
         _ => None,
     })
 }
@@ -708,33 +695,10 @@ fn build_flags(attrs: &[ast::Attr]) -> model::Flags {
         .iter()
         .map(|attr| {
             let value = match &attr.value {
-                Some(v) => model::FlagValue::Text(stringify_value(v)),
+                Some(v) => model::FlagValue::Text(v.to_text()),
                 None => model::FlagValue::Bool(true),
             };
             (attr.key.text.clone(), value)
         })
         .collect()
-}
-
-fn stringify_value(v: &ast::Value) -> String {
-    match &v.kind {
-        ValueKind::Path(p) => p.to_dotted(),
-        ValueKind::Str(s) => s.clone(),
-        ValueKind::Int(n) => n.to_string(),
-        ValueKind::Float(f) => f.to_string(),
-        ValueKind::Raw(r) => r.clone(),
-        ValueKind::List(items) => items
-            .iter()
-            .map(stringify_value)
-            .collect::<Vec<_>>()
-            .join(", "),
-        ValueKind::Type { path, args } => format!(
-            "{}({})",
-            path.to_dotted(),
-            args.iter()
-                .map(stringify_value)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
 }

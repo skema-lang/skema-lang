@@ -48,6 +48,52 @@ pub fn locate(src: &str, filename: &str, span: skema_syntax::Span) -> Location {
     }
 }
 
+/// Fast byte-offset → flat UTF-16-offset conversion for **many** spans
+/// against the same source text (a CM6-style editor position is one flat
+/// offset, not a line/column pair).
+///
+/// [`utf16_line_col`] above recomputes `encode_utf16().count()` from byte 0
+/// on every call – fine for the handful of spans in a diagnostics list, too
+/// slow for the hundreds of token spans a highlighter re-touches on every
+/// keystroke. This builds one sparse breakpoint table per source string in
+/// a single pass, then converts each span endpoint in `O(log k)`, where `k`
+/// is the number of multi-byte characters – zero, i.e. an identity mapping,
+/// for the plain-ASCII source this DSL mostly consists of.
+pub struct Utf16Offsets {
+    /// `(byte_offset, cumulative_delta)`, sorted by `byte_offset`: from this
+    /// byte offset onward (inclusive), a UTF-16 offset is the byte offset
+    /// plus `cumulative_delta`. Only multi-byte characters (where UTF-8 and
+    /// UTF-16 lengths differ) create an entry.
+    breakpoints: Vec<(u32, i64)>,
+}
+
+impl Utf16Offsets {
+    pub fn new(src: &str) -> Self {
+        let mut breakpoints = Vec::new();
+        let mut delta: i64 = 0;
+        for (byte_start, ch) in src.char_indices() {
+            let byte_len = i64::from(ch.len_utf8() as u32);
+            let utf16_len = i64::from(ch.len_utf16() as u32);
+            if byte_len != utf16_len {
+                delta += utf16_len - byte_len;
+                // The breakpoint sits at the character's *end*: everything
+                // up to and including this character still counts at the
+                // *previous* delta, since the shrinkage/growth is only
+                // fully "behind" a query offset once the character itself
+                // has been passed.
+                breakpoints.push((byte_start as u32 + ch.len_utf8() as u32, delta));
+            }
+        }
+        Self { breakpoints }
+    }
+
+    pub fn convert(&self, byte_offset: u32) -> u32 {
+        let i = self.breakpoints.partition_point(|&(b, _)| b <= byte_offset);
+        let delta = if i == 0 { 0 } else { self.breakpoints[i - 1].1 };
+        (i64::from(byte_offset) + delta) as u32
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,5 +113,35 @@ mod tests {
         let src = "😀x";
         let x_byte_offset = "😀".len() as u32;
         assert_eq!(utf16_line_col(src, x_byte_offset), (1, 3));
+    }
+
+    #[test]
+    fn utf16_offsets_identity_for_ascii() {
+        let table = Utf16Offsets::new("plain ascii text");
+        for b in 0..17u32 {
+            assert_eq!(table.convert(b), b);
+        }
+    }
+
+    #[test]
+    fn utf16_offsets_shrink_across_a_multibyte_character() {
+        // "é x": é is 2 UTF-8 bytes / 1 UTF-16 unit, so every offset from
+        // right after é onward is exactly 1 less in UTF-16 than in UTF-8.
+        let src = "é x";
+        let table = Utf16Offsets::new(src);
+        assert_eq!(table.convert(0), 0, "before é: unaffected");
+        assert_eq!(table.convert(2), 1, "right after é: shrunk by 1");
+        assert_eq!(table.convert(3), 2, "at 'x': still shrunk by 1");
+        assert_eq!(table.convert(src.len() as u32), 3, "end of string");
+    }
+
+    #[test]
+    fn utf16_offsets_grow_across_an_astral_character() {
+        // "😀x": 4 UTF-8 bytes / 2 UTF-16 units (a surrogate pair) – every
+        // offset from right after it onward is 2 *more* in UTF-16.
+        let src = "😀x";
+        let table = Utf16Offsets::new(src);
+        assert_eq!(table.convert(0), 0);
+        assert_eq!(table.convert(4), 2);
     }
 }

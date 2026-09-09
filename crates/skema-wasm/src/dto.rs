@@ -13,23 +13,45 @@
 //! carry.
 
 use serde::Serialize;
+use skema_hir::FileId;
 use skema_hir::model;
 use tsify_next::Tsify;
 
 use crate::location::{self, Location};
 
-/// What every conversion function needs to turn a byte-offset `span` into
-/// an optional human [`Location`].
-pub struct LocateCtx<'a> {
+/// One file's text and display path, as needed to resolve a `model` entity's
+/// `file: FileId` back to source text and a human-readable path.
+pub struct FileEntry<'a> {
+    pub path: &'a str,
     pub src: &'a str,
-    pub filename: &'a str,
+}
+
+/// What every conversion function needs to turn a `(FileId, span)` pair
+/// into a display path and an optional human [`Location`].
+///
+/// `files` is indexed by `FileId.0`, the same contiguity guarantee
+/// `skema_hir::analyze` requires of its own callers – for the existing
+/// single-file `exportModel` this is a one-element slice; `analyzeProject`
+/// passes the whole resolved multi-file set.
+pub struct LocateCtx<'a> {
+    pub files: &'a [FileEntry<'a>],
     pub with_locations: bool,
 }
 
 impl LocateCtx<'_> {
-    fn locate(&self, span: skema_syntax::Span) -> Option<Location> {
-        self.with_locations
-            .then(|| location::locate(self.src, self.filename, span))
+    fn file(&self, id: FileId) -> &FileEntry<'_> {
+        &self.files[id.0 as usize]
+    }
+
+    fn path(&self, id: FileId) -> String {
+        self.file(id).path.to_owned()
+    }
+
+    fn locate(&self, id: FileId, span: skema_syntax::Span) -> Option<Location> {
+        self.with_locations.then(|| {
+            let file = self.file(id);
+            location::locate(file.src, file.path, span)
+        })
     }
 }
 
@@ -127,9 +149,22 @@ pub struct ExportedModel {
     pub groups: Vec<ExportedGroup>,
 }
 
-/// A field's or index's `[]`-flags, mirroring `model::Flags`: a valueless
-/// flag (`[pk]`) maps to `true`, a valued one to its stringified value.
-pub type Flags = std::collections::BTreeMap<String, FlagValue>;
+/// One `[]`-flag as written: `[pk]` carries `true`, `[default=0]` its
+/// stringified value.
+///
+/// A list of named entries rather than a map, deliberately. `model::Flags`
+/// is a `BTreeMap`, and a Rust map crosses the wasm boundary as a JS
+/// `Map` – while a bare `pub type` alias emits **no** TypeScript
+/// declaration at all, so the generated `.d.ts` referred to a `Flags` type
+/// it never defined and every consumer silently received `any`. A declared
+/// struct is honest in both directions: the typings say exactly what
+/// arrives, and what arrives is a plain array in the `BTreeMap`'s order.
+#[derive(Debug, Clone, Serialize, Tsify)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedFlag {
+    pub name: String,
+    pub value: FlagValue,
+}
 
 #[derive(Debug, Clone, Serialize, Tsify)]
 #[serde(untagged)]
@@ -147,13 +182,23 @@ impl From<&model::FlagValue> for FlagValue {
     }
 }
 
-fn flags(flags: &model::Flags) -> Flags {
-    flags.iter().map(|(k, v)| (k.clone(), v.into())).collect()
+fn flags(flags: &model::Flags) -> Vec<ExportedFlag> {
+    flags
+        .iter()
+        .map(|(name, value)| ExportedFlag {
+            name: name.clone(),
+            value: value.into(),
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedTable {
+    /// Display path of the file this `Table` is declared in – the file a
+    /// position-editing tool must open/edit to change this table's own
+    /// `Meta`, independent of which file(s) its fields come from.
+    pub file: String,
     pub namespace: String,
     pub name: String,
     pub physical: ExportedPhysical,
@@ -166,9 +211,14 @@ pub struct ExportedTable {
 #[derive(Debug, Clone, Serialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedField {
+    /// Display path of the file this field's own text lives in – **not
+    /// necessarily** the owning table's `file`: a field inlined via `use`
+    /// from a `Partial` declared in another (imported) file keeps that
+    /// file here, so `span`/`location` stay unambiguous.
+    pub file: String,
     pub name: String,
     pub ty: ExportedTypeRef,
-    pub flags: Flags,
+    pub flags: Vec<ExportedFlag>,
     pub relation: Option<ExportedRelation>,
     pub note: Option<String>,
     pub span: Span,
@@ -185,6 +235,9 @@ pub struct ExportedTypeRef {
 #[serde(rename_all = "camelCase")]
 pub struct ExportedRelation {
     pub kind: RelationKind,
+    /// Namespace of the target table – with `targetTable`, the pair that
+    /// identifies it project-wide (a bare name can occur in several files).
+    pub target_namespace: String,
     pub target_table: String,
     pub target_field: String,
     pub on_delete: Option<String>,
@@ -201,10 +254,14 @@ pub enum RelationKind {
 }
 
 #[derive(Debug, Clone, Serialize, Tsify)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportedIndex {
+    /// Same "not necessarily the owning table's file" caveat as
+    /// [`ExportedField::file`].
+    pub file: String,
     pub name: Option<String>,
     pub columns: Vec<String>,
-    pub flags: Flags,
+    pub flags: Vec<ExportedFlag>,
     pub span: Span,
     pub location: Option<Location>,
 }
@@ -212,6 +269,7 @@ pub struct ExportedIndex {
 #[derive(Debug, Clone, Serialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedEnum {
+    pub file: String,
     pub namespace: String,
     pub name: String,
     pub stored_type: String,
@@ -230,7 +288,12 @@ pub struct ExportedEnumEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Tsify)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportedGroup {
+    /// `Group` members are plain references, never inlined content, so –
+    /// unlike [`ExportedField`]/[`ExportedIndex`] – one file suffices for
+    /// the whole group.
+    pub file: String,
     pub name: String,
     pub members: Vec<ExportedGroupMember>,
     pub span: Span,
@@ -272,93 +335,131 @@ fn physical(p: &model::Physical) -> ExportedPhysical {
     }
 }
 
-fn relation(r: &model::Relation, ctx: &LocateCtx<'_>) -> ExportedRelation {
+/// `relation.span` is the field's own `>`/`<`/`-` type-position text
+/// (`resolve.rs`'s `RelationSite.span`), always written in the same file as
+/// the owning field itself – hence the `owner_file` parameter rather than a
+/// `file` field of its own on `model::Relation`.
+fn relation(r: &model::Relation, owner_file: FileId, ctx: &LocateCtx<'_>) -> ExportedRelation {
     ExportedRelation {
         kind: match r.kind {
             model::RelationKind::OneToMany => RelationKind::OneToMany,
             model::RelationKind::ManyToOne => RelationKind::ManyToOne,
             model::RelationKind::OneToOne => RelationKind::OneToOne,
         },
+        target_namespace: r.target_namespace.clone(),
         target_table: r.target_table.clone(),
         target_field: r.target_field.clone(),
         on_delete: r.on_delete.clone(),
         on_update: r.on_update.clone(),
         span: r.span.into(),
-        location: ctx.locate(r.span),
+        location: ctx.locate(owner_file, r.span),
     }
 }
 
 fn field(f: &model::Field, ctx: &LocateCtx<'_>) -> ExportedField {
     ExportedField {
+        file: ctx.path(f.file),
         name: f.name.clone(),
         ty: type_ref(&f.ty),
         flags: flags(&f.flags),
-        relation: f.relation.as_ref().map(|r| relation(r, ctx)),
+        relation: f.relation.as_ref().map(|r| relation(r, f.file, ctx)),
         note: f.note.clone(),
         span: f.span.into(),
-        location: ctx.locate(f.span),
+        location: ctx.locate(f.file, f.span),
     }
 }
 
 fn index(i: &model::Index, ctx: &LocateCtx<'_>) -> ExportedIndex {
     ExportedIndex {
+        file: ctx.path(i.file),
         name: i.name.clone(),
         columns: i.columns.clone(),
         flags: flags(&i.flags),
         span: i.span.into(),
-        location: ctx.locate(i.span),
+        location: ctx.locate(i.file, i.span),
     }
 }
 
 fn table(t: &model::Table, ctx: &LocateCtx<'_>) -> ExportedTable {
     ExportedTable {
+        file: ctx.path(t.file),
         namespace: t.namespace.clone(),
         name: t.name.clone(),
         physical: physical(&t.physical),
         fields: t.fields.iter().map(|f| field(f, ctx)).collect(),
         indexes: t.indexes.iter().map(|i| index(i, ctx)).collect(),
         span: t.span.into(),
-        location: ctx.locate(t.span),
+        location: ctx.locate(t.file, t.span),
     }
 }
 
-fn enum_entry(e: &model::EnumEntry, ctx: &LocateCtx<'_>) -> ExportedEnumEntry {
+/// An enum entry's span is always in its owning `Enum`'s own file – entries
+/// are declared directly in the `Enum` block, never inlined from elsewhere
+/// the way `use`d `Partial` fields are.
+fn enum_entry(e: &model::EnumEntry, owner_file: FileId, ctx: &LocateCtx<'_>) -> ExportedEnumEntry {
     ExportedEnumEntry {
         name: e.name.clone(),
         label: e.label.clone(),
         value: e.value.clone(),
         span: e.span.into(),
-        location: ctx.locate(e.span),
+        location: ctx.locate(owner_file, e.span),
     }
 }
 
 fn enum_(e: &model::Enum, ctx: &LocateCtx<'_>) -> ExportedEnum {
     ExportedEnum {
+        file: ctx.path(e.file),
         namespace: e.namespace.clone(),
         name: e.name.clone(),
         stored_type: e.stored_type.clone(),
-        entries: e.entries.iter().map(|en| enum_entry(en, ctx)).collect(),
+        entries: e
+            .entries
+            .iter()
+            .map(|en| enum_entry(en, e.file, ctx))
+            .collect(),
         span: e.span.into(),
-        location: ctx.locate(e.span),
+        location: ctx.locate(e.file, e.span),
     }
 }
 
-fn group_member(m: &model::GroupMember, ctx: &LocateCtx<'_>) -> ExportedGroupMember {
+/// Same reasoning as [`enum_entry`]: a `Group` member is a plain reference
+/// (`Table Customer;`), always written in the group's own file.
+fn group_member(
+    m: &model::GroupMember,
+    owner_file: FileId,
+    ctx: &LocateCtx<'_>,
+) -> ExportedGroupMember {
     ExportedGroupMember {
         kind: m.kind.clone(),
         namespace: m.namespace.clone(),
         name: m.name.clone(),
         span: m.span.into(),
-        location: ctx.locate(m.span),
+        location: ctx.locate(owner_file, m.span),
     }
 }
 
 fn group(g: &model::Group, ctx: &LocateCtx<'_>) -> ExportedGroup {
     ExportedGroup {
+        file: ctx.path(g.file),
         name: g.name.clone(),
-        members: g.members.iter().map(|m| group_member(m, ctx)).collect(),
+        members: g
+            .members
+            .iter()
+            .map(|m| group_member(m, g.file, ctx))
+            .collect(),
         span: g.span.into(),
-        location: ctx.locate(g.span),
+        location: ctx.locate(g.file, g.span),
+    }
+}
+
+/// For the one case where there is no analysis to export at all (no root
+/// file), so the result shape stays the same instead of the model field
+/// becoming nullable for every caller.
+pub fn empty_model() -> ExportedModel {
+    ExportedModel {
+        tables: Vec::new(),
+        enums: Vec::new(),
+        groups: Vec::new(),
     }
 }
 

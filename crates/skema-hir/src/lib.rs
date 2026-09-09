@@ -36,6 +36,7 @@
 //! diagnostics were reported. Faulty parts are missing from the model or
 //! incomplete; the rest stays usable.
 
+pub mod catalog;
 mod diagnostic;
 mod ids;
 pub mod model;
