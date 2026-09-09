@@ -15,7 +15,6 @@
 //! TypeScript side.
 
 use skema_syntax::{SemanticKind, Span, TokenKind};
-use wasm_bindgen::prelude::*;
 
 use crate::location::Utf16Offsets;
 
@@ -57,7 +56,6 @@ highlight_classes! {
 /// for that code. A plain list, not a map – the class codes in
 /// [`highlight_tokens`]'s flat output *are* indexes into this same list, by
 /// construction (see the `highlight_classes!` macro above).
-#[wasm_bindgen(js_name = "highlightClassNames")]
 pub fn highlight_class_names() -> Vec<String> {
     CLASS_NAMES.iter().map(|s| (*s).to_owned()).collect()
 }
@@ -105,7 +103,6 @@ fn class_of_semantic(kind: SemanticKind) -> Class {
 /// No debounce needed on the caller's side: the hand-written parser is
 /// fast and `skema-lsp` already re-parses in full on every `didChange`
 /// (`TextDocumentSyncKind::FULL`) – the same precedent applies here.
-#[wasm_bindgen(js_name = "highlightTokens")]
 pub fn highlight_tokens(source: &str) -> Vec<u32> {
     let tokens = skema_syntax::tokenize(source);
     let (ast, _) = skema_syntax::parse(source);

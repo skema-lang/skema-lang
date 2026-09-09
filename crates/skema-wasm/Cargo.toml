@@ -10,12 +10,12 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-skema-syntax.workspace = true
-skema-hir.workspace = true
+# `typescript` is what makes the shared DTOs emit their TypeScript
+# declarations and their wasm ABI; without it this crate could not return
+# them across the boundary at all.
+skema-api = { workspace = true, features = ["typescript"] }
 
-serde = { version = "1", features = ["derive"] }
 wasm-bindgen = "0.2"
-tsify-next = { version = "0.5", default-features = false, features = ["js"] }
 console_error_panic_hook = "0.1"
 
 [dev-dependencies]

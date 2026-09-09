@@ -1,0 +1,29 @@
+[package]
+name = "skema-api"
+description = "Editor-facing services over the skema frontend: resolved model, Meta offsets, Style blocks, highlighting"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+skema-syntax.workspace = true
+skema-hir.workspace = true
+
+serde = { version = "1", features = ["derive"] }
+
+# Only the `typescript` feature pulls these in. Without it the crate is
+# platform-neutral in exactly the sense `skema-syntax`/`skema-hir` are, which
+# is what lets `skema-lsp` link it into a native binary.
+tsify-next = { version = "0.5", default-features = false, features = [
+    "js",
+], optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+# Emits the TypeScript declarations and the wasm ABI impls for every type in
+# this crate. Enabled by `skema-wasm`, never by `skema-lsp`.
+typescript = ["dep:tsify-next", "dep:wasm-bindgen"]
+
+[lints]
+workspace = true

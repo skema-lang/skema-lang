@@ -22,20 +22,22 @@
 
 use serde::Serialize;
 use skema_syntax::ast::{self, BlockKind};
+#[cfg(feature = "typescript")]
 use tsify_next::Tsify;
-use wasm_bindgen::prelude::*;
 
 use crate::location::Utf16Offsets;
 
 /// A half-open range in **UTF-16 code units** – directly usable as a
 /// CodeMirror/Monaco document position pair.
-#[derive(Debug, Clone, Copy, Serialize, Tsify)]
+#[derive(Debug, Clone, Copy, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 pub struct Utf16Range {
     pub start: u32,
     pub end: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct MetaEntry {
     /// The key as written, without the quotes a custom `"x-…"` key carries.
@@ -54,7 +56,8 @@ pub struct MetaEntry {
     pub entry_range: Utf16Range,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct TableMeta {
     pub name: String,
@@ -70,8 +73,9 @@ pub struct TableMeta {
 /// A named result type at the boundary, like `CheckResult`/`ExportResult`
 /// elsewhere in this crate – `tsify` implements the wasm ABI for a struct,
 /// not for a bare `Vec` of one.
-#[derive(Debug, Clone, Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
 #[serde(rename_all = "camelCase")]
 pub struct TableMetas {
     pub tables: Vec<TableMeta>,
@@ -81,7 +85,6 @@ pub struct TableMetas {
 /// edit them at. Tables without a `Meta` block are included too (with
 /// `metaBodyStart: undefined` and no entries) – the caller still needs
 /// `tableBodyStart` to add one.
-#[wasm_bindgen(js_name = "tableMetas")]
 pub fn table_metas(source: &str) -> TableMetas {
     let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);
@@ -97,7 +100,8 @@ pub fn table_metas(source: &str) -> TableMetas {
     TableMetas { tables }
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct EnumMeta {
     pub name: String,
@@ -108,8 +112,9 @@ pub struct EnumMeta {
 }
 
 /// See [`TableMetas`].
-#[derive(Debug, Clone, Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
 #[serde(rename_all = "camelCase")]
 pub struct EnumMetas {
     pub enums: Vec<EnumMeta>,
@@ -119,7 +124,6 @@ pub struct EnumMetas {
 /// [`table_metas`], for the declaration kind that needs it next: an `Enum`
 /// gets rendered in a diagram and can carry `Meta.styleClasses` (`docs/03`)
 /// just like a `Table` can.
-#[wasm_bindgen(js_name = "enumMetas")]
 pub fn enum_metas(source: &str) -> EnumMetas {
     let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);
@@ -135,7 +139,8 @@ pub fn enum_metas(source: &str) -> EnumMetas {
     EnumMetas { enums }
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct GroupMeta {
     pub name: String,
@@ -146,8 +151,9 @@ pub struct GroupMeta {
 }
 
 /// See [`TableMetas`].
-#[derive(Debug, Clone, Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
 #[serde(rename_all = "camelCase")]
 pub struct GroupMetas {
     pub groups: Vec<GroupMeta>,
@@ -157,7 +163,6 @@ pub struct GroupMetas {
 /// [`table_metas`]. A `Group`'s own diagram position (once it gets one, as a
 /// draggable frame) is just another `x-editorPosition` entry here, exactly
 /// like a `Table`'s – no separate mechanism needed.
-#[wasm_bindgen(js_name = "groupMetas")]
 pub fn group_metas(source: &str) -> GroupMetas {
     let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);

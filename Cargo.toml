@@ -4,6 +4,7 @@ members = [
     "crates/skema-syntax",
     "crates/skema-hir",
     "crates/skema-loader",
+    "crates/skema-api",
     "crates/skema-cli",
     "crates/skema-lsp",
     "crates/skema-py",
@@ -24,6 +25,7 @@ license = "MIT OR Apache-2.0"
 skema-syntax = { path = "crates/skema-syntax", version = "0.1.0" }
 skema-hir = { path = "crates/skema-hir", version = "0.1.0" }
 skema-loader = { path = "crates/skema-loader", version = "0.1.0" }
+skema-api = { path = "crates/skema-api", version = "0.1.0" }
 
 [workspace.lints.rust]
 # Public types without Debug are a pain in a compiler frontend, because you

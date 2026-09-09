@@ -35,12 +35,13 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use skema_hir::{FileId, InputFile};
+#[cfg(feature = "typescript")]
 use tsify_next::Tsify;
-use wasm_bindgen::prelude::*;
 
 use crate::dto::{self, Diagnostic, ExportedModel, FileEntry, LocateCtx, Severity};
 
-#[derive(Debug, Clone, Deserialize, Tsify)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectFile {
     /// A virtual path, `/`-separated. Only ever compared and joined as
@@ -52,8 +53,9 @@ pub struct ProjectFile {
 /// One object rather than three loose arguments: the file set is a
 /// structured value, and `tsify` gives the TypeScript side a named type for
 /// it instead of a positional argument list to keep straight.
-#[derive(Debug, Clone, Deserialize, Tsify)]
-#[tsify(from_wasm_abi)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(from_wasm_abi))]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectInput {
     pub files: Vec<ProjectFile>,
@@ -64,7 +66,8 @@ pub struct ProjectInput {
     pub with_locations: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectFileStatus {
     pub path: String,
@@ -76,8 +79,9 @@ pub struct ProjectFileStatus {
     pub in_project: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectResult {
     pub ok: bool,
@@ -94,7 +98,6 @@ pub struct ProjectResult {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-#[wasm_bindgen(js_name = "analyzeProject")]
 pub fn analyze_project(input: ProjectInput) -> ProjectResult {
     let ProjectInput {
         files,

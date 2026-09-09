@@ -16,9 +16,11 @@
 //! 0-based exception, mandated by the LSP protocol itself.
 
 use serde::Serialize;
+#[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct Location {
     pub file: String,
@@ -59,6 +61,7 @@ pub fn locate(src: &str, filename: &str, span: skema_syntax::Span) -> Location {
 /// a single pass, then converts each span endpoint in `O(log k)`, where `k`
 /// is the number of multi-byte characters – zero, i.e. an identity mapping,
 /// for the plain-ASCII source this DSL mostly consists of.
+#[derive(Debug)]
 pub struct Utf16Offsets {
     /// `(byte_offset, cumulative_delta)`, sorted by `byte_offset`: from this
     /// byte offset onward (inclusive), a UTF-16 offset is the byte offset

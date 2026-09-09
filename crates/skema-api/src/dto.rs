@@ -15,12 +15,14 @@
 use serde::Serialize;
 use skema_hir::FileId;
 use skema_hir::model;
+#[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 
 use crate::location::{self, Location};
 
 /// One file's text and display path, as needed to resolve a `model` entity's
 /// `file: FileId` back to source text and a human-readable path.
+#[derive(Debug)]
 pub struct FileEntry<'a> {
     pub path: &'a str,
     pub src: &'a str,
@@ -33,6 +35,7 @@ pub struct FileEntry<'a> {
 /// `skema_hir::analyze` requires of its own callers – for the existing
 /// single-file `exportModel` this is a one-element slice; `analyzeProject`
 /// passes the whole resolved multi-file set.
+#[derive(Debug)]
 pub struct LocateCtx<'a> {
     pub files: &'a [FileEntry<'a>],
     pub with_locations: bool,
@@ -55,7 +58,8 @@ impl LocateCtx<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Tsify)]
+#[derive(Debug, Clone, Copy, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 pub struct Span {
     pub start: u32,
     pub end: u32,
@@ -70,7 +74,8 @@ impl From<skema_syntax::Span> for Span {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Tsify)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Error,
@@ -94,7 +99,8 @@ impl From<skema_syntax::Severity> for Severity {
 /// the list is always small, and a diagnostic without a human position is
 /// nearly useless to an editor. `withLocations` only gates the (potentially
 /// large) per-entity `location` field on the model.
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
     pub span: Span,
@@ -126,22 +132,25 @@ pub fn hir_diagnostic(src: &str, filename: &str, d: &skema_hir::Diagnostic) -> D
     diagnostic(src, filename, d.span, d.severity.into(), &d.message)
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
 pub struct CheckResult {
     pub ok: bool,
     pub diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
 pub struct ExportResult {
     pub ok: bool,
     pub model: ExportedModel,
     pub diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedModel {
     pub tables: Vec<ExportedTable>,
@@ -159,14 +168,16 @@ pub struct ExportedModel {
 /// it never defined and every consumer silently received `any`. A declared
 /// struct is honest in both directions: the typings say exactly what
 /// arrives, and what arrives is a plain array in the `BTreeMap`'s order.
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedFlag {
     pub name: String,
     pub value: FlagValue,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(untagged)]
 pub enum FlagValue {
     Bool(bool),
@@ -192,7 +203,8 @@ fn flags(flags: &model::Flags) -> Vec<ExportedFlag> {
         .collect()
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedTable {
     /// Display path of the file this `Table` is declared in – the file a
@@ -208,7 +220,8 @@ pub struct ExportedTable {
     pub location: Option<Location>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedField {
     /// Display path of the file this field's own text lives in – **not
@@ -225,13 +238,15 @@ pub struct ExportedField {
     pub location: Option<Location>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 pub struct ExportedTypeRef {
     pub name: String,
     pub args: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedRelation {
     pub kind: RelationKind,
@@ -246,14 +261,16 @@ pub struct ExportedRelation {
     pub location: Option<Location>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Tsify)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 pub enum RelationKind {
     OneToMany,
     ManyToOne,
     OneToOne,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedIndex {
     /// Same "not necessarily the owning table's file" caveat as
@@ -266,7 +283,8 @@ pub struct ExportedIndex {
     pub location: Option<Location>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedEnum {
     pub file: String,
@@ -278,7 +296,8 @@ pub struct ExportedEnum {
     pub location: Option<Location>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 pub struct ExportedEnumEntry {
     pub name: String,
     pub label: Option<String>,
@@ -287,7 +306,8 @@ pub struct ExportedEnumEntry {
     pub location: Option<Location>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedGroup {
     /// `Group` members are plain references, never inlined content, so –
@@ -300,7 +320,8 @@ pub struct ExportedGroup {
     pub location: Option<Location>,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 pub struct ExportedGroupMember {
     pub kind: String,
     pub namespace: String,
@@ -313,7 +334,8 @@ pub struct ExportedGroupMember {
 /// span: it's a cascade of up to three independent source blocks, so there
 /// is no single correct source location for it – inventing one would be
 /// actively misleading.
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 pub struct ExportedPhysical {
     pub database: Option<String>,
     pub schema: Option<String>,

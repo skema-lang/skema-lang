@@ -9,22 +9,24 @@
 
 use serde::Serialize;
 use skema_syntax::ast::{self, BlockKind};
+#[cfg(feature = "typescript")]
 use tsify_next::Tsify;
-use wasm_bindgen::prelude::*;
 
 use crate::location::Utf16Offsets;
 use crate::meta::{MetaEntry, entries};
 
 /// The two cascade levels from `docs/03`: a `Project`-level block is the
 /// project-wide default, a `Document`-level one is that file's override.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Tsify)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "lowercase")]
 pub enum StyleScope {
     Project,
     Document,
 }
 
-#[derive(Debug, Clone, Serialize, Tsify)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
 pub struct StyleBlock {
     pub scope: StyleScope,
@@ -38,8 +40,9 @@ pub struct StyleBlock {
 
 /// A named result type at the boundary, like [`crate::meta::TableMetas`] –
 /// `tsify` implements the wasm ABI for a struct, not for a bare `Vec`.
-#[derive(Debug, Clone, Serialize, Tsify)]
-#[tsify(into_wasm_abi)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
 #[serde(rename_all = "camelCase")]
 pub struct StyleBlocks {
     pub blocks: Vec<StyleBlock>,
@@ -47,7 +50,6 @@ pub struct StyleBlocks {
 
 /// Single-file, like `tableMetas`: a caller with several files already loops
 /// over them one at a time.
-#[wasm_bindgen(js_name = "styleBlocks")]
 pub fn style_blocks(source: &str) -> StyleBlocks {
     let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);

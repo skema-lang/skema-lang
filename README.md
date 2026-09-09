@@ -87,10 +87,11 @@ crates/
   skema-syntax/   ✅ Lexer · parser · AST · spans · diagnostics
   skema-hir/      ✅ Name resolution, rule checking, resolved model
   skema-loader/   ✅ Loads a root file along with its import graph from the filesystem
+  skema-api/      ✅ Editor-facing services: resolved model, Meta offsets, Style blocks, highlighting
   skema-cli/      ✅ Binary `skema`: check / export --json
   skema-lsp/      ✅ Binary `skema-lsp`: language server (stdio)
   skema-py/       ✅ pyo3 bindings: check() / export()
-  skema-wasm/     ⬜ wasm-bindgen wrapper (planned)
+  skema-wasm/     ✅ wasm-bindgen wrapper around skema-api
 docs/                    Language definition (finished, English)
 examples/                Reference models – also the test corpus for skema-hir
 ```
@@ -136,6 +137,18 @@ embeddable in the language server.
 `skema-wasm` and `skema-py` each get their **own** crate. Mixing
 `wasm-bindgen` and `pyo3` in the same crate leads to feature-flag chaos.
 
+`skema-api` follows the same rule and is where the two editor front ends
+meet. An editor needs more than "is this valid": the resolved model with a
+location per entity, the exact offsets of a `Meta` entry, the `Style`
+cascade, a token stream to colour. None of that is `skema-hir`'s business –
+it knows byte offsets "and nothing else" – but all of it is needed twice,
+by `skema-wasm` in a browser and by `skema-lsp` in an editor. Written once
+per front end, the two would drift, and a diagram drawn in VSCode would
+slowly stop matching the one drawn in the browser. Its `typescript` feature
+(off by default) adds the `tsify`/`wasm-bindgen` derives that only the WASM
+boundary needs, so `skema-lsp` links the same types without either
+dependency.
+
 ## Roadmap
 
 | # | Step | Status |
@@ -152,7 +165,7 @@ embeddable in the language server.
 | 10 | **LSP features** – hover, go-to-definition, autocompletion | ⬜ |
 | 11 | **Workspace-wide root file detection** in the LSP (instead of "open file = root") | ⬜ |
 | 12 | **VSCode extension** – TS client + bundled binary | ⬜ |
-| 13 | **WASM** – parser in the browser | ⬜ |
+| 13 | **WASM** – parser in the browser | ✅ |
 | 14 | **Formatter** – requires a lossless syntax tree (`rowan`) | ⬜ |
 
 ## Technical decisions
