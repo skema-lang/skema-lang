@@ -140,9 +140,10 @@ impl Target {
                     insert: value,
                 };
             }
-            // A key written without a value (`"x-editorPosition";`) is
-            // invalid, but an editor may well be mid-typing: replace the
-            // whole entry rather than leaving a broken one behind.
+            // An entry with no value (`"x-editorPosition" = ;`) is invalid,
+            // and is exactly what a half-typed one looks like the moment
+            // after the `=`. Replacing the whole entry writes a valid one;
+            // replacing a value range that does not exist could not.
             return TextEdit {
                 range: entry.entry_range,
                 insert: format!("\"{POSITION_KEY}\" = {value}"),
@@ -212,28 +213,40 @@ mod tests {
         assert!(after.contains("id int [pk];"), "the column survives");
     }
 
-    /// The entry-without-a-value branch, exercised directly: `MetaEntry`
-    /// permits `value: None` by type, but no `.skema` text reaches it today -
-    /// the parser produces no `Meta` entry at all for `"x-editorPosition";`,
-    /// so a source-level test would silently take a different branch (it
-    /// would add a second entry beside the broken one). Building the target
-    /// here keeps the branch honest rather than untested or deleted.
+    /// Dragging a table in the moment after `=` was typed and before a value
+    /// was: the entry exists, carries no value, and has no value range to
+    /// replace. The whole entry is rewritten, so the file comes out valid
+    /// rather than with a second entry beside a broken one.
+    ///
+    /// The entry range stops at the `=`, so whatever sat between it and the
+    /// `;` stays - one space, here. Valid skema, and not worth a special
+    /// case: the next drag replaces the value range alone and it is gone.
     #[test]
     fn an_entry_without_a_value_is_replaced_whole_rather_than_left_broken() {
-        let target = Target {
-            body_start: 0,
-            meta_body_start: Some(10),
-            entries: vec![MetaEntry {
-                key: POSITION_KEY.to_owned(),
-                value: None,
-                key_range: Utf16Range { start: 20, end: 38 },
-                value_range: None,
-                entry_range: Utf16Range { start: 20, end: 38 },
-            }],
-        };
-        let edit = target.edit(3.0, 4.0);
-        assert_eq!(edit.insert, r#""x-editorPosition" = "3,4""#);
-        assert_eq!((edit.range.start, edit.range.end), (20, 38));
+        let source = r#"Table Customer { Meta { "x-editorPosition" = ; } }"#;
+        assert_eq!(
+            apply(source, DeclKind::Table, "Customer", 3.0, 4.0),
+            r#"Table Customer { Meta { "x-editorPosition" = "3,4" ; } }"#
+        );
+    }
+
+    /// The neighbouring case, which takes a *different* branch: a key with no
+    /// `=` at all is not reported as a `Meta` entry, so nothing is found to
+    /// replace and a fresh entry is added beside it. The file was already
+    /// invalid and stays that way - a drag is not the place to guess at
+    /// repairing someone's half-written line.
+    #[test]
+    fn a_key_written_without_an_equals_is_not_an_entry_to_replace() {
+        let source = r#"Table Customer { Meta { "x-editorPosition"; } }"#;
+        let after = apply(source, DeclKind::Table, "Customer", 3.0, 4.0);
+        assert!(
+            after.contains(r#""x-editorPosition" = "3,4";"#),
+            "got: {after}"
+        );
+        assert!(
+            after.contains(r#""x-editorPosition";"#),
+            "the broken line is left alone, not silently rewritten: {after}"
+        );
     }
 
     #[test]
