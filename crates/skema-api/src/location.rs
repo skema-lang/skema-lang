@@ -1,19 +1,25 @@
-//! Byte offset → human position, for the browser.
+//! Byte offset → human position, for everything that shows one.
 //!
-//! Deliberately **not** a reuse of `skema-loader::report`'s `line_col`: that
-//! one counts Unicode scalar values (chars), which is right for a terminal
-//! but wrong here. JavaScript strings – and therefore editor column
-//! positions in something like CodeMirror or Monaco – are UTF-16 code
-//! units, so a character outside the Basic Multilingual Plane (an emoji,
-//! say) would silently disagree by one between the two counting schemes.
-//! `str::encode_utf16` already yields one `u16` per code unit, so it
-//! naturally counts such a character as the 2 UTF-16 units (a surrogate
-//! pair) that JavaScript itself would see.
+//! Columns count **UTF-16 code units**, and every front end in the workspace
+//! shares that: `skema-wasm` because JavaScript strings – and therefore
+//! editor positions in something like CodeMirror or Monaco – are measured
+//! that way, `skema-lsp` because the protocol mandates it, and `skema-cli`/
+//! `skema-py` because they render the same [`crate::Diagnostic`] the other
+//! two do. `str::encode_utf16` yields one `u16` per code unit, so a
+//! character outside the Basic Multilingual Plane counts as the 2 units (a
+//! surrogate pair) that JavaScript itself would see.
 //!
-//! Line and column are 1-based, matching the existing convention in
-//! `skema-loader`/`skema-cli`/`skema-py` (only the counting *method*
-//! differs, not the numbering *base*) – `skema-lsp` is the one legitimate
-//! 0-based exception, mandated by the LSP protocol itself.
+//! An earlier `line_col` in `skema-loader` counted Unicode scalar values
+//! instead, which is the more natural choice for a terminal caret. It was
+//! dropped rather than kept alongside: two counting schemes meant a
+//! diagnostic could name two different columns depending on which tool
+//! printed it, and the disagreement only ever showed up on astral
+//! characters – i.e. it would have been found by a user, not by a test.
+//!
+//! Line and column are 1-based here, matching the convention in `skema-cli`
+//! and `skema-py` – `skema-lsp` is the one legitimate 0-based exception,
+//! mandated by the LSP protocol itself, and [`crate::location`] is still
+//! where it gets its numbers from (`convert::position_of`).
 
 use serde::Serialize;
 #[cfg(feature = "typescript")]
@@ -30,7 +36,10 @@ pub struct Location {
     pub end_column: u32,
 }
 
-fn utf16_line_col(src: &str, byte_offset: u32) -> (u32, u32) {
+/// 1-based line and UTF-16 column for a byte offset. Public because
+/// `skema-lsp` needs the same two numbers 0-based, and one function that
+/// subtracts is better than a second one that recounts.
+pub fn utf16_line_col(src: &str, byte_offset: u32) -> (u32, u32) {
     let before = src.get(..byte_offset as usize).unwrap_or(src);
     let line_start = before.rfind('\n').map_or(0, |i| i + 1);
     let line = before[..line_start].matches('\n').count() as u32 + 1;

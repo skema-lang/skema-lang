@@ -757,9 +757,8 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
- "skema-hir",
+ "skema-api",
  "skema-loader",
- "skema-syntax",
 ]
 
 [[package]]
@@ -774,8 +773,10 @@ dependencies = [
 name = "skema-loader"
 version = "0.1.0"
 dependencies = [
+ "skema-api",
  "skema-hir",
  "skema-syntax",
+ "tempfile",
 ]
 
 [[package]]
@@ -787,7 +788,6 @@ dependencies = [
  "serde",
  "serde_json",
  "skema-api",
- "skema-hir",
  "skema-loader",
  "skema-syntax",
  "tempfile",
@@ -798,10 +798,9 @@ name = "skema-py"
 version = "0.1.0"
 dependencies = [
  "pyo3",
+ "serde",
  "serde_json",
- "skema-hir",
  "skema-loader",
- "skema-syntax",
 ]
 
 [[package]]

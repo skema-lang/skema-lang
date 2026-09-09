@@ -5,10 +5,12 @@
 //! skema export --json main.skema
 //! ```
 //!
-//! Both invocations appear exactly like this in `docs/02`. This crate is the
-//! only place in the workspace that reads files: `skema-syntax` and
-//! `skema-hir` only ever receive `&str` or already-parsed trees (see their
-//! module documentation).
+//! Both invocations appear exactly like this in `docs/02`.
+//!
+//! The work happens in `skema-loader`, which loads the import graph and
+//! hands back `skema-api`'s model and diagnostics – the same types the
+//! language server and the browser editor answer with. What this crate adds
+//! is a process: argument parsing, stdout/stderr, and an exit code.
 
 mod report;
 
@@ -41,68 +43,65 @@ enum Command {
         /// `skema export --json main.skema` matches `docs/02` exactly.
         #[arg(long)]
         json: bool,
+        /// Add a `location` (file, line, column) to every entity in the
+        /// model. Off by default: it roughly doubles the output, and a
+        /// consumer that only wants the structure never reads it.
+        #[arg(long)]
+        locations: bool,
     },
 }
 
 fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Check { file, json } => run_check(&file, json),
-        Command::Export { file, json: _ } => run_export(&file),
+        Command::Export {
+            file,
+            json: _,
+            locations,
+        } => run_export(&file, locations),
     }
 }
 
 fn run_check(path: &Path, json: bool) -> ExitCode {
     let project = match skema_loader::load(path) {
         Ok(p) => p,
-        Err(e) => return report_load_error(&e),
+        Err(e) => return report_load_error(&e, json),
     };
-    let files = project.input_files();
-    let (_model, diagnostics) = skema_hir::analyze(&files);
-    let reports = report::build(&project, &diagnostics);
-    let has_errors = reports.iter().any(|r| r.severity == "error");
+    let analysis = skema_loader::analyze(&project, false);
 
     if json {
-        if !print_json(&reports) {
+        if !print_json(&analysis.diagnostics) {
             return ExitCode::FAILURE;
         }
-    } else if reports.is_empty() {
+    } else if analysis.diagnostics.is_empty() {
         println!("no messages");
     } else {
-        for r in &reports {
-            println!("{r}");
+        for d in &analysis.diagnostics {
+            println!("{}", report::line(d));
         }
     }
 
-    if has_errors {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    }
+    exit_code(analysis.ok())
 }
 
-fn run_export(path: &Path) -> ExitCode {
+fn run_export(path: &Path, locations: bool) -> ExitCode {
     let project = match skema_loader::load(path) {
         Ok(p) => p,
-        Err(e) => return report_load_error(&e),
+        Err(e) => return report_load_error(&e, false),
     };
-    let files = project.input_files();
-    let (model, diagnostics) = skema_hir::analyze(&files);
-    let reports = report::build(&project, &diagnostics);
-    let has_errors = reports.iter().any(|r| r.severity == "error");
+    let analysis = skema_loader::analyze(&project, locations);
 
-    // Messages go to stderr so stdout stays pure JSON and can be piped.
-    for r in &reports {
-        eprintln!("{r}");
+    // Messages go to stderr so stdout stays nothing but the model and can be
+    // redirected into a file (`skema export --json x.skema > model.json`,
+    // `docs/02`).
+    for d in &analysis.diagnostics {
+        eprintln!("{}", report::line(d));
     }
-    if !print_json(&model) {
+    if !print_json(&analysis.model) {
         return ExitCode::FAILURE;
     }
 
-    if has_errors {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    }
+    exit_code(analysis.ok())
 }
 
 fn print_json(value: &impl serde::Serialize) -> bool {
@@ -118,7 +117,23 @@ fn print_json(value: &impl serde::Serialize) -> bool {
     }
 }
 
-fn report_load_error(e: &skema_loader::LoadError) -> ExitCode {
-    eprintln!("{e}");
+/// An unreadable root file is reported as the same `Diagnostic` as every
+/// other message, so `--json` stays a single, uniformly shaped array rather
+/// than "the list, unless the very first step failed".
+fn report_load_error(e: &skema_loader::LoadError, json: bool) -> ExitCode {
+    let diagnostic = skema_loader::load_error_diagnostic(e);
+    if json {
+        print_json(&[diagnostic]);
+    } else {
+        eprintln!("{}", report::line(&diagnostic));
+    }
     ExitCode::FAILURE
+}
+
+fn exit_code(ok: bool) -> ExitCode {
+    if ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }

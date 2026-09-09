@@ -1,6 +1,6 @@
 [package]
 name = "skema-py"
-description = "Python bindings for skema (pyo3)"
+description = "Python bindings for skema (pyo3): project check and model export"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,10 +11,13 @@ name = "skema"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-skema-syntax.workspace = true
-skema-hir.workspace = true
+# The only Rust dependency: `skema_loader::analyze` already answers in
+# `skema-api`'s types, and this crate never has to name them – it hands
+# them straight to `serde_json`. That is what makes a `dict` from
+# `export()` the same structure a browser and an editor see.
 skema-loader.workspace = true
 pyo3 = { version = "0.24", features = ["extension-module", "abi3-py39"] }
+serde = "1"
 serde_json = "1"
 
 [lints]

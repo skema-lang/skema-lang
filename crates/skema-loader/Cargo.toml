@@ -1,6 +1,6 @@
 [package]
 name = "skema-loader"
-description = "Loads a .skema root file along with its import graph from the filesystem"
+description = "Loads a .skema root file with its import graph from the filesystem, and analyzes it"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,6 +9,15 @@ license.workspace = true
 [dependencies]
 skema-syntax.workspace = true
 skema-hir.workspace = true
+# Without the `typescript` feature: this crate is the filesystem-bound side
+# of the workspace and never crosses into JavaScript. What it wants from
+# `skema-api` is the shape of an answer – `ExportedModel`, `Diagnostic` –
+# so `skema check`, `skema.export()` and the language server all describe a
+# model the same way.
+skema-api.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3"

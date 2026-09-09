@@ -1,6 +1,15 @@
-//! Loads a `.skema` root file and follows every `import` – the piece of
-//! filesystem access that `skema-syntax` and `skema-hir` deliberately do not
-//! have themselves (see their module documentation).
+//! A `.skema` project on disk: which files it consists of, and what is in
+//! them.
+//!
+//! This is the piece of filesystem access that `skema-syntax` and
+//! `skema-hir` deliberately do not have themselves (see their module
+//! documentation), plus the step that turns their output into an answer a
+//! front end can show.
+//!
+//! ```text
+//! &Path ──[load]──► Project ──[analyze]──► ExportedModel
+//!                                        + Vec<Diagnostic>
+//! ```
 //!
 //! Per `docs/02`, project membership is reachability-defined: a file belongs
 //! to the project if it is reachable from the root file, directly or via
@@ -9,13 +18,20 @@
 //!
 //! # Why a separate crate instead of part of `skema-cli`
 //!
-//! Both `skema-cli` and `skema-lsp` need this logic, but with different text
-//! sources: the CLI reads exclusively from disk, while the language server
-//! should use the unsaved editor content for open files and disk for
-//! everything else. [`load_with`] takes a swappable read function for that;
-//! [`load`] is the common case built on top of it.
+//! `skema-cli`, `skema-py` and `skema-lsp` all need this logic, but with
+//! different text sources: the CLI and the Python bindings read exclusively
+//! from disk, while the language server should use the unsaved editor
+//! content for open files and disk for everything else. [`load_with`] takes
+//! a swappable read function for that; [`load`] is the common case built on
+//! top of it.
+//!
+//! [`analyze`] is here for the same reason one level up: all three then
+//! describe a model identically, in `skema-api`'s types – the ones
+//! `skema-wasm` also hands to a browser (see [`analysis`]).
 
-pub mod report;
+pub mod analysis;
+
+pub use analysis::{ProjectAnalysis, analyze, display_path, load_error_diagnostic};
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};

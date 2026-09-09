@@ -16,12 +16,15 @@ use skema_syntax::{Severity, Span};
 
 /// Byte offset → LSP position. The column counts UTF-16 code units, not
 /// bytes and not characters – the protocol's default encoding.
+///
+/// The counting itself is `skema_api::location`'s, which produces the same
+/// two numbers 1-based for everything that shows a position to a human. LSP
+/// is the one 0-based consumer, so this subtracts rather than recounting:
+/// two implementations of "which line and column is this byte in" is exactly
+/// the kind of pair that agrees until it doesn't.
 pub fn position_of(src: &str, byte_offset: usize) -> Position {
-    let before = src.get(..byte_offset).unwrap_or(src);
-    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
-    let line = before[..line_start].matches('\n').count() as u32;
-    let character = before[line_start..].encode_utf16().count() as u32;
-    Position::new(line, character)
+    let (line, column) = skema_api::location::utf16_line_col(src, byte_offset as u32);
+    Position::new(line - 1, column - 1)
 }
 
 /// LSP position → byte offset, saturating at the end of the line and of the

@@ -11,8 +11,9 @@ name = "skema"
 path = "src/main.rs"
 
 [dependencies]
-skema-syntax.workspace = true
-skema-hir.workspace = true
+# Only these two: the model and the diagnostics `skema-loader` returns are
+# `skema-api`'s types, and nothing here reaches past them into the core.
+skema-api.workspace = true
 skema-loader.workspace = true
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

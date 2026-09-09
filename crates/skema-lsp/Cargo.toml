@@ -12,7 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 skema-syntax.workspace = true
-skema-hir.workspace = true
 skema-loader.workspace = true
 # Without the `typescript` feature: the wasm ABI is not something a native
 # binary can or should carry. The types are the same either way.

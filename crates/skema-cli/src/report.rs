@@ -1,52 +1,35 @@
 //! Terminal representation of a message: `path:line:column: severity: text`.
 //!
-//! The actual byte-offset conversion lives in `skema_loader::report`, shared
-//! with `skema-py`. This module only adds the text representation a CLI
-//! needs (lowercase severity, `Display`, JSON serialization).
+//! Everything *behind* that line – the analysis, the byte-offset conversion,
+//! the merge of parser and checker messages, the sort order – is
+//! `skema_loader::analyze`'s, shared with `skema-py` and `skema-lsp`. What
+//! stays here is only the format, because a terminal line is the one thing
+//! about a diagnostic that is genuinely this crate's business: `skema-api`
+//! serves editors and has no reason to know what a shell prints.
 
 use std::fmt;
 
-use serde::Serialize;
-use skema_loader::Project;
-use skema_syntax::Severity;
+use skema_api::Diagnostic;
 
-#[derive(Serialize)]
-pub struct Report {
-    pub path: String,
-    pub line: usize,
-    pub column: usize,
-    pub severity: &'static str,
-    pub message: String,
+/// Wraps a diagnostic in the one-line form a compiler is expected to print,
+/// so `println!("{}", report::line(&d))` reads like the rest of the CLI.
+pub fn line(diagnostic: &Diagnostic) -> impl fmt::Display + '_ {
+    Line(diagnostic)
 }
 
-impl fmt::Display for Report {
+struct Line<'a>(&'a Diagnostic);
+
+impl fmt::Display for Line<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let d = self.0;
         write!(
             f,
             "{}:{}:{}: {}: {}",
-            self.path, self.line, self.column, self.severity, self.message
+            d.location.file,
+            d.location.line,
+            d.location.column,
+            d.severity.as_str(),
+            d.message
         )
     }
-}
-
-fn severity_word(severity: Severity) -> &'static str {
-    match severity {
-        Severity::Error => "error",
-        Severity::Warning => "warning",
-        Severity::Info => "info",
-        Severity::Hint => "hint",
-    }
-}
-
-pub fn build(project: &Project, hir_diagnostics: &[skema_hir::Diagnostic]) -> Vec<Report> {
-    skema_loader::report::build(project, hir_diagnostics)
-        .into_iter()
-        .map(|e| Report {
-            path: e.path.display().to_string(),
-            line: e.line,
-            column: e.column,
-            severity: severity_word(e.severity),
-            message: e.message,
-        })
-        .collect()
 }

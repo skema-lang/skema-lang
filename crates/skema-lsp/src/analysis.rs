@@ -8,15 +8,23 @@
 //! hover is the difference between a server that keeps up and one that
 //! stutters on a large model.
 //!
-//! Everything past the load is `skema-api`'s: the same resolved model, with
-//! the same locations, that the browser editor draws its diagram from.
+//! Everything past the load is `skema_loader::analyze`'s, which answers in
+//! `skema-api`'s types: the same resolved model, with the same locations,
+//! that the browser editor draws its diagram from and that `skema check`
+//! prints. What stays here is what is specific to *being a server* – the
+//! per-root cache, and the translation into LSP's own diagnostic type.
 
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use skema_api::{Diagnostic as ApiDiagnostic, ExportedModel, FileEntry, LocateCtx, dto};
+use skema_api::{Diagnostic as ApiDiagnostic, ExportedModel};
 use skema_loader::{LoadError, LoadedFile, Project};
+
+/// Re-exported rather than reimplemented: how a file is named in everything
+/// that leaves this server is the same question `skema-cli` and `skema-py`
+/// answer, and `skema-loader` is where the paths were interned.
+pub use skema_loader::display_path;
 
 use crate::convert;
 
@@ -42,53 +50,17 @@ impl Analysis {
         read: impl FnMut(&Path) -> io::Result<String>,
     ) -> Result<Self, LoadError> {
         let project = skema_loader::load_with(root, read)?;
-        let inputs = project.input_files();
-        let (model, hir_diagnostics) = skema_hir::analyze(&inputs);
-
-        let entries: Vec<FileEntry<'_>> = project
-            .files
-            .iter()
-            .map(|f| FileEntry {
-                path: display_path(f),
-                src: &f.src,
-            })
-            .collect();
-        let ctx = LocateCtx {
-            files: &entries,
-            with_locations: true,
-        };
-        let exported = dto::export_model(&model, &ctx);
-
-        let mut diagnostics: Vec<ApiDiagnostic> = project
-            .files
-            .iter()
-            .flat_map(|f| {
-                f.parse_diagnostics
-                    .iter()
-                    .map(|d| dto::syntax_diagnostic(&f.src, display_path(f), d))
-            })
-            .collect();
-        diagnostics.extend(hir_diagnostics.iter().filter_map(|d| {
-            let file = project.files.get(d.file.0 as usize)?;
-            Some(dto::hir_diagnostic(&file.src, display_path(file), d))
-        }));
-        // By file, then position: `skema_hir` sorts by span alone, which
-        // interleaves files by coincidental byte offset once more than one
-        // is in play.
-        diagnostics.sort_by(|a, b| {
-            (&a.location.file, a.span.start, a.span.end).cmp(&(
-                &b.location.file,
-                b.span.start,
-                b.span.end,
-            ))
-        });
+        // With locations: a hover card and a diagram both want to know where
+        // an entity is written, and the cost is paid once per edit here
+        // rather than per request.
+        let analysis = skema_loader::analyze(&project, true);
 
         Ok(Self {
             root: root.to_owned(),
             is_own_root,
             project,
-            model: exported,
-            diagnostics,
+            model: analysis.model,
+            diagnostics: analysis.diagnostics,
         })
     }
 
@@ -137,13 +109,6 @@ impl Analysis {
         }
         by_file
     }
-}
-
-/// How a file is named in everything that leaves this server: the absolute
-/// path, as `skema_loader` interned it. The client turns it back into a URI,
-/// so it must be a path a URI can be built from - not a pretty relative one.
-pub fn display_path(file: &LoadedFile) -> &str {
-    file.path.to_str().unwrap_or_default()
 }
 
 fn severity(severity: skema_api::Severity) -> skema_syntax::Severity {

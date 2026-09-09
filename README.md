@@ -39,14 +39,23 @@ echo 'direnv hook fish | source' >> ~/.config/fish/config.fish
 cargo run -p skema-cli -- check examples/generic/project.skema
 cargo run -p skema-cli -- check examples/generic/project.skema --json
 cargo run -p skema-cli -- export --json examples/generic/project.skema > model.json
+cargo run -p skema-cli -- export --json --locations examples/generic/project.skema
 ```
 
 `check` loads the root file along with everything it reaches via `import`
 ("Project membership is reachability-defined", `docs/02`), and reports every
 syntax and semantic error as `path:line:column: severity: text`. `export`
-additionally outputs the resolved model – tables with `Partial`s applied,
-resolved relationships, and cascaded physical names, see
-[`crates/skema-hir/src/model.rs`](crates/skema-hir/src/model.rs).
+additionally writes the resolved model to stdout – tables with `Partial`s
+applied, resolved relationships, and cascaded physical names – with messages
+on stderr, so the redirect above yields nothing but the model.
+
+Both emit `skema-api`'s types
+([`crates/skema-api/src/dto.rs`](crates/skema-api/src/dto.rs)), the same ones
+the language server and the browser editor answer with. `--locations` adds a
+`location` (file, line, 1-based UTF-16 column) to every entity in the model;
+it is off by default because it roughly doubles the output and a consumer
+reading only the structure never looks at it. Diagnostics always carry
+theirs.
 
 ### Language server – `skema-lsp`
 
@@ -79,18 +88,26 @@ import skema
 result = skema.check("project.skema")
 if not result["ok"]:
     for d in result["diagnostics"]:
-        print(f"{d['path']}:{d['line']}:{d['column']}: {d['severity']}: {d['message']}")
+        loc = d["location"]
+        print(f"{loc['file']}:{loc['line']}:{loc['column']}: {d['severity']}: {d['message']}")
 
 model = skema.export("project.skema")["model"]
 for table in model["tables"]:
     print(table["name"], [f["name"] for f in table["fields"]])
+
+# Adds a `location` to every entity, like `skema export --locations`.
+located = skema.export("project.skema", with_locations=True)["model"]
 ```
 
 Build with [`maturin`](https://www.maturin.rs/) from `crates/skema-py`
 (`maturin develop` in an activated venv). Both functions always return a
 `dict`, never an exception for a faulty model – errors are data (`ok: False`
 plus `diagnostics`), not control flow, the same stance as throughout the
-core.
+core. An unreadable root file is one diagnostic in that same list rather
+than a separately shaped error.
+
+The `dict` holds `skema-api`'s structures, so it has the same keys the CLI's
+`--json`, the language server and the browser editor use.
 
 ## Layout
 
@@ -98,11 +115,11 @@ core.
 crates/
   skema-syntax/   ✅ Lexer · parser · AST · spans · diagnostics
   skema-hir/      ✅ Name resolution, rule checking, resolved model
-  skema-loader/   ✅ Loads a root file along with its import graph from the filesystem
+  skema-loader/   ✅ Loads a root file plus its import graph from disk, and analyzes it
   skema-api/      ✅ Editor-facing services: resolved model, Meta offsets, Style blocks, highlighting
   skema-cli/      ✅ Binary `skema`: check / export --json
   skema-lsp/      ✅ Binary `skema-lsp`: language server (stdio)
-  skema-py/       ✅ pyo3 bindings: check() / export()
+  skema-py/       ✅ pyo3 bindings over skema-loader: check() / export()
   skema-wasm/     ✅ wasm-bindgen wrapper around skema-api
 docs/                    Language definition (finished, English)
 examples/                Reference models – also the test corpus for skema-hir
@@ -142,9 +159,17 @@ Within `skema-hir`:
 
 `skema-syntax` and `skema-hir` are **platform-neutral**: no `std::fs`, no
 network, no `tokio`. Files are read by the calling side (`skema-loader`,
-used by `skema-cli` and `skema-lsp`); only `&str` or already-parsed trees are
-passed down. Only this way does the core stay compilable to WASM and
-embeddable in the language server.
+used by `skema-cli`, `skema-py` and `skema-lsp`); only `&str` or
+already-parsed trees are passed down. Only this way does the core stay
+compilable to WASM and embeddable in the language server.
+
+`skema-loader` is the one crate that has both a filesystem and `skema-api`,
+so it is where a project turns into an answer: `analyze` runs the checker
+and returns `skema-api`'s model and diagnostics. All three disk-based front
+ends go through it, which is what makes `skema check --json`,
+`skema.export()` and the language server describe a model identically.
+`skema-api` itself keeps its own in-memory counterpart (`project.rs`) for
+the browser, where there is no filesystem to load from.
 
 `skema-wasm` and `skema-py` each get their **own** crate. Mixing
 `wasm-bindgen` and `pyo3` in the same crate leads to feature-flag chaos.
@@ -185,11 +210,11 @@ dependency.
 | Decision | Why |
 |---|---|
 | Hand-written lexer + recursive-descent parser | Full control over spans and error recovery. Parser generators like `pest` cannot meaningfully recover from syntax errors – the normal case in an IDE. |
-| Byte offsets (`u32`), no line/column | Halves the memory footprint per node; conversion to line/column (terminal) or UTF-16 positions (LSP) happens at exactly one place each: `skema-cli`/`skema-loader::report` and `skema-lsp::diagnostics`. |
+| Byte offsets (`u32`), no line/column | Halves the memory footprint per node. Conversion happens in exactly one place, `skema-api::location`, and counts UTF-16 code units – what JavaScript and the LSP protocol both measure in. `skema-lsp` subtracts 1 for its 0-based positions rather than counting again. |
 | Only `spec`/`import`/`as`/`use` are reserved words | The block keywords (`Table`, `Group`, `Field`, …) are context-dependent, so that `Table Group { … }` remains writable – in an ERP model those are normal table names. |
 | Permissive parser, strict checking phase | The parser accepts any nesting and always produces a tree; "`Lint` belongs in `Project`" is a clear message from `skema-hir` rather than a syntax error that drags down the rest of the file. |
 | `(Ast, Vec<Diagnostic>)` instead of `Result` | An IDE needs *all* errors and *still* a tree. `skema-hir::analyze` carries the principle through: always a model, always a diagnostic list. |
-| `skema-loader` as its own crate | `skema-cli` reads exclusively from disk, `skema-lsp` should use the unsaved editor content for open files. A swappable read function (`load_with`) instead of two copies of the same import-graph logic. |
+| `skema-loader` as its own crate | `skema-cli` and `skema-py` read exclusively from disk, `skema-lsp` should use the unsaved editor content for open files. A swappable read function (`load_with`) instead of three copies of the same import-graph logic – and one `analyze` instead of three copies of "run the checker, then pair every `FileId` back with its path". |
 | `lsp-server` instead of `tower-lsp` | Synchronous, without `tokio`. Fewer Rust concepts at once, and it's the library behind rust-analyzer. |
 | `pyo3` with `abi3-py39` | A built extension runs on Python 3.9 and up, without needing to recompile per Python version. |
 | devenv instead of rustup | On NixOS, `nix profile` doesn't provide `clippy`/`rustfmt`/`rust-analyzer`; devenv pins the entire toolchain per-project in `devenv.lock`. |

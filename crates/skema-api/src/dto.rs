@@ -95,6 +95,21 @@ impl From<skema_syntax::Severity> for Severity {
     }
 }
 
+impl Severity {
+    /// The same word `serde` writes for this variant (see the
+    /// `rename_all` above), for the places that render a diagnostic as
+    /// text rather than as JSON – `skema-cli`'s terminal line. Written
+    /// once here so the printed word and the serialized one cannot drift.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Info => "info",
+            Self::Hint => "hint",
+        }
+    }
+}
+
 /// Unlike the model entities below, a diagnostic always gets a `location`:
 /// the list is always small, and a diagnostic without a human position is
 /// nearly useless to an editor. `withLocations` only gates the (potentially
@@ -130,6 +145,29 @@ pub fn syntax_diagnostic(src: &str, filename: &str, d: &skema_syntax::Diagnostic
 
 pub fn hir_diagnostic(src: &str, filename: &str, d: &skema_hir::Diagnostic) -> Diagnostic {
     diagnostic(src, filename, d.span, d.severity.into(), &d.message)
+}
+
+/// A diagnostic about a file rather than about a place in one – "this file
+/// could not be read", which has no span because nothing was parsed.
+///
+/// Points at `1:1` with an empty span: a reader looks at the top of the
+/// file first, and an empty range is the honest answer to "which characters
+/// is this about". Kept here rather than hand-built by each caller so that
+/// such a message is the same `Diagnostic` as every other one, and no front
+/// end grows a second error shape alongside its diagnostics list.
+pub fn synthetic_diagnostic(filename: &str, severity: Severity, message: &str) -> Diagnostic {
+    Diagnostic {
+        span: Span { start: 0, end: 0 },
+        location: Location {
+            file: filename.to_owned(),
+            line: 1,
+            column: 1,
+            end_line: 1,
+            end_column: 1,
+        },
+        severity,
+        message: message.to_owned(),
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
