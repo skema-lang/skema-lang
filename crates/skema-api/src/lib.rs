@@ -41,10 +41,12 @@
 //! stance (`skema_syntax::parse`/`skema_hir::analyze` never return one
 //! either).
 
+pub mod context;
 pub mod dto;
 pub mod highlight;
 pub mod location;
 pub mod meta;
+pub mod position;
 pub mod project;
 pub mod style;
 
@@ -53,6 +55,7 @@ use skema_hir::{FileId, InputFile, catalog, model};
 #[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 
+pub use context::{ContextKind, CursorContext, cursor_context};
 pub use dto::{
     CheckResult, Diagnostic, ExportResult, ExportedEnum, ExportedEnumEntry, ExportedField,
     ExportedFlag, ExportedGroup, ExportedGroupMember, ExportedIndex, ExportedModel,
@@ -65,6 +68,7 @@ pub use meta::{
     EnumMeta, EnumMetas, GroupMeta, GroupMetas, MetaEntry, TableMeta, TableMetas, Utf16Range,
     enum_metas, group_metas, table_metas,
 };
+pub use position::{DeclKind, POSITION_KEY, TextEdit, position_edit, read_position};
 pub use project::{ProjectFile, ProjectFileStatus, ProjectInput, ProjectResult, analyze_project};
 pub use style::{StyleBlock, StyleBlocks, StyleScope, style_blocks};
 

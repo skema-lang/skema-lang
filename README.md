@@ -2,8 +2,8 @@
 
 A DSL for describing entity-relationship models – with a parser, semantic
 checking, a CLI, a language server, and Python bindings. The core is written
-in Rust and is platform-neutral, so it can also be used from WASM (planned,
-see [Roadmap](#roadmap)).
+in Rust and is platform-neutral, so the same frontend also runs in a browser
+as WebAssembly.
 
 Model files use the **`.skema`** extension; the language definition lives in
 [`docs/`](docs/README.md), reference models in [`examples/`](examples/).
@@ -50,14 +50,26 @@ resolved relationships, and cascaded physical names, see
 
 ### Language server – `skema-lsp`
 
-Stdio-based, for VSCode extensions and similar editor integrations. Reports
-syntax and semantic errors live while typing (`textDocument/didOpen` /
-`didChange` / `didClose`, full document synchronization). If an editor opens
-a file that is not the root of its project, it lacks `mode` and `dialect`
-from the `Project` block – that is a property of the language itself
-(`docs/02`), not a limitation of the server. Details and open points are in
-the module documentation of
-[`crates/skema-lsp/src/main.rs`](crates/skema-lsp/src/main.rs).
+Stdio-based, for VSCode extensions and similar editor integrations. Serves
+live diagnostics, hover, go-to-definition, completion, semantic tokens and
+the document outline — everything from `skema-api`, so an editor and the
+browser editor answer the same questions the same way.
+
+It **elects the root file** rather than assuming one: every `.skema` file in
+the workspace that declares a `Project` block is a candidate, and a file
+belongs to the candidate whose import graph reaches it (`docs/02`, "project
+membership is reachability-defined"). A file no candidate reaches is
+analyzed as its own root, and the client is told so — it then lacks `mode`
+and `dialect`, which is a property of the language, not a limitation of the
+server.
+
+Three things a live ER diagram needs have no LSP equivalent and are served
+as custom `skema/` messages ([`protocol.rs`](crates/skema-lsp/src/protocol.rs)):
+`skema/model` (the resolved model plus `Meta` offsets and `Style` blocks),
+`skema/positionEdit` (the smallest edit that stores a dragged position), and
+a `skema/modelChanged` notification. They carry `skema-api`'s own types, so
+a client can type them with the `.d.ts` that `skema-wasm` generates instead
+of a second, hand-written schema.
 
 ### Python bindings – `skema`
 
@@ -162,8 +174,8 @@ dependency.
 | 7 | **Python bindings** – `check()` / `export()` | ✅ |
 | 8 | **JSON export** – serde serialization of the model | ✅ |
 | 9 | **Imports** – module graph, cycle detection | ✅ |
-| 10 | **LSP features** – hover, go-to-definition, autocompletion | ⬜ |
-| 11 | **Workspace-wide root file detection** in the LSP (instead of "open file = root") | ⬜ |
+| 10 | **LSP features** – hover, go-to-definition, autocompletion | ✅ |
+| 11 | **Workspace-wide root file detection** in the LSP (instead of "open file = root") | ✅ |
 | 12 | **VSCode extension** – TS client + bundled binary | ⬜ |
 | 13 | **WASM** – parser in the browser | ✅ |
 | 14 | **Formatter** – requires a lossless syntax tree (`rowan`) | ⬜ |
@@ -200,8 +212,12 @@ language itself hasn't decided on yet.
 - The built-in type catalog for `dialect = postgres/mysql/oracledb` is
   deliberately not maintained (`docs/13`) – unknown type names under these
   dialects produce only a warning, not an error.
-- `skema-lsp` so far offers only diagnostics, no hover, no autocompletion,
-  no go-to-definition, and treats every opened file as the project root
-  instead of finding the real root file in the workspace.
+- `skema-lsp`'s go-to-definition resolves a name by the file's `Document`
+  name and its `import … as` aliases rather than through `skema-hir`'s own
+  name resolution. A wrong guess costs a jump that does not happen, never a
+  wrong diagnostic - but it is a second, simpler answer to a question the
+  checker already answers properly.
+- The root election re-elects on save, not on every keystroke: an `import`
+  typed but not yet saved does not move a file into a project.
 - No lossless syntax tree. A formatter that preserves comments will later
   need `rowan` instead of the current AST.

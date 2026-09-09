@@ -24,8 +24,8 @@ use crate::location::Utf16Offsets;
 macro_rules! highlight_classes {
     ($($name:ident = $text:literal),* $(,)?) => {
         #[repr(u32)]
-        #[derive(Clone, Copy)]
-        enum Class {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub(crate) enum Class {
             $($name,)*
         }
 
@@ -104,12 +104,30 @@ fn class_of_semantic(kind: SemanticKind) -> Class {
 /// fast and `skema-lsp` already re-parses in full on every `didChange`
 /// (`TextDocumentSyncKind::FULL`) – the same precedent applies here.
 pub fn highlight_tokens(source: &str) -> Vec<u32> {
+    let offsets = Utf16Offsets::new(source);
+    let classified = classified(source);
+
+    let mut out = Vec::with_capacity(classified.len() * 3);
+    for (class, span) in classified {
+        push_span(&mut out, &offsets, span, class as u32);
+    }
+    out
+}
+
+/// The merged classification itself, in **byte** spans – what
+/// [`highlight_tokens`] turns into UTF-16 triples for an editor, and what
+/// [`crate::context`] reads to tell where the caret is.
+///
+/// Shared rather than done twice: the merge below is the only place that
+/// knows a semantic entry wins over a lexical one, and completion asking
+/// the question a second way is how the two would come to disagree about
+/// what a token is.
+pub(crate) fn classified(source: &str) -> Vec<(Class, Span)> {
     let tokens = skema_syntax::tokenize(source);
     let (ast, _) = skema_syntax::parse(source);
     let semantic = skema_syntax::classify(&ast);
-    let offsets = Utf16Offsets::new(source);
 
-    let mut out = Vec::with_capacity(tokens.len() * 3);
+    let mut out = Vec::with_capacity(tokens.len());
     let mut semantic = semantic.into_iter().peekable();
     for tok in tokens {
         let Some(fallback) = class_of_token(tok.kind) else {
@@ -122,7 +140,7 @@ pub fn highlight_tokens(source: &str) -> Vec<u32> {
             Some((_, kind)) => class_of_semantic(kind),
             None => fallback,
         };
-        push_span(&mut out, &offsets, tok.span, class as u32);
+        out.push((class, tok.span));
     }
     out
 }
