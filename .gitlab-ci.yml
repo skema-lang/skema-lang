@@ -10,16 +10,30 @@
 ## Pipeline sources: merge requests, the default branch, and tags.
 ## - MRs / default branch : devenv test (fmt+clippy+test), audit, coverage,
 ##                           build (fast feedback loop)
+## - default branch only   : (re-)publish the documentation to GitLab Pages,
+##                           then work out the next version and push its tag
 ## - tags (vX.Y.Z)         : additionally publish binaries + the Python wheel
 ##                           to the Package Registry, publish the library
-##                           crates to the Cargo registry, and push a
-##                           container image
-## - default branch only   : (re-)publish the documentation to GitLab Pages
+##                           crates to the Cargo registry, push a container
+##                           image, and trigger the editor and VSCode repos
+##
+## The release is therefore a chain, not a button: a green default branch
+## tags itself (`release`), the tag builds and publishes everything, and the
+## two downstream repos are handed that tag so a single merge ends with a new
+## version of all three projects. Pushing a tag by hand does exactly the same
+## thing from the second step on — the automation adds a trigger, not a
+## parallel release path.
 ##
 ## Prerequisites in the GitLab project settings:
 ##   - Container Registry enabled (for the `docker-build` job)
 ##   - GitLab >= 16.x for the Cargo registry (`publish-cargo-registry`); if
 ##     unavailable, drop that job and keep the generic-package upload
+##   - A `RELEASE_TOKEN` CI variable: a project access token with
+##     `write_repository`, masked and protected. `CI_JOB_TOKEN` cannot push,
+##     so the `release` job has no way to commit the bump without it.
+##   - The two downstream projects must allow this one to trigger them:
+##     Settings → CI/CD → Job token permissions → add `skema-language/skema`
+##     to their allowlist. Without it the `trigger-*` jobs get a 404.
 
 workflow:
   rules:
@@ -32,6 +46,11 @@ stages:
   - build
   - package
   - pages
+  # Both of these are the tail of a release, but they never run in the same
+  # pipeline: `release` belongs to a default-branch run and produces the tag,
+  # `downstream` belongs to the tag run that the tag then starts.
+  - release
+  - downstream
 
 variables:
   CARGO_HOME: ${CI_PROJECT_DIR}/.cargo-home
@@ -56,13 +75,28 @@ variables:
 # rather than compiling from source, so it's a download, not a build. If
 # pipeline latency becomes a problem, the next step is a custom runner image
 # with Nix preinstalled and a persistent /nix.
+#
+# devenv itself is installed from the revision this project already pins,
+# read out of devenv.lock. `nix profile install nixpkgs#devenv` — what this
+# used to be — resolves through the flake registry to whatever nixpkgs-
+# unstable happens to ship that day, which quietly made CI the one part of
+# the setup that was not pinned, in a project whose entire premise is that
+# devenv.lock pins the toolchain for everyone. A devenv release that changes
+# how `devenv test` behaves would land in CI unannounced and turn the
+# pipeline red against an unchanged commit. Deriving the revision from the
+# lock instead of hardcoding it keeps `devenv update` in charge of both.
 .devenv_setup: &devenv_setup
   - apt-get update -qq
   - apt-get install -y --no-install-recommends curl xz-utils ca-certificates git >/dev/null
   - curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix -o /tmp/install-nix.sh
   - sh /tmp/install-nix.sh install linux --init none --no-confirm
   - . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-  - nix profile install nixpkgs#devenv
+  - |
+    DEVENV_PIN=$(nix eval --impure --raw --expr \
+      'let n = (builtins.fromJSON (builtins.readFile ./devenv.lock)).nodes.nixpkgs.locked;
+       in "${n.owner}/${n.repo}/${n.rev}"')
+    echo "devenv from github:$DEVENV_PIN"
+    nix profile install "github:$DEVENV_PIN#devenv"
 
 .rust_cache: &rust_cache
   - key:
@@ -194,6 +228,34 @@ build-python-wheel:
       - dist/*.whl
     expire_in: 1 week
 
+# The browser build, for skemaeditor to vendor.
+#
+# That repo commits `src/wasm/generated/` so it can deploy from a Node-only
+# pipeline with no Rust in sight, and regenerating it has until now been a
+# local step against a sibling checkout (its scripts/build-wasm.sh). That is
+# fine for a hand-driven release and useless for an automatic one: the editor
+# would be re-tagged around a language version it does not actually contain.
+# Publishing the bundle here gives that repo the same deal skemavscode
+# already has for `skema-lsp` — fetch the release artifact at release time,
+# rather than needing a toolchain or a neighbouring directory.
+build-wasm-package:
+  stage: build
+  cache: *rust_cache
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - devenv shell -- bash -c "cd crates/skema-wasm && wasm-pack build --target web --release"
+    - mkdir -p dist
+    # Exactly the four files scripts/build-wasm.sh vendors, so the fetching
+    # side can unpack the archive straight into src/wasm/generated/.
+    - |
+      tar czf dist/skema-wasm.tar.gz -C crates/skema-wasm/pkg \
+        skema_wasm.js skema_wasm.d.ts skema_wasm_bg.wasm skema_wasm_bg.wasm.d.ts
+  artifacts:
+    paths:
+      - dist/skema-wasm.tar.gz
+    expire_in: 1 week
+
 # --------------------------------------------------------------------------
 # package (tags only)
 # --------------------------------------------------------------------------
@@ -232,14 +294,17 @@ publish-generic-package:
       artifacts: true
     - job: build-python-wheel
       artifacts: true
+    - job: build-wasm-package
+      artifacts: true
   rules:
     - if: $CI_COMMIT_TAG
   script:
     # `target/release/*` are this runner's own (glibc) build, kept as the
     # plain `skema`/`skema-lsp` names they have always had. The
-    # `dist/skema-lsp-<triple>` ones are what the VSCode extension fetches.
+    # `dist/skema-lsp-<triple>` ones are what the VSCode extension fetches,
+    # and `dist/skema-wasm.tar.gz` is what skemaeditor vendors.
     - |
-      for f in target/release/skema target/release/skema-lsp dist/skema-lsp-* dist/*.whl; do
+      for f in target/release/skema target/release/skema-lsp dist/skema-lsp-* dist/*.whl dist/skema-wasm.tar.gz; do
         [ -e "$f" ] || continue
         name=$(basename "$f")
         curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
@@ -302,3 +367,73 @@ pages:
   artifacts:
     paths:
       - public
+
+# --------------------------------------------------------------------------
+# release (default branch only)
+# --------------------------------------------------------------------------
+
+# Works out the next version from the commits since the last tag, writes it
+# into Cargo.toml/Cargo.lock, and pushes the tag. That tag starts the pipeline
+# that actually publishes, so this job deliberately builds nothing itself.
+#
+# No devenv here: scripts/release.sh edits the two manifests with sed and awk
+# precisely so this stays a git-only job, instead of installing Nix and a Rust
+# toolchain to change eight version lines.
+release:
+  stage: release
+  image: debian:bookworm-slim
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends git ca-certificates >/dev/null
+  variables:
+    # The bump is derived from `git log <last tag>..HEAD`, and the default
+    # shallow clone has neither the tags nor the history to derive it from.
+    GIT_DEPTH: 0
+    GIT_STRATEGY: clone
+  rules:
+    # The one rule that keeps this from feeding itself: the job pushes a
+    # commit to the branch it watches. Matching its own message is what breaks
+    # the loop. `[skip ci]` would be the usual trick and is wrong here — the
+    # tag points at that same commit, so GitLab would skip the tag pipeline as
+    # well, which is the one that publishes.
+    - if: $CI_COMMIT_MESSAGE =~ /^chore\(release\):/
+      when: never
+    # Never off a downstream trigger, only off a real push to the branch.
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
+  script:
+    - scripts/release.sh
+
+# --------------------------------------------------------------------------
+# downstream (tags only)
+# --------------------------------------------------------------------------
+
+# Hands the freshly published tag to the two repos that consume it. Both are
+# `strategy: depend`, so this pipeline stays red if theirs goes red — a
+# release that only half-shipped should not look green here.
+#
+# Note what is *not* here: neither project is rebuilt against an unreleased
+# language. They each fetch a published artifact of this exact tag — the
+# `skema-lsp` binaries for the extension, the WASM bundle for the editor —
+# which is why these jobs sit in a stage after `package` rather than beside
+# it. Triggering before the upload finished would send them shopping for
+# something that is not on the shelf yet.
+.trigger: &trigger
+  stage: downstream
+  rules:
+    - if: $CI_COMMIT_TAG
+  variables:
+    SKEMA_RELEASE: $CI_COMMIT_TAG
+
+trigger-vscode:
+  <<: *trigger
+  trigger:
+    project: skema-language/skema-vscode
+    branch: main
+    strategy: depend
+
+trigger-editor:
+  <<: *trigger
+  trigger:
+    project: skema-language/skema-editor
+    branch: main
+    strategy: depend
