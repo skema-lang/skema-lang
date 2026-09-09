@@ -32,9 +32,13 @@ fresh() {
   git clone --quiet "$ROOT" "$R"
   G remote remove origin
   mkdir -p "$R/scripts"
+  # Pick up uncommitted edits to the script under test, so a run here says
+  # something about the working tree rather than about the last commit.
   cp "$ROOT/scripts/release.sh" "$R/scripts/release.sh"
   G add -A
-  G commit -qm "test: baseline"
+  # --allow-empty: with the script already committed there is nothing to
+  # stage, and the baseline only has to exist for the tag to point at.
+  G commit -q --allow-empty -m "test: baseline"
   G tag -a v0.1.0 -m v0.1.0
 }
 

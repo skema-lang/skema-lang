@@ -205,6 +205,46 @@ dependency.
 | 13 | **WASM** – parser in the browser | ✅ |
 | 14 | **Formatter** – requires a lossless syntax tree (`rowan`) | ⬜ |
 
+## Releasing
+
+A release is a chain, and the only thing that starts it is a green default
+branch:
+
+1. `release` (default branch) works out the next version from the commits
+   since the last tag, writes it into `Cargo.toml`/`Cargo.lock`, and pushes
+   `vX.Y.Z`. It builds nothing.
+2. The tag pipeline publishes: binaries and the Python wheel to the Package
+   Registry, the library crates to the Cargo registry, the container image,
+   and — for the two downstream repos — the per-platform `skema-lsp` binaries
+   and the browser WASM bundle.
+3. It then triggers [skema-vscode](https://gitlab.com/skema-language/skema-vscode)
+   and [skema-editor](https://gitlab.com/skema-language/skema-editor), which
+   fetch *that tag's* artifacts, commit them, and tag themselves. Both are
+   `strategy: depend`, so a downstream failure shows up here.
+
+Pushing a tag by hand does the same thing from step 2 on; the automation adds
+a trigger, not a second release path.
+
+**How the version is picked.** Conventional-commit markers when the history
+has them, `patch` when it does not — this repo's log is not written that way
+today, so the honest default is the smallest step. `feat:` earns a minor, a
+`!` or a `BREAKING CHANGE:` trailer earns a major. Pre-1.0 that major is
+capped at a minor: reaching 1.0 should be a decision someone makes, not
+something a `!` does by accident.
+
+```bash
+scripts/release.sh --dry-run     # what would happen, touching nothing
+scripts/release-test.sh          # the bump logic's own tests
+```
+
+Override the derivation by running the pipeline manually with `BUMP` set to
+`major`/`minor`/`patch`, or `RELEASE_VERSION=1.0.0` to name one outright.
+
+**What CI needs.** A `RELEASE_TOKEN` (project access token, `write_repository`,
+masked and protected) in each of the three projects — `CI_JOB_TOKEN` cannot
+push. And both downstream projects must allow this one to trigger them, under
+Settings → CI/CD → Job token permissions.
+
 ## Technical decisions
 
 | Decision | Why |

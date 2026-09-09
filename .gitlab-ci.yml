@@ -125,6 +125,29 @@ check:
   script:
     - devenv test
 
+# The bump logic, checked before it can mis-tag anything. This is the only
+# job here that runs on plain git rather than devenv: scripts/release.sh is
+# deliberately toolchain-free, and so is its test.
+#
+# Worth a job of its own because nothing else would catch it. A wrong version
+# is not a build failure — it is a wrong tag pushed to three repositories and
+# a package registry, and taking that back costs far more than the minute
+# this takes.
+release-test:
+  stage: check
+  image: debian:bookworm-slim
+  needs: []
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends git ca-certificates >/dev/null
+  variables:
+    # The suite clones this checkout and tags the clone; a shallow one has no
+    # history to derive a bump from.
+    GIT_DEPTH: 0
+    GIT_STRATEGY: clone
+  script:
+    - scripts/release-test.sh
+
 # Advisory only: dependency vulnerabilities shouldn't block every push, but
 # should be visible. Flip `allow_failure` to false once the crate graph has
 # been swept once and the team wants this to gate merges.
