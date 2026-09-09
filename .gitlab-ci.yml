@@ -210,7 +210,10 @@ build:
 # The language server, per platform, for the VSCode extension to bundle.
 #
 # Cross-compiled from the same Linux runner as everything else, with the
-# targets and cross linkers pinned in devenv.nix:
+# targets and cross linkers pinned in devenv.nix's `cross` profile — the one
+# job here that passes `--profile cross`, because it is the only one that
+# cross-compiles. Every other devenv job builds for the host and would
+# otherwise pay for two foreign stdenvs it never invokes:
 #
 #   * **linux** is built against **musl and linked statically**, so one
 #     binary runs on every distribution regardless of its glibc. A
@@ -235,7 +238,7 @@ build-release-binaries:
           - x86_64-unknown-linux-musl
           - x86_64-pc-windows-gnu
   script:
-    - devenv shell -- cargo build --release -p skema-lsp --target "$TARGET"
+    - devenv --profile cross shell -- cargo build --release -p skema-lsp --target "$TARGET"
     - mkdir -p dist
     # Named by target triple: the extension's fetch script asks for exactly
     # this name, and one unqualified `skema-lsp` per tag could only ever be

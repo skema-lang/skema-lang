@@ -24,33 +24,15 @@
       "llvm-tools" # needed by `cargo llvm-cov` (test coverage)
     ];
     # `crates/skema-wasm` compiles the core to WASM for the browser.
+    #
+    # The two *release* targets (musl, windows-gnu) deliberately do not live
+    # here — see the `cross` profile at the bottom of this file.
     targets = [
       "wasm32-unknown-unknown"
-      # Release targets for the VSCode extension's bundled server. musl
-      # links statically, so one Linux binary runs on every distribution
-      # regardless of its glibc.
-      "x86_64-unknown-linux-musl"
-      "x86_64-pc-windows-gnu"
     ];
   };
 
-  # Cross linkers for the release targets above. Rust can *compile* for a
-  # target on its own; linking needs that platform's toolchain.
-  env = {
-    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER =
-      "${pkgs.pkgsCross.musl64.stdenv.cc}/bin/x86_64-unknown-linux-musl-cc";
-    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER =
-      "${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/x86_64-w64-mingw32-cc";
-    # Rust's windows-gnu target links against a static pthreads that the
-    # mingw compiler does not carry itself.
-    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS =
-      "-L ${pkgs.pkgsCross.mingwW64.windows.mcfgthreads}/lib -L ${pkgs.pkgsCross.mingwW64.windows.pthreads}/lib";
-  };
-
   packages = [
-    pkgs.pkgsCross.musl64.stdenv.cc
-    pkgs.pkgsCross.mingwW64.stdenv.cc
-
     # Snapshot tests. Once the parser is in place, this is *the* tool for
     # testing AST output without typing out expected trees by hand.
     pkgs.cargo-insta
@@ -116,4 +98,54 @@
     echo "  wasm-test – runs skema-wasm's tests for real, under wasm32"
     echo "  cargo run -p skema-cli -- check <file.skema>"
   '';
+
+  # ---------------------------------------------------------------------------
+  # cross – the release toolchain, off by default
+  # ---------------------------------------------------------------------------
+  # `devenv --profile cross shell -- cargo build --target …`
+  #
+  # Only `build-release-binaries` (tags only) cross-compiles; fmt, clippy,
+  # tests, coverage, audit, the wheel and the wasm bundle all build for the
+  # host. Keeping the cross toolchain in the default shell made every one of
+  # those jobs evaluate and realise two foreign stdenvs — a full mingw-w64
+  # and a full musl64 GCC — to run `cargo test`.
+  #
+  # That is not merely slow. `pkgs.pkgsCross.mingwW64` drags nixpkgs' Windows
+  # tree into the evaluation, and that tree adds plain source files (e.g.
+  # `win-dll-link.sh`) to the store *during evaluation*. Those additions have
+  # no GC root of their own, and on a store where one of them is missing the
+  # evaluation dies with `path '/nix/store/…-win-dll-link.sh' is not valid`
+  # long before a single test has run — which is exactly how `check` failed
+  # in CI while it kept working on a developer machine whose store had the
+  # file from an earlier evaluation.
+  #
+  # A profile is the smallest fix that keeps the cross setup declarative and
+  # pinned: the jobs that need it ask for it, the jobs that don't never
+  # evaluate it.
+  profiles.cross.module = {
+    # musl links statically, so one Linux binary runs on every distribution
+    # regardless of its glibc.
+    languages.rust.targets = [
+      "x86_64-unknown-linux-musl"
+      "x86_64-pc-windows-gnu"
+    ];
+
+    # Cross linkers for the targets above. Rust can *compile* for a target on
+    # its own; linking needs that platform's toolchain.
+    env = {
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER =
+        "${pkgs.pkgsCross.musl64.stdenv.cc}/bin/x86_64-unknown-linux-musl-cc";
+      CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER =
+        "${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/x86_64-w64-mingw32-cc";
+      # Rust's windows-gnu target links against a static pthreads that the
+      # mingw compiler does not carry itself.
+      CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS =
+        "-L ${pkgs.pkgsCross.mingwW64.windows.mcfgthreads}/lib -L ${pkgs.pkgsCross.mingwW64.windows.pthreads}/lib";
+    };
+
+    packages = [
+      pkgs.pkgsCross.musl64.stdenv.cc
+      pkgs.pkgsCross.mingwW64.stdenv.cc
+    ];
+  };
 }
