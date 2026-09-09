@@ -131,6 +131,50 @@ build:
       - target/release/skema-lsp
     expire_in: 1 week
 
+# The language server, per platform, for the VSCode extension to bundle.
+#
+# Cross-compiled from the same Linux runner as everything else, with the
+# targets and cross linkers pinned in devenv.nix:
+#
+#   * **linux** is built against **musl and linked statically**, so one
+#     binary runs on every distribution regardless of its glibc. A
+#     glibc-linked binary built here would refuse to start on anything older
+#     than this runner's Debian.
+#   * **windows** uses the **GNU** ABI, because that is what cross-compiles
+#     from Linux. An MSVC build would need a Windows runner and buys nothing.
+#
+# **macOS is missing, and cannot be added from here**: cross-compiling for
+# Darwin needs the Apple SDK, which is not redistributable. It needs a macOS
+# runner (GitLab's SaaS macOS runners, or a self-hosted one), and until there
+# is one, macOS users of the extension run a `cargo install`ed server via
+# `skema.serverPath` - the extension is built for exactly that fallback.
+build-release-binaries:
+  stage: build
+  cache: *rust_cache
+  rules:
+    - if: $CI_COMMIT_TAG
+  parallel:
+    matrix:
+      - TARGET:
+          - x86_64-unknown-linux-musl
+          - x86_64-pc-windows-gnu
+  script:
+    - devenv shell -- cargo build --release -p skema-lsp --target "$TARGET"
+    - mkdir -p dist
+    # Named by target triple: the extension's fetch script asks for exactly
+    # this name, and one unqualified `skema-lsp` per tag could only ever be
+    # one platform's.
+    - |
+      if [ "$TARGET" = "x86_64-pc-windows-gnu" ]; then
+        cp "target/$TARGET/release/skema-lsp.exe" "dist/skema-lsp-$TARGET.exe"
+      else
+        cp "target/$TARGET/release/skema-lsp" "dist/skema-lsp-$TARGET"
+      fi
+  artifacts:
+    paths:
+      - dist/skema-lsp-*
+    expire_in: 1 week
+
 build-python-wheel:
   stage: build
   cache: *rust_cache
@@ -184,13 +228,19 @@ publish-generic-package:
   needs:
     - job: build
       artifacts: true
+    - job: build-release-binaries
+      artifacts: true
     - job: build-python-wheel
       artifacts: true
   rules:
     - if: $CI_COMMIT_TAG
   script:
+    # `target/release/*` are this runner's own (glibc) build, kept as the
+    # plain `skema`/`skema-lsp` names they have always had. The
+    # `dist/skema-lsp-<triple>` ones are what the VSCode extension fetches.
     - |
-      for f in target/release/skema target/release/skema-lsp dist/*.whl; do
+      for f in target/release/skema target/release/skema-lsp dist/skema-lsp-* dist/*.whl; do
+        [ -e "$f" ] || continue
         name=$(basename "$f")
         curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/skema/${CI_COMMIT_TAG}/${name}"

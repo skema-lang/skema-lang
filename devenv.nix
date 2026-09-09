@@ -24,10 +24,33 @@
       "llvm-tools" # needed by `cargo llvm-cov` (test coverage)
     ];
     # `crates/skema-wasm` compiles the core to WASM for the browser.
-    targets = [ "wasm32-unknown-unknown" ];
+    targets = [
+      "wasm32-unknown-unknown"
+      # Release targets for the VSCode extension's bundled server. musl
+      # links statically, so one Linux binary runs on every distribution
+      # regardless of its glibc.
+      "x86_64-unknown-linux-musl"
+      "x86_64-pc-windows-gnu"
+    ];
+  };
+
+  # Cross linkers for the release targets above. Rust can *compile* for a
+  # target on its own; linking needs that platform's toolchain.
+  env = {
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER =
+      "${pkgs.pkgsCross.musl64.stdenv.cc}/bin/x86_64-unknown-linux-musl-cc";
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER =
+      "${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/x86_64-w64-mingw32-cc";
+    # Rust's windows-gnu target links against a static pthreads that the
+    # mingw compiler does not carry itself.
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS =
+      "-L ${pkgs.pkgsCross.mingwW64.windows.mcfgthreads}/lib -L ${pkgs.pkgsCross.mingwW64.windows.pthreads}/lib";
   };
 
   packages = [
+    pkgs.pkgsCross.musl64.stdenv.cc
+    pkgs.pkgsCross.mingwW64.stdenv.cc
+
     # Snapshot tests. Once the parser is in place, this is *the* tool for
     # testing AST output without typing out expected trees by hand.
     pkgs.cargo-insta

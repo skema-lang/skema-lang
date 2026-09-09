@@ -176,7 +176,7 @@ dependency.
 | 9 | **Imports** – module graph, cycle detection | ✅ |
 | 10 | **LSP features** – hover, go-to-definition, autocompletion | ✅ |
 | 11 | **Workspace-wide root file detection** in the LSP (instead of "open file = root") | ✅ |
-| 12 | **VSCode extension** – TS client + bundled binary | ⬜ |
+| 12 | **VSCode extension** – TS client + bundled binary | ✅ ([skema-vscode](https://gitlab.com/skema-language/skema-vscode)) |
 | 13 | **WASM** – parser in the browser | ✅ |
 | 14 | **Formatter** – requires a lossless syntax tree (`rowan`) | ⬜ |
 
