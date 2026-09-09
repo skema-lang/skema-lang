@@ -240,10 +240,26 @@ scripts/release-test.sh          # the bump logic's own tests
 Override the derivation by running the pipeline manually with `BUMP` set to
 `major`/`minor`/`patch`, or `RELEASE_VERSION=1.0.0` to name one outright.
 
-**What CI needs.** A `RELEASE_TOKEN` (project access token, `write_repository`,
-masked and protected) in each of the three projects — `CI_JOB_TOKEN` cannot
-push. And both downstream projects must allow this one to trigger them, under
+**What CI needs.** A `RELEASE_TOKEN` (masked and protected) in each of the
+three projects — `CI_JOB_TOKEN` cannot push. Use a personal access token with
+the `write_repository` scope, from an account allowed to push to the protected
+default branch. Not a *project* access token: those are Premium on GitLab.com
+for projects that live in a group, and these three do. A deploy key with write
+access is the person-independent alternative, at the cost of SSH setup in the
+job. Both downstream projects must also allow this one to trigger them, under
 Settings → CI/CD → Job token permissions.
+
+Everything in the chain is Free-tier: multi-project triggering left Premium in
+12.8, and only the pipeline *graph* that draws it is paid.
+
+**No Cargo registry.** Publishing the library crates to GitLab's Cargo
+registry is not wired up, because GitLab has not shipped it — the feature flag
+is not rolled out on GitLab.com and the `cargo publish` flow is still open on
+[gitlab-org/gitlab#33060](https://gitlab.com/gitlab-org/gitlab/-/work_items/33060).
+That is a maturity gap, not a tier one. The binaries, the wheel and the WASM
+bundle all go to the generic package registry instead, which is what the
+downstream repos consume; see the note in `.gitlab-ci.yml` for what to restore
+when it does ship.
 
 ## Technical decisions
 

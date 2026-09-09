@@ -26,14 +26,20 @@
 ##
 ## Prerequisites in the GitLab project settings:
 ##   - Container Registry enabled (for the `docker-build` job)
-##   - GitLab >= 16.x for the Cargo registry (`publish-cargo-registry`); if
-##     unavailable, drop that job and keep the generic-package upload
-##   - A `RELEASE_TOKEN` CI variable: a project access token with
-##     `write_repository`, masked and protected. `CI_JOB_TOKEN` cannot push,
-##     so the `release` job has no way to commit the bump without it.
+##   - A `RELEASE_TOKEN` CI variable, masked and protected. `CI_JOB_TOKEN`
+##     cannot push, so the `release` job cannot commit the bump without one.
+##     Use a **personal access token** with the `write_repository` scope, from
+##     an account that may push to the protected default branch — *not* a
+##     project access token: those are Premium on GitLab.com for projects in a
+##     group, and this project sits in `skema-language`. A deploy key with
+##     write access works too and is not tied to a person, at the cost of
+##     setting up SSH in the job.
 ##   - The two downstream projects must allow this one to trigger them:
 ##     Settings → CI/CD → Job token permissions → add `skema-language/skema`
 ##     to their allowlist. Without it the `trigger-*` jobs get a 404.
+##     (Multi-project triggering itself is Free — it moved out of Premium in
+##     12.8. Only the *pipeline graph* that visualises it is Premium, which
+##     costs nothing here.)
 
 workflow:
   rules:
@@ -334,28 +340,39 @@ publish-generic-package:
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/skema/${CI_COMMIT_TAG}/${name}"
       done
 
-# Publishes the library crates (skema-syntax, skema-hir, skema-loader) to
-# GitLab's own Cargo registry so other projects on this GitLab instance can
-# depend on them via `cargo add --registry gitlab skema-syntax`.
-publish-cargo-registry:
-  stage: package
-  rules:
-    - if: $CI_COMMIT_TAG
-  script:
-    - mkdir -p "$CARGO_HOME"
-    - |
-      cat > "$CARGO_HOME/config.toml" <<EOF
-      [registries.gitlab]
-      index = "sparse+${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/cargo/config.json/"
-      EOF
-    - export CARGO_REGISTRIES_GITLAB_TOKEN="Bearer ${CI_JOB_TOKEN}"
-    # --no-verify: cargo's default verify step rebuilds the packaged crate
-    # against the registry copy of its path dependencies, which isn't
-    # indexed yet a few seconds after `cargo publish` returns. Publishing in
-    # dependency order and skipping verify sidesteps that race.
-    - devenv shell -- cargo publish --registry gitlab --no-verify -p skema-syntax
-    - devenv shell -- cargo publish --registry gitlab --no-verify -p skema-hir
-    - devenv shell -- cargo publish --registry gitlab --no-verify -p skema-loader
+# The Cargo registry job that used to live here is gone, not disabled: on
+# GitLab.com it cannot work yet, and a job that always fails teaches the team
+# to ignore red pipelines.
+#
+# It failed with `failed to update registry 'gitlab': config.json not found`.
+# Three separate things were wrong, and only the first is a typo:
+#
+#   1. The index URL ended in `/packages/cargo/config.json/`. A sparse index
+#      is a *base* URL — cargo appends `config.json` itself, so it was asking
+#      for `.../cargo/config.json/config.json`. The base is `/packages/cargo/`.
+#   2. GitLab has not shipped the Cargo registry. The feature flag is not
+#      rolled out on GitLab.com and the end-to-end `cargo publish` flow is
+#      still unchecked on the tracking issue (gitlab-org/gitlab#33060).
+#      `/packages/cargo/config.json` 404s on this project while the pypi and
+#      npm endpoints next to it answer fine. Nothing to do with the tier.
+#   3. Even once it ships, publishing would still fail: with `version` but no
+#      `registry`, cargo records the internal path dependencies as *crates.io*
+#      dependencies. `cargo package -p skema-hir` says so —
+#      "no matching package named `skema-syntax` found, location searched:
+#      crates.io index" — and it says it even with `--registry gitlab`. The
+#      workspace dependencies in Cargo.toml would each need
+#      `registry = "gitlab"` added, which then makes every consumer of the
+#      crates configure that registry to build at all.
+#
+# The library crates are not lost in the meantime: `publish-generic-package`
+# above uploads the binaries and the wheel, and the two downstream repos
+# consume this project through those artifacts, not through a crate index.
+# Nothing in the release chain depends on the Cargo registry.
+#
+# To bring it back once GitLab enables the feature: restore the job with
+# `index = "sparse+${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/cargo/"`,
+# add `registry = "gitlab"` to the four workspace dependencies, and publish in
+# dependency order (skema-syntax, skema-hir, skema-loader) with --no-verify.
 
 # --------------------------------------------------------------------------
 # pages (default branch only)
