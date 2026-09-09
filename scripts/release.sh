@@ -170,18 +170,42 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 
 if [ -n "${CI:-}" ]; then
-  if [ -z "${RELEASE_TOKEN:-}" ]; then
-    say "RELEASE_TOKEN is not set — cannot push. See .gitlab-ci.yml for what it needs."
-    exit 1
-  fi
-  # CI_JOB_TOKEN cannot push, so the release job needs its own project access
-  # token. Written to the remote URL rather than a header so the tag push uses
-  # it too.
+  # The job token does the pushing — no personal or project access token
+  # involved. Needs Settings → CI/CD → Job token permissions → "Allow Git push
+  # requests to the repository" (GA in GitLab 18.4, all tiers, off by
+  # default). Written into the remote URL rather than a header so the tag push
+  # is authenticated too.
   git remote set-url origin \
-    "https://oauth2:${RELEASE_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
 fi
 
 git push origin "HEAD:${CI_DEFAULT_BRANCH:-main}"
 git push origin "v$NEXT"
 
 say "Pushed v$NEXT"
+
+# ...and now ask for the pipeline that push did not start.
+#
+# "When you use a job token to push to the project, no CI/CD pipelines are
+# triggered" — that is what stops a release job from re-triggering itself, and
+# it is also why the tag alone publishes nothing. The tag pipeline is the one
+# that builds the binaries, uploads them and triggers the downstream repos, so
+# it has to be requested explicitly.
+#
+# A pipeline trigger token is the cheapest credential that can do it: project
+# scoped, free, and able to do nothing except start a pipeline — unlike a
+# personal access token, which would carry write access to the repository and
+# belong to whoever created it.
+if [ -n "${CI:-}" ]; then
+  if [ -z "${RELEASE_TRIGGER_TOKEN:-}" ]; then
+    say "RELEASE_TRIGGER_TOKEN is not set — v$NEXT is tagged, but nothing will"
+    say "publish it. Add a trigger token (Settings → CI/CD → Pipeline trigger"
+    say "tokens), or start a pipeline for v$NEXT by hand."
+    exit 1
+  fi
+  say "Starting the release pipeline for v$NEXT"
+  curl --fail --silent --show-error --output /dev/null \
+    --form "token=${RELEASE_TRIGGER_TOKEN}" \
+    --form "ref=v$NEXT" \
+    "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/trigger/pipeline"
+fi

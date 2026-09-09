@@ -240,14 +240,20 @@ scripts/release-test.sh          # the bump logic's own tests
 Override the derivation by running the pipeline manually with `BUMP` set to
 `major`/`minor`/`patch`, or `RELEASE_VERSION=1.0.0` to name one outright.
 
-**What CI needs.** A `RELEASE_TOKEN` (masked and protected) in each of the
-three projects — `CI_JOB_TOKEN` cannot push. Use a personal access token with
-the `write_repository` scope, from an account allowed to push to the protected
-default branch. Not a *project* access token: those are Premium on GitLab.com
-for projects that live in a group, and these three do. A deploy key with write
-access is the person-independent alternative, at the cost of SSH setup in the
-job. Both downstream projects must also allow this one to trigger them, under
-Settings → CI/CD → Job token permissions.
+**What CI needs**, in each of the three projects — no personal or project
+access token anywhere:
+
+- Settings → CI/CD → Job token permissions → **Allow Git push requests to the
+  repository**. Off by default; GA in GitLab 18.4, every tier. `CI_JOB_TOKEN`
+  then does all the pushing.
+- A `RELEASE_TRIGGER_TOKEN` variable (masked, protected) holding a pipeline
+  trigger token. A job-token push deliberately starts no pipeline — which is
+  exactly what stops the release job re-triggering itself — so the pipeline
+  that publishes has to be requested explicitly. A trigger token can do
+  nothing but start a pipeline, so it is a much smaller thing to leak than a
+  token with write access to the repository.
+- Both downstream projects must allow this one to trigger them, under
+  Settings → CI/CD → Job token permissions.
 
 Everything in the chain is Free-tier: multi-project triggering left Premium in
 12.8, and only the pipeline *graph* that draws it is paid.

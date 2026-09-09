@@ -26,14 +26,17 @@
 ##
 ## Prerequisites in the GitLab project settings:
 ##   - Container Registry enabled (for the `docker-build` job)
-##   - A `RELEASE_TOKEN` CI variable, masked and protected. `CI_JOB_TOKEN`
-##     cannot push, so the `release` job cannot commit the bump without one.
-##     Use a **personal access token** with the `write_repository` scope, from
-##     an account that may push to the protected default branch — *not* a
-##     project access token: those are Premium on GitLab.com for projects in a
-##     group, and this project sits in `skema-language`. A deploy key with
-##     write access works too and is not tied to a person, at the cost of
-##     setting up SSH in the job.
+##   - Settings → CI/CD → Job token permissions → **Allow Git push requests to
+##     the repository**. Off by default; GA in GitLab 18.4 and available on
+##     every tier. This is what lets `release` push the bump and the tag with
+##     nothing but `CI_JOB_TOKEN` — no personal or project access token.
+##   - A `RELEASE_TRIGGER_TOKEN` CI variable, masked and protected: a pipeline
+##     trigger token (Settings → CI/CD → Pipeline trigger tokens).
+##     A job-token push deliberately starts no pipeline — that is what keeps
+##     `release` from re-triggering itself — so the tag pipeline, the one that
+##     actually publishes, has to be asked for explicitly. A trigger token can
+##     do nothing except start a pipeline, which makes it a far smaller thing
+##     to leak than a token carrying write access to the repository.
 ##   - The two downstream projects must allow this one to trigger them:
 ##     Settings → CI/CD → Job token permissions → add `skema-language/skema`
 ##     to their allowlist. Without it the `trigger-*` jobs get a 404.
@@ -91,6 +94,13 @@ variables:
 # how `devenv test` behaves would land in CI unannounced and turn the
 # pipeline red against an unchanged commit. Deriving the revision from the
 # lock instead of hardcoding it keeps `devenv update` in charge of both.
+#
+# The revision to read is the lock's **`devenv`** node — the same tree the
+# `devenv.nix` modules are evaluated from. Reading `nodes.nixpkgs` instead
+# looks equivalent and is not: that pins the package *set*, and CI then
+# gets whichever devenv release that nixpkgs snapshot happens to package,
+# which is a different program from the one the lock's modules belong to.
+# That skew is exactly what this block exists to prevent.
 .devenv_setup: &devenv_setup
   - apt-get update -qq
   - apt-get install -y --no-install-recommends curl xz-utils ca-certificates git >/dev/null
@@ -99,10 +109,13 @@ variables:
   - . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
   - |
     DEVENV_PIN=$(nix eval --impure --raw --expr \
-      'let n = (builtins.fromJSON (builtins.readFile ./devenv.lock)).nodes.nixpkgs.locked;
+      'let n = (builtins.fromJSON (builtins.readFile ./devenv.lock)).nodes.devenv.locked;
        in "${n.owner}/${n.repo}/${n.rev}"')
     echo "devenv from github:$DEVENV_PIN"
-    nix profile install "github:$DEVENV_PIN#devenv"
+    # `--accept-flake-config` for devenv's own binary cache; without it this
+    # compiles the whole Rust CLI from source on every job.
+    nix profile install --accept-flake-config "github:$DEVENV_PIN"
+    devenv version
 
 .rust_cache: &rust_cache
   - key:
@@ -424,7 +437,7 @@ release:
   image: debian:bookworm-slim
   before_script:
     - apt-get update -qq
-    - apt-get install -y --no-install-recommends git ca-certificates >/dev/null
+    - apt-get install -y --no-install-recommends git curl ca-certificates >/dev/null
   variables:
     # The bump is derived from `git log <last tag>..HEAD`, and the default
     # shallow clone has neither the tags nor the history to derive it from.
