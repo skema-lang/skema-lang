@@ -1,16 +1,14 @@
 //! JS-facing DTOs mirroring `skema_hir::model` and the diagnostic types,
 //! plus the plain conversion functions from the core's types to these.
 //!
-//! Deliberately a 1:1 mirror rather than re-exporting `skema_hir::model::*`
-//! directly: `tsify` only emits a real (non-`any`) TypeScript type for a
-//! field whose own type also derives it, and pulling `tsify`/`wasm-bindgen`
-//! into `skema-hir` would cross that crate's explicit "stay platform-
-//! neutral, minimal deps" boundary – it has no concept of a display
-//! filename or a UTF-16 position at all. Conversion is done with plain
-//! functions rather than `From` impls, since turning a `span` into an
-//! optional human `location` needs more context (the source text, the
-//! filename, whether locations were even requested) than a bare `&T` can
-//! carry.
+//! A 1:1 mirror rather than a re-export of `skema_hir::model`: `tsify` only
+//! emits a real (non-`any`) TypeScript type for a field whose own type also
+//! derives it, and pulling `tsify`/`wasm-bindgen` into `skema-hir` would
+//! cross its platform-neutral boundary.
+//!
+//! Plain conversion functions, not `From` impls — turning a `span` into an
+//! optional `location` needs more context (source text, filename, whether
+//! locations were requested) than a bare `&T` carries.
 
 use serde::Serialize;
 use skema_hir::FileId;
@@ -199,13 +197,12 @@ pub struct ExportedModel {
 /// One `[]`-flag as written: `[pk]` carries `true`, `[default=0]` its
 /// stringified value.
 ///
-/// A list of named entries rather than a map, deliberately. `model::Flags`
-/// is a `BTreeMap`, and a Rust map crosses the wasm boundary as a JS
-/// `Map` – while a bare `pub type` alias emits **no** TypeScript
-/// declaration at all, so the generated `.d.ts` referred to a `Flags` type
-/// it never defined and every consumer silently received `any`. A declared
-/// struct is honest in both directions: the typings say exactly what
-/// arrives, and what arrives is a plain array in the `BTreeMap`'s order.
+/// A list of named entries, not a map. `model::Flags` is a `BTreeMap`,
+/// which crosses the wasm boundary as a JS `Map`, and a bare `pub type`
+/// alias emits no TypeScript declaration at all — the generated `.d.ts`
+/// then referenced an undefined `Flags` and consumers silently got `any`.
+/// A declared struct says exactly what arrives: an array in `BTreeMap`
+/// order.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]

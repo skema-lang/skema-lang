@@ -2,19 +2,17 @@
 //!
 //! # Why not a TextMate grammar
 //!
-//! The usual way to colour a language in VSCode is a `.tmLanguage.json` of
-//! regexes. That would be a second description of skema's syntax, in a
-//! notation that cannot tell a type reference from a field name because it
-//! has no parser - and it would drift from the real one the first time the
-//! language grows a keyword. `skema-api::highlight_tokens` already merges
-//! the lexer's lossless output with the AST-driven classification, and is
-//! the exact source the browser editor colours from. Serving that here means
-//! both editors colour identically, from one implementation.
+//! A `.tmLanguage.json` would be a second description of skema's syntax, in
+//! a notation that has no parser and so cannot tell a type reference from a
+//! field name — and it would drift the first time the language grows a
+//! keyword. `skema_api::highlight_tokens` already merges the lexer's
+//! lossless output with the AST-driven classification, and is what the
+//! browser editor colours from. Serving it here means both colour
+//! identically, from one implementation.
 //!
-//! The cost is that colouring arrives one round trip after the text, rather
-//! than instantly from a local grammar. For a file of a few hundred lines
-//! that is not perceptible - a full re-parse per keystroke is what this
-//! server already does for diagnostics.
+//! The cost is one round trip before colouring arrives. Not perceptible for
+//! a file of a few hundred lines, and this server re-parses per keystroke
+//! for diagnostics anyway.
 
 use lsp_types::{SemanticToken, SemanticTokenType, SemanticTokens};
 

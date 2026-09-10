@@ -1,34 +1,21 @@
 //! The parser's toolkit: cursor, errors, recovery.
 //!
-//! This is **how** things are read. The grammar — **what** is read — lives
-//! in the `grammar` module. The split pays off because this module is done
-//! once it's written, while the grammar keeps moving with every language
-//! change.
+//! This is **how** things are read; the grammar — **what** is read — lives
+//! in the `grammar` module. This module stops changing once written, the
+//! grammar moves with every language change.
 //!
-//! # What "recursive descent" means
-//!
-//! For every grammar rule there is exactly one function, and nesting in
-//! the language turns into recursion in the code:
-//!
-//! ```text
-//! Grammar                        Rust
-//! ─────────────────────────────  ──────────────────────────
-//! block  := Name "{" item* "}"   fn parse_block()
-//! item   := field | block | …    fn parse_item()   ← calls parse_block()
-//! ```
-//!
-//! You don't need more theory than that. The price is that the grammar
-//! must be "LL(k)": which rule applies must be decidable from the next one
-//! or two tokens. That's exactly what [`Parser::nth`] is for.
+//! Recursive descent: one function per grammar rule, nesting in the
+//! language becomes recursion in the code. That requires an LL(k) grammar —
+//! the applicable rule must be decidable from the next token or two, which
+//! is what [`Parser::nth`] is for.
 //!
 //! # The three rules that make a parser IDE-ready
 //!
-//! 1. **Never abort.** A syntax error produces a message and a placeholder
-//!    node, not an `Err`. The rest of the file still gets parsed.
-//! 2. **Never get stuck.** Every loop must consume at least one token per
-//!    iteration — see [`Parser::repeat_until`]. That's *the* classic bug
-//!    in hand-written parsers.
-//! 3. **Never panic.** Broken input is the normal case, not the exception.
+//! 1. **Never abort.** A syntax error yields a message and a placeholder
+//!    node, not an `Err`; the rest of the file is still parsed.
+//! 2. **Never get stuck.** Every loop consumes at least one token per
+//!    iteration — see [`Parser::repeat_until`].
+//! 3. **Never panic.** Broken input is the normal case.
 
 use crate::diagnostic::Diagnostic;
 use crate::span::Span;
@@ -37,19 +24,15 @@ use crate::{ast, tokenize};
 
 pub struct Parser<'a> {
     src: &'a str,
-    /// **Without trivia.** Whitespace and comments are filtered out once,
-    /// so the grammar doesn't have to skip them everywhere. Whoever needs
-    /// them (a formatter) re-lexes the text with [`tokenize`] — that costs
-    /// nothing and keeps the grammar readable.
+    /// **Without trivia**, filtered once so the grammar never skips it.
+    /// Anything that needs trivia re-lexes with [`tokenize`].
     tokens: Vec<Token>,
     /// Index into `tokens`.
     pos: usize,
     diagnostics: Vec<Diagnostic>,
-    /// Position of the most recently reported error.
-    ///
-    /// Prevents message avalanches: as long as no token has been
-    /// consumed, every further message is just a consequence of the first
-    /// and helps no one.
+    /// Position of the most recently reported error, to stop message
+    /// avalanches: without a token consumed in between, every further
+    /// message just restates the first.
     last_error_pos: Option<usize>,
 }
 
@@ -57,9 +40,8 @@ impl<'a> Parser<'a> {
     pub fn new(src: &'a str) -> Self {
         let all = tokenize(src);
 
-        // Report lexer errors once, centrally. After that, the grammar
-        // treats them like ordinary unexpected tokens, without reporting
-        // them again.
+        // Reported once here; afterwards the grammar treats them as
+        // ordinary unexpected tokens.
         let diagnostics = all
             .iter()
             .filter(|t| t.kind.is_error())
@@ -75,10 +57,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Returns the collected messages, sorted by position.
-    ///
-    /// Sorted because lexer messages arise up front and parser messages
-    /// later — in the editor, they should still appear in reading order.
+    /// The collected messages, sorted by position — lexer messages arise
+    /// up front, parser messages later, but the editor shows them in
+    /// reading order.
     pub fn finish(mut self) -> Vec<Diagnostic> {
         self.diagnostics.sort_by_key(|d| (d.span.start, d.span.end));
         self.diagnostics
@@ -91,14 +72,13 @@ impl<'a> Parser<'a> {
         self.nth_token(0)
     }
 
-    /// The kind of the `n`-th token from here (0 = current). This is the
-    /// "lookahead" the grammar uses to decide which rule applies.
+    /// The kind of the `n`-th token from here (0 = current) — the grammar's
+    /// lookahead for deciding which rule applies.
     pub(crate) fn nth(&self, n: usize) -> TokenKind {
         self.nth_token(n).kind
     }
 
     fn nth_token(&self, n: usize) -> Token {
-        // Past the end, we return the Eof token instead of panicking.
         match self.tokens.get(self.pos + n) {
             Some(t) => *t,
             None => Token::new(TokenKind::Eof, Span::empty(self.src.len() as u32)),
@@ -109,14 +89,14 @@ impl<'a> Parser<'a> {
         self.current().kind == kind
     }
 
-    /// The source text of the current token — e.g. to recognize `Table`
-    /// as a block word.
+    /// The source text of the current token, e.g. to recognize `Table` as
+    /// a block word.
     pub(crate) fn current_text(&self) -> &'a str {
         self.current().text(self.src)
     }
 
-    /// The span of the most recently consumed token. This is how the
-    /// grammar assembles a node's span: `start.cover(self.prev_span())`.
+    /// The span of the most recently consumed token — the grammar builds a
+    /// node's span as `start.cover(self.prev_span())`.
     pub(crate) fn prev_span(&self) -> Span {
         match self.pos.checked_sub(1).and_then(|i| self.tokens.get(i)) {
             Some(t) => t.span,
@@ -164,8 +144,8 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn error(&mut self, span: Span, message: impl Into<String>) {
-        // Suppress cascading errors: if no token has been consumed since
-        // the last message, the new message describes the same broken spot.
+        // No token consumed since the last message means the same broken
+        // spot is being described again.
         if self.last_error_pos == Some(self.pos) {
             return;
         }
@@ -175,27 +155,20 @@ impl<'a> Parser<'a> {
 
     // -- Recovery ---------------------------------------------------------------
 
-    /// Skips the rest of a broken statement.
+    /// Skips the rest of a broken statement (panic-mode recovery).
     ///
-    /// This is called **panic-mode recovery**: the parser no longer knows
-    /// where it is and looks for a point where it can safely resume. In
-    /// this language, there are exactly two such points — the `;` at the
-    /// end of a statement, and the `}` of the surrounding block.
-    ///
-    /// Bracket depth is tracked so that a `}` from a skipped sub-block
-    /// doesn't prematurely close the outer block. The `}` of the current
-    /// level is left alone — it belongs to the caller.
+    /// The language has two safe resume points: the `;` ending a statement
+    /// and the `}` of the surrounding block. Bracket depth is tracked so a
+    /// `}` from a skipped sub-block does not close the outer one; the `}`
+    /// of the current level belongs to the caller and is left alone.
     ///
     /// # The line break as an emergency brake
     ///
-    /// For the *grammar*, a line break is meaningless (see [`TokenKind`]).
-    /// For *error recovery*, it's the best hint there is: whatever's on
-    /// the next line is, with high probability, a new statement.
-    ///
-    /// Without this brake, a typo missing a `;` would swallow everything
-    /// up to the next valid statement — the user would see a perfectly
-    /// fine field disappear. Inside brackets the rule doesn't apply: line
-    /// breaks are common there and mean nothing.
+    /// Meaningless to the grammar (see [`TokenKind`]), but the best
+    /// recovery hint there is: the next line is probably a new statement.
+    /// Without it, one missing `;` would swallow everything up to the next
+    /// valid statement and a perfectly fine field would vanish from the
+    /// tree. Inside brackets the rule is off — line breaks are normal there.
     pub(crate) fn recover_item(&mut self) {
         let mut depth = 0_u32;
         loop {
@@ -224,10 +197,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Is there a line break between the most recently consumed token and
-    /// the current one?
-    ///
-    /// This is only possible because the token stream is lossless: what
+    /// Is there a line break between the last consumed token and the
+    /// current one? Answerable only because the stream is lossless: what
     /// lies between two tokens is exactly the slice between their spans.
     fn line_break_before_current(&self) -> bool {
         let from = self.prev_span().end as usize;
@@ -239,18 +210,14 @@ impl<'a> Parser<'a> {
 
     // -- Loop building blocks -----------------------------------------------
 
-    /// Repeats `step` until `end` or the end of the file is reached.
+    /// Repeats `step` until `end` or end of file.
     ///
     /// # The progress guarantee
     ///
-    /// If one iteration consumes **no** token, the loop runs forever. That
-    /// happens faster than you'd think: it only takes one grammar rule
-    /// that, on an unexpected token, just reports and returns. That's why
-    /// this function checks progress and, if necessary, forcibly consumes
-    /// a token.
-    ///
-    /// This branch is a safety net, not the normal path: the grammar
-    /// itself should ensure it makes progress.
+    /// An iteration that consumes no token loops forever, and one grammar
+    /// rule that reports and returns on an unexpected token is enough to
+    /// cause it. So progress is checked here and a token force-consumed if
+    /// needed — a safety net, not the normal path.
     pub(crate) fn repeat_until(&mut self, end: TokenKind, mut step: impl FnMut(&mut Self)) {
         while !self.at(end) && !self.at(TokenKind::Eof) {
             let before = self.pos;
@@ -264,10 +231,9 @@ impl<'a> Parser<'a> {
 
     /// Reads `open element sep element … close`.
     ///
-    /// Covers `[pk, required]`, `(10, 2)`, and `[highlight]` with a single
-    /// function — the three differ only in the element parser. A trailing
-    /// separator (`[a, b,]`) is allowed because it's convenient when
-    /// editing line by line and costs nothing.
+    /// Covers `[pk, required]`, `(10, 2)` and `[highlight]`; they differ
+    /// only in the element parser. A trailing separator (`[a, b,]`) is
+    /// allowed — convenient when editing line by line, and free.
     pub(crate) fn delimited_list<T>(
         &mut self,
         open: TokenKind,
@@ -283,9 +249,8 @@ impl<'a> Parser<'a> {
             if let Some(x) = element(p) {
                 out.push(x);
             }
-            // No separator and not at the end either? Report it, but keep
-            // going — a forgotten comma shouldn't make the rest of the
-            // list unreadable.
+            // Keep going after a missing separator — a forgotten comma
+            // shouldn't make the rest of the list unreadable.
             if !p.eat(sep) && !p.at(close) && !p.at(TokenKind::Eof) {
                 p.error_here(format!(
                     "expected {} or {}",

@@ -16,18 +16,15 @@
 //!
 //! # Why this goes through `skema-api`
 //!
-//! Both functions are thin wrappers over `skema_loader::analyze`, so the
-//! `dict` a Python caller reads has the same keys the browser editor and the
-//! language server see. Serializing `skema_hir::model::Model` directly – as
-//! this crate used to – produced a *third* shape, and one that was missing
-//! something: its `file` field is a raw `FileId` index, a number with no way
-//! back to a path. It is a display path here.
+//! Both functions wrap `skema_loader::analyze`, so the `dict` a Python
+//! caller reads has the same keys the browser editor and the language
+//! server see. Serializing `skema_hir::model::Model` directly, as this crate
+//! used to, produced a third shape whose `file` was a raw `FileId` index —
+//! a number with no way back to a path. It is a display path here.
 //!
-//! Both functions return a single `dict` instead of raising an exception
-//! when the model contains errors – the same stance as the rest of the
-//! core: an analysis always produces a result, errors are data (`ok: False`
-//! plus `diagnostics`), not control flow. A Python `Exception` is raised
-//! only when the root file itself cannot be read.
+//! Neither function ever raises: an analysis always produces a result, and
+//! errors are data (`ok: False` plus `diagnostics`), not control flow. An
+//! unreadable root file is one more diagnostic in that same list.
 
 use std::path::{Path, PathBuf};
 

@@ -1,15 +1,13 @@
 //! `textDocument/hover`: the detail a line of DSL leaves out.
 //!
-//! A field is written `email varchar(120) [required, unique]`, and that is
-//! all the text says. What the *model* knows about it - that the relation it
-//! declares cascades on delete, that it was inlined from a `Partial` in
-//! another file, that its type resolves through two `import`s - is exactly
-//! what the resolved model carries and the text does not. The browser
-//! editor shows that in a hover card next to the diagram; this is the same
-//! content, from the same model, where an editor puts it.
+//! `email varchar(120) [required, unique]` is all the text says. That the
+//! relation cascades on delete, that the field was inlined from a `Partial`
+//! in another file, that its type resolves through two `import`s — only the
+//! resolved model carries that. The browser editor shows it in a card next
+//! to the diagram; this is the same content where an editor puts it.
 //!
-//! Deliberately reads the model, not the tree: everything worth saying here
-//! is a *resolved* fact.
+//! Reads the model, not the tree: everything worth saying here is a
+//! *resolved* fact.
 
 use skema_api::{
     ExportedField, ExportedFlag, ExportedModel, ExportedTable, FlagValue, RelationKind, Span,

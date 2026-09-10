@@ -1,33 +1,27 @@
 //! A `.skema` project on disk: which files it consists of, and what is in
 //! them.
 //!
-//! This is the piece of filesystem access that `skema-syntax` and
-//! `skema-hir` deliberately do not have themselves (see their module
-//! documentation), plus the step that turns their output into an answer a
-//! front end can show.
+//! The filesystem access `skema-syntax` and `skema-hir` deliberately lack,
+//! plus the step that turns their output into an answer a front end shows.
 //!
 //! ```text
 //! &Path ──[load]──► Project ──[analyze]──► ExportedModel
 //!                                        + Vec<Diagnostic>
 //! ```
 //!
-//! Per `docs/02`, project membership is reachability-defined: a file belongs
-//! to the project if it is reachable from the root file, directly or via
-//! `import`. [`load`] mirrors exactly that: a breadth-first search over the
-//! import graph, starting from the given file.
+//! Project membership is reachability-defined (`docs/02`): a file belongs to
+//! the project if the root file reaches it, directly or via `import`.
+//! [`load`] is exactly that breadth-first walk.
 //!
 //! # Why a separate crate instead of part of `skema-cli`
 //!
-//! `skema-cli`, `skema-py` and `skema-lsp` all need this logic, but with
-//! different text sources: the CLI and the Python bindings read exclusively
-//! from disk, while the language server should use the unsaved editor
-//! content for open files and disk for everything else. [`load_with`] takes
-//! a swappable read function for that; [`load`] is the common case built on
-//! top of it.
+//! All three front ends need this logic with different text sources: the CLI
+//! and the Python bindings read only from disk, the language server prefers
+//! the unsaved editor buffer for open files. [`load_with`] takes a swappable
+//! read function; [`load`] is the common case on top of it.
 //!
-//! [`analyze`] is here for the same reason one level up: all three then
-//! describe a model identically, in `skema-api`'s types – the ones
-//! `skema-wasm` also hands to a browser (see [`analysis`]).
+//! [`analyze`] is here for the same reason: all three then describe a model
+//! identically, in `skema-api`'s types (see [`analysis`]).
 
 pub mod analysis;
 
@@ -43,8 +37,8 @@ use skema_syntax::ast::SourceFile;
 #[derive(Debug)]
 pub struct LoadedFile {
     pub path: PathBuf,
-    /// For converting byte offsets to line/column in messages – the core
-    /// itself only knows byte offsets (see `skema_syntax::Span`).
+    /// Kept for the byte-offset → line/column conversion in messages; the
+    /// core knows only byte offsets (see `skema_syntax::Span`).
     pub src: String,
     pub ast: SourceFile,
     pub parse_diagnostics: Vec<skema_syntax::Diagnostic>,
@@ -137,10 +131,9 @@ pub fn load_with(
     Ok(Project { files })
 }
 
-/// Assigns a `FileId` if `path` doesn't have one yet, and queues it for
-/// processing. Entry and import targets both go through this same function
-/// so that `FileId` assignment and queue order never diverge – exactly what
-/// `skema_hir::analyze` requires from its callers.
+/// Assigns a `FileId` if `path` has none yet and queues the file. Entry and
+/// import targets share this function so `FileId` assignment and queue order
+/// cannot diverge — what `skema_hir::analyze` requires of its callers.
 fn intern(
     path: PathBuf,
     ids: &mut HashMap<PathBuf, FileId>,

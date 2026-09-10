@@ -5,12 +5,10 @@
 //! skema export --json main.skema
 //! ```
 //!
-//! Both invocations appear exactly like this in `docs/02`.
-//!
-//! The work happens in `skema-loader`, which loads the import graph and
-//! hands back `skema-api`'s model and diagnostics – the same types the
-//! language server and the browser editor answer with. What this crate adds
-//! is a process: argument parsing, stdout/stderr, and an exit code.
+//! The work happens in `skema-loader`: it loads the import graph and returns
+//! `skema-api`'s model and diagnostics, the same types the language server
+//! and the browser editor answer with. This crate adds the process around
+//! it — argument parsing, stdout/stderr, exit code.
 
 mod report;
 

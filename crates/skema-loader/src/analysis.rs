@@ -7,19 +7,16 @@
 //!
 //! # Why this lives here and not in each front end
 //!
-//! `skema-cli`, `skema-py` and `skema-lsp` all need exactly this sequence:
-//! run the analysis, pair every `FileId` back with its text and display
-//! path, and merge the parser's per-file diagnostics with the checker's
-//! project-wide ones. Written out per front end it was three copies that
-//! agreed by accident – and they did not fully agree: the CLI and the
-//! Python bindings used to emit `skema_hir::model::Model` directly, whose
-//! `file` field is a raw `FileId` index, i.e. a number a caller has no way
-//! to resolve back to a path.
+//! `skema-cli`, `skema-py` and `skema-lsp` all need the same sequence: run
+//! the analysis, pair every `FileId` back with its text and display path,
+//! merge the parser's per-file diagnostics with the checker's project-wide
+//! ones. Three copies agreed only by accident — and did not fully agree:
+//! the CLI and the Python bindings used to emit `skema_hir::model::Model`
+//! directly, whose `file` is a raw `FileId` a caller cannot resolve.
 //!
-//! `skema-api` cannot host it, because pairing a `FileId` with a path means
-//! knowing where the file came from, and that crate deliberately has no
-//! filesystem (it has its own in-memory counterpart in
-//! `skema_api::project`). This crate is the one place that has both.
+//! `skema-api` cannot host it: pairing a `FileId` with a path needs a
+//! filesystem, which that crate deliberately has not (its in-memory
+//! counterpart is `skema_api::project`). This crate has both.
 
 use skema_api::{Diagnostic, ExportedModel, FileEntry, LocateCtx, dto};
 
@@ -102,19 +99,16 @@ pub fn display_path(file: &LoadedFile) -> &str {
     file.path.to_str().unwrap_or_default()
 }
 
-/// A failed load as a diagnostic, so a caller that reports
-/// [`ProjectAnalysis::diagnostics`] can report this the same way instead of
-/// keeping a second error path with its own JSON shape.
+/// A failed load as a diagnostic, so callers report it through
+/// [`ProjectAnalysis::diagnostics`] instead of keeping a second error path
+/// with its own JSON shape.
 ///
-/// The span is empty and points at the start of the file: nothing was
-/// parsed, so there is no better position, and `1:1` is where a reader
-/// looks first anyway.
+/// The span is empty at the file start — nothing was parsed, so there is no
+/// better position.
 ///
-/// The message is the underlying I/O error alone, without
-/// [`LoadError`]'s own `path: ` prefix – a diagnostic already names its
-/// file in `location`, and every renderer puts it in front (`skema-cli`
-/// prints `path:line:column: severity: message`), so carrying it in the
-/// text too would print it twice.
+/// The message is the I/O error alone, without [`LoadError`]'s `path: `
+/// prefix: a diagnostic names its file in `location` and every renderer
+/// puts that in front, so the prefix would print the path twice.
 pub fn load_error_diagnostic(error: &LoadError) -> Diagnostic {
     dto::synthetic_diagnostic(
         &error.path.to_string_lossy(),

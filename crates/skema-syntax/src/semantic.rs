@@ -2,24 +2,20 @@
 //! name, field name, type reference, flag name, `{}`-setting key – for
 //! syntax highlighting that goes beyond what the lexer alone can tell.
 //!
-//! The lexer doesn't know any of this: block keywords like `Table`/`Meta`
-//! are ordinary `Ident` tokens at the lexer level (`docs/01`, "block
-//! keywords are context-dependent, not reserved"), and nothing distinguishes
-//! a field name from a type name or a flag name without looking at *where*
-//! the identifier sits in the tree. This module is that lookup, built once
-//! per parse, modeled on `dump.rs`'s traversal (same recursion shape, spans
-//! instead of printed text) – and, like `dump.rs`, walks the tree in source
-//! order, so the result is ascending by span. `skema-wasm`'s highlighter
-//! relies on that order to merge this against the token stream in one pass;
-//! `skema-lsp` can reuse it verbatim for a future semantic-tokens capability
-//! (`docs`, roadmap item 10) – this module stays here, not in `skema-wasm`,
-//! for exactly that reason.
+//! The lexer cannot tell any of this apart: block keywords are ordinary
+//! `Ident` tokens to it (`docs/01`, "Case conventions and keywords"), and a
+//! field name, a type name and a flag name differ only by *where* they sit
+//! in the tree. This module is that lookup, built once per parse.
 //!
-//! Deliberately conservative: a few things that would need real name
-//! resolution to classify precisely (is `paid` in `default = paid;` an enum
-//! value, a bare setting word, or a typo?) are left unclassified here on
-//! purpose – guessing wrong here means confidently mislabeling text while
-//! the user is mid-edit, which is worse than not labeling it at all.
+//! Like `dump.rs` (whose traversal it mirrors) it walks in source order, so
+//! the result is ascending by span. Both consumers rely on that:
+//! `skema_api::highlight` merges it against the token stream in one pass,
+//! and `skema-lsp` serves it as semantic tokens.
+//!
+//! Deliberately conservative. Anything needing real name resolution — is
+//! `paid` in `default = paid;` an enum value, a bare setting word or a
+//! typo? — is left unclassified: mislabeling text mid-edit is worse than
+//! not labeling it.
 
 use crate::Span;
 use crate::ast::*;
@@ -34,12 +30,10 @@ pub enum SemanticKind {
     /// A qualifying path segment before the last one: `shop` in
     /// `shop.OrderStatus`, or `cat` in a relation target `cat.Copy.id`.
     ///
-    /// Not always a *true* cross-file namespace in the language's own
-    /// sense – `Customer` in a same-file relation target `Customer.id` is a
-    /// table, not an imported namespace – but visually, "the qualifying
-    /// part before the leaf" is exactly the distinction a reader wants, and
-    /// telling the two apart precisely needs name resolution the syntax
-    /// tree alone doesn't have.
+    /// Not always a true cross-file namespace — `Customer` in `Customer.id`
+    /// is a table — but "the qualifying part before the leaf" is the
+    /// distinction a reader wants, and separating the two exactly needs
+    /// name resolution the tree alone does not have.
     Namespace,
     /// The name of a declaration: `Table Customer`, `Enum OrderStatus`, an
     /// index's own name, a `Group` member reference (`Table shop.User;`).

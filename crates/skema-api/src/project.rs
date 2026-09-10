@@ -4,32 +4,22 @@
 //!
 //! # Why this doesn't reuse `skema_loader::load_with`
 //!
-//! That function exists precisely to swap out how a file's text is read,
-//! so reusing it is the obvious first instinct. Three things make it the
-//! wrong fit anyway, and all three are semantic, not cosmetic:
+//! `load_with` exists to swap out file reading, so reusing it looks obvious.
+//! Three semantic differences rule it out:
 //!
-//! * It is **fail-fast**: `Result<Project, LoadError>`, aborting the whole
-//!   load the moment one import can't be read. That is right for
-//!   `skema check main.skema`, where a missing import is a terminal user
-//!   error. An editor needs the opposite – a half-typed import path must
-//!   degrade to that single edge resolving to `None` while every other
-//!   reachable file is still analyzed. `skema_hir` already models exactly
-//!   that (`InputFile::import_targets: Vec<Option<FileId>>`) and already
-//!   reports it as an ordinary "import target not found" diagnostic
-//!   (`namespace::build`), so nothing needs inventing here.
-//! * It resolves paths with `Path::canonicalize`, i.e. against a real
-//!   filesystem – there is none in a browser, and a virtual path set needs
-//!   plain lexical normalization instead.
-//! * `skema-wasm` deliberately depends only on the platform-neutral crates
-//!   (`skema-syntax`, `skema-hir`); pulling in the `std::fs`-based loader
-//!   would cross the architecture rule the core is built around.
+//! * It is **fail-fast** (`Result<Project, LoadError>`), aborting the load
+//!   on the first unreadable import. Right for `skema check main.skema`;
+//!   wrong for an editor, where a half-typed path must degrade to that one
+//!   edge being `None` while everything else is still analyzed.
+//! * It canonicalizes against a real filesystem. A browser has none, and a
+//!   virtual path set needs lexical normalization.
+//! * `skema-wasm` depends only on the platform-neutral crates; pulling in
+//!   the `std::fs`-based loader would cross the architecture rule.
 //!
-//! Unifying the two would mean parameterizing over the path type *and* the
-//! error semantics *and* the resolution method – three of the four things
-//! the function does, for a ~30-line breadth-first walk. So this mirrors
-//! `load_with`'s *structure* (intern → queue → resolve targets, one
-//! `FileId` per file in queue order) without sharing its code, and says so
-//! here rather than leaving the next reader to wonder.
+//! Unifying them would mean parameterizing over path type, error semantics
+//! *and* resolution method — for a ~30-line breadth-first walk. So this
+//! mirrors `load_with`'s structure (intern → queue → resolve targets, one
+//! `FileId` per file in queue order) without sharing its code.
 
 use std::collections::{HashMap, VecDeque};
 

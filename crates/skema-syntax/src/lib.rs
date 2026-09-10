@@ -3,19 +3,9 @@
 //! # The one rule for this crate
 //!
 //! **No dependency on the outside world.** No `std::fs`, no network, no
-//! `tokio`, no environment variables, no time, no logging backend.
-//!
-//! The reason isn't purism, it's reusability. This crate is meant to
-//! eventually run:
-//!
-//! * in the CLI (`skema check`)
-//! * in the language server
-//! * in the browser via WASM (there's no filesystem there)
-//! * in Python via `pyo3`
-//!
-//! Anyone who wants to read files does so in the calling crate and passes
-//! in a `&str`. Retrofitting this separation later is expensive — keeping
-//! it from the start costs almost nothing.
+//! `tokio`, no environment variables, no time, no logging backend — so the
+//! same frontend runs in the CLI, the language server, the browser (WASM,
+//! no filesystem) and Python. Callers read files and pass in a `&str`.
 //!
 //! # Structure
 //!
@@ -35,22 +25,15 @@
 //! | `diagnostic` | messages with a location |
 //! | `dump` | tree as text, for inspection |
 //!
-//! # The guiding idea: parse permissively, validate strictly
+//! # Parse permissively, validate strictly
 //!
-//! The parser deliberately accepts **more** than the language allows: a
-//! `Lint` block inside a `Table`, an `import` in the middle of a file, an
-//! unknown key in `Meta`. All of that yields valid AST nodes.
+//! The parser accepts more than the language allows — a `Lint` block inside
+//! a `Table`, an `import` mid-file, an unknown `Meta` key — and all of it
+//! yields valid AST nodes. A file being edited is almost always invalid,
+//! and a parser that bails out takes completion away exactly when it is
+//! needed. So [`parse`] always returns a tree plus what is wrong with it.
 //!
-//! The reason is practical. Someone typing in an IDE almost always has an
-//! invalid file in front of them. A parser that bails out at the first
-//! inconsistency takes away autocompletion at exactly the moment it's
-//! needed. That's why [`parse`] **always** returns a tree, plus a list of
-//! what's wrong with it.
-//!
-//! Meaning checks ("`Lint` belongs inside `Project`", "`athor` is not a
-//! known key") are a separate phase and live in the
-//! [`skema-hir`](https://docs.rs/skema-hir) crate, which builds on this
-//! AST.
+//! Meaning checks live in [`skema-hir`](https://docs.rs/skema-hir).
 //!
 //! # Example
 //!
@@ -92,20 +75,13 @@ pub use token::{Token, TokenKind, keyword_from_str};
 
 use ast::SourceFile;
 
-/// Reads a `.skema` file.
+/// Reads a `.skema` file. An empty diagnostic list means no syntax errors.
 ///
 /// # Why not `Result`
 ///
-/// The obvious Rust reflex would be `-> Result<SourceFile, Error>`. For an
-/// IDE frontend, that's the wrong shape:
-///
-/// * You want **all** errors at once, not just the first — otherwise the
-///   user hops from message to message.
-/// * You want a tree **despite** errors, so hover and go-to-definition
-///   keep working.
-///
-/// So errors here are data, not control flow. If the list is empty, the
-/// file was syntactically error-free.
+/// An IDE frontend needs *all* errors at once, not just the first, and a
+/// tree *despite* them so hover and go-to-definition keep working. Errors
+/// are data here, not control flow.
 pub fn parse(src: &str) -> (SourceFile, Vec<Diagnostic>) {
     let mut parser = Parser::new(src);
     let file = parser.parse_source_file();

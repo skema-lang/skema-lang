@@ -34,8 +34,8 @@ pub use skema_api::{
 };
 
 /// Readable panic messages in the browser console instead of an opaque
-/// "unreachable" trap – defense in depth, even though the core is designed
-/// to never panic on any input (`docs/01`: "a parser must never panic").
+/// "unreachable" trap. Defense in depth: the core is built never to panic
+/// on any input (see `clippy.toml`), but a trap would be unreadable.
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
@@ -46,12 +46,10 @@ pub fn check(source: &str, filename: Option<String>) -> CheckResult {
     skema_api::check(source, filename.as_deref())
 }
 
-/// Named `exportModel` rather than `export` on the JS side: `export` is a
-/// reserved word in JavaScript/TypeScript, so a function literally named
-/// `export` cannot be imported as a named binding (`import { export } from
-/// …` is a syntax error) – wasm-bindgen itself would silently rename the
-/// generated binding to `_export` to route around this, which is a
-/// confusing, undocumented surprise for anyone reading the `.d.ts`.
+/// Named `exportModel`, not `export`: `export` is reserved in
+/// JavaScript/TypeScript, so `import { export } from …` is a syntax error.
+/// wasm-bindgen would silently rename the binding to `_export`, which is an
+/// undocumented surprise for anyone reading the `.d.ts`.
 #[wasm_bindgen(js_name = "exportModel")]
 pub fn export_model_js(
     source: &str,
@@ -61,10 +59,10 @@ pub fn export_model_js(
     skema_api::export_model(source, filename.as_deref(), with_locations)
 }
 
-/// Several in-memory files, with `import` resolved against the virtual path
-/// set in `files` – a browser has no filesystem for `skema-loader` to walk.
-/// A path that no file in the set matches is not an exception here: it
-/// degrades to that one import failing, reported as an ordinary diagnostic.
+/// Several in-memory files, `import` resolved against the virtual path set
+/// in `files` — a browser has no filesystem for `skema-loader` to walk. An
+/// unmatched path degrades to that one import failing, reported as an
+/// ordinary diagnostic.
 #[wasm_bindgen(js_name = "analyzeProject")]
 pub fn analyze_project(input: ProjectInput) -> ProjectResult {
     skema_api::analyze_project(input)
@@ -78,33 +76,31 @@ pub fn highlight_class_names() -> Vec<String> {
     skema_api::highlight_class_names()
 }
 
-/// One call, one parse: lexes and parses `source` once each, merges the
-/// lossless token stream with the AST-driven semantic classification, and
-/// returns `[class, utf16Start, utf16End]` triples flattened into one array.
+/// One call, one parse: merges the lossless token stream with the
+/// AST-driven classification and returns `[class, utf16Start, utf16End]`
+/// triples flattened into one array.
 ///
-/// Needs no debounce on the caller's side: the hand-written parser is fast,
-/// and `skema-lsp` already re-parses in full on every `didChange`.
+/// Needs no debounce — the hand-written parser is fast, and `skema-lsp`
+/// re-parses in full on every `didChange` already.
 #[wasm_bindgen(js_name = "highlightTokens")]
 pub fn highlight_tokens(source: &str) -> Vec<u32> {
     skema_api::highlight_tokens(source)
 }
 
 /// Every `Table` in `source`, with its `Meta` entries and the UTF-16 offsets
-/// to edit them at. Tables without a `Meta` block are included too (with
-/// `metaBodyStart: undefined` and no entries) – the caller still needs
-/// `tableBodyStart` to add one.
+/// to edit them at. Tables without a `Meta` block are included, with
+/// `metaBodyStart: undefined` — the caller needs `tableBodyStart` to add one.
 ///
-/// Every offset belongs to *this exact revision* of `source`: fetch them
-/// immediately before building an edit, never reuse an older result.
+/// Offsets belong to *this exact revision* of `source`: fetch them right
+/// before building an edit, never reuse an older result.
 #[wasm_bindgen(js_name = "tableMetas")]
 pub fn table_metas(source: &str) -> TableMetas {
     skema_api::table_metas(source)
 }
 
-/// Every `Enum` in `source`, with its `Meta` entries – the same shape as
-/// [`table_metas`], for the declaration kind that needs it next: an `Enum`
-/// gets rendered in a diagram and can carry `Meta.styleClasses` (`docs/03`)
-/// just like a `Table` can.
+/// Every `Enum` in `source`, with its `Meta` entries — same shape as
+/// [`table_metas`]. An `Enum` is drawn in the diagram and can carry
+/// `Meta.styleClasses` (`docs/03`) just like a `Table`.
 #[wasm_bindgen(js_name = "enumMetas")]
 pub fn enum_metas(source: &str) -> EnumMetas {
     skema_api::enum_metas(source)
@@ -118,19 +114,17 @@ pub fn group_metas(source: &str) -> GroupMetas {
     skema_api::group_metas(source)
 }
 
-/// Every `Style` block in `source`, unresolved: the two cascade levels are
-/// reported as they are written (`docs/03`), and applying them is the
-/// renderer's job. Single-file, like `tableMetas` – a caller with several
-/// files already loops over them one at a time.
+/// Every `Style` block in `source`, unresolved: the two cascade levels as
+/// written (`docs/03`); applying them is the renderer's job. Single-file
+/// like `tableMetas`, since a multi-file caller already loops.
 #[wasm_bindgen(js_name = "styleBlocks")]
 pub fn style_blocks(source: &str) -> StyleBlocks {
     skema_api::style_blocks(source)
 }
 
-/// The language's own vocabulary, as the checking phase itself knows it
-/// (`skema_hir::catalog`) – so completion offers exactly the keys
-/// `skema-hir` will accept, instead of a hand-copied list in TypeScript
-/// that drifts the first time the language grows a key.
+/// The language's vocabulary as the checking phase knows it
+/// (`skema_hir::catalog`), so completion offers exactly the keys
+/// `skema-hir` accepts and no hand-copied TypeScript list can drift.
 #[wasm_bindgen(js_name = "builtins")]
 pub fn builtins_js() -> Builtins {
     skema_api::builtins()

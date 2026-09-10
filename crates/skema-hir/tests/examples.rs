@@ -1,16 +1,13 @@
 //! Tests `skema-hir` against the example projects in `examples/`.
 //!
-//! Loading files and following `import` paths is deliberately just test
-//! code here: `skema-hir` itself stays platform-neutral (see `src/lib.rs`),
-//! so a tool like `skema-cli` takes care of that for real. This test
-//! rebuilds the same flow in miniature, to check the whole pipeline –
-//! loading, parsing, name resolution, rules, model – against a real
-//! multi-file project.
+//! File loading is local test code: `skema-hir` stays platform-neutral (see
+//! `src/lib.rs`), and `skema-loader` does this for real. Rebuilt here in
+//! miniature to exercise the whole pipeline — loading, parsing, name
+//! resolution, rules, model — against a real multi-file project.
 //!
-//! `unwrap`/`expect`/`panic` are welcome here: helper functions like `load`
-//! are only ever called from `#[test]` functions, but clippy's `*_used`
-//! lints only recognize that for the test function itself, not for its
-//! helper functions (unlike `#[cfg(test)]` modules in `skema-syntax`, see
+//! `unwrap`/`expect`/`panic` are fine here. Helpers like `load` are only
+//! called from `#[test]` functions, but clippy's `*_used` lints recognize
+//! that for the test function alone, not for its helpers (see
 //! `clippy.toml`).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 

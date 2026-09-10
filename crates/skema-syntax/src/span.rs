@@ -1,23 +1,15 @@
 //! Positions in the source text.
 //!
-//! # The most important rule of the whole project
+//! # The one rule
 //!
-//! Internally, we compute **exclusively with byte offsets in UTF-8**. Never
-//! with line/column, never with character indices.
+//! The core computes **exclusively with UTF-8 byte offsets** — never
+//! line/column, never character indices. Rust strings are UTF-8, so
+//! `&src[start..end]` needs bytes; line/column is a display form that would
+//! have to be recomputed on every edit; and the LSP protocol counts UTF-16
+//! code units, which agrees with neither.
 //!
-//! That sounds like a detail, but it's the decision on which most
-//! home-grown language servers founder:
-//!
-//! * Rust strings are UTF-8. `&src[start..end]` expects byte offsets.
-//! * The LSP protocol speaks in **UTF-16 code units** by default —
-//!   an `é` counts as 1 there, an `😀` counts as 2, whereas in UTF-8
-//!   they're 2 and 4 bytes respectively.
-//! * Line/column is a purely *display* form. Whoever passes it around
-//!   inside the compiler has to recompute everything on every change.
-//!
-//! That's why: [`Span`] everywhere, and the conversion to line/column
-//! happens at exactly **one** place — later, in the `skema-lsp` crate,
-//! right at the protocol boundary.
+//! So: [`Span`] everywhere, and exactly one place converts —
+//! `skema_api::location`, at the front-end boundary.
 
 use std::fmt;
 use std::ops::Range;
@@ -26,20 +18,16 @@ use serde::Serialize;
 
 /// A byte offset in the source text.
 ///
-/// `u32` instead of `usize`, because a syntax tree consists of very many
-/// nodes and each of them carries a span. `u32` halves the memory
-/// footprint compared to `usize` on 64-bit systems. The 4 GiB-per-source-
-/// file ceiling is not a serious limitation for a DSL — rustc and
-/// rust-analyzer do it the same way.
+/// `u32`, not `usize`: every node in the tree carries a span, so this halves
+/// the footprint on 64-bit. The 4 GiB per file ceiling is no limit for a
+/// DSL; rustc and rust-analyzer do the same.
 pub type TextSize = u32;
 
 /// A half-open byte range `[start, end)` in the source text.
 ///
-/// "Half-open" means: `end` points past the last byte. The span `0..3` for
-/// `"abc"` thus covers exactly `abc`. This is the same convention as
-/// Rust's `Range`, and it has the pleasant effect that `end - start` is
-/// directly the length, and empty spans (`5..5`) are naturally
-/// representable — needed, e.g., for "a token is missing here".
+/// Same convention as Rust's `Range`: `end - start` is the length, and an
+/// empty span (`5..5`) is representable — needed for "a token is missing
+/// here".
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize)]
 pub struct Span {
     pub start: TextSize,
@@ -47,16 +35,14 @@ pub struct Span {
 }
 
 impl Span {
-    /// # Panics
-    /// Never — but `start > end` yields a nonsensical span. In a debug
-    /// build, this shows up via [`Span::is_valid`] in tests.
+    /// Does not panic on `start > end`, but the result is nonsensical;
+    /// tests catch that via [`Span::is_valid`].
     pub const fn new(start: TextSize, end: TextSize) -> Self {
         Self { start, end }
     }
 
-    /// An empty span at position `at`. Useful for errors like "a `}` was
-    /// expected here" — the editor then shows a cursor blink instead of an
-    /// underline.
+    /// An empty span at `at`, for errors like "a `}` was expected here" —
+    /// the editor shows a caret instead of an underline.
     pub const fn empty(at: TextSize) -> Self {
         Self::new(at, at)
     }
@@ -78,8 +64,8 @@ impl Span {
         self.start <= at && at < self.end
     }
 
-    /// The smallest span that covers both. This is how the parser
-    /// assembles a node's span from its children's spans.
+    /// The smallest span covering both — how the parser builds a node's
+    /// span from its children.
     pub fn cover(self, other: Self) -> Self {
         Self::new(self.start.min(other.start), self.end.max(other.end))
     }
@@ -87,17 +73,9 @@ impl Span {
     /// The source-text slice.
     ///
     /// # Panics
-    /// If `src` is not the text this span originated from, or the offsets
-    /// don't fall on UTF-8 character boundaries. All spans produced by the
-    /// lexer satisfy this by construction.
-    ///
-    /// A Rust detail on the side: there's **no** explicit lifetime here,
-    /// even though the return value is one. Because `self` is passed by
-    /// value (`Span` is `Copy`), there's only a single reference in the
-    /// signature — and *lifetime elision* automatically ties the output to
-    /// `src`. In [`crate::Token::text`], on the other hand, the lifetime is
-    /// spelled out: there, with `&self`, there are two references, and
-    /// the elision rule would pick the wrong one.
+    /// If `src` is not the text this span came from, or the offsets miss a
+    /// UTF-8 character boundary. Lexer-produced spans satisfy both by
+    /// construction.
     pub fn text(self, src: &str) -> &str {
         &src[self.start as usize..self.end as usize]
     }

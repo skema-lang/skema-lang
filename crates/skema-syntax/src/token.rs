@@ -4,10 +4,9 @@ use crate::Span;
 
 /// A single token: *what* it is and *where* it is.
 ///
-/// Notably absent here: the text. A token is only 12 bytes. You fetch the
-/// text on demand via [`Token::text`] from the source — a `String` per
-/// token would mean thousands of heap allocations per file, and in the
-/// language server, re-lexing happens after every keystroke.
+/// It carries no text — that comes from the source via [`Token::text`]. A
+/// `String` per token would be thousands of allocations per file, and the
+/// language server re-lexes on every keystroke.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Token {
     pub kind: TokenKind,
@@ -30,23 +29,17 @@ impl Token {
 ///
 /// # Why trivia gets its own variants
 ///
-/// Many lexers throw away whitespace and comments. We don't:
+/// Whitespace and comments are kept, not discarded: a future formatter
+/// must preserve comments, and it keeps the stream **lossless** —
+/// concatenating all token texts reproduces the source exactly, which is
+/// what `tokens_are_lossless` asserts. Almost every lexer bug breaks that
+/// property. The parser skips trivia itself.
 ///
-/// * A **formatter** (`skema fmt`) must preserve comments.
-/// * The token stream stays **lossless**: concatenating the text of all
-///   tokens yields exactly the original source text. That's exactly what
-///   `tokens_are_lossless` checks. This property saves you on every
-///   refactor, because almost every lexer bug violates it.
+/// # Why there is no `Newline` token
 ///
-/// The parser skips trivia itself — but it's still there if you need it.
-///
-/// # Why there's no `Newline` token
-///
-/// In `.skema`, `;` ends a statement and `}` ends a block. The line break
-/// therefore carries **no** meaning and is ordinary whitespace. That's a
-/// noticeable simplification: the parser needs no rules of the form "a
-/// line break is allowed here, not there", and an expression may be
-/// spread across lines however you like.
+/// `;` ends a statement and `}` ends a block, so a line break carries no
+/// meaning and is ordinary whitespace. No "a line break is allowed here,
+/// not there" rules, and a statement may wrap freely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TokenKind {
     // ---- Trivia: invisible to the parser, but preserved --------------------
@@ -71,9 +64,8 @@ pub enum TokenKind {
 
     // ---- Reserved keywords ---------------------------------------------
     //
-    // Only the four lowercase directives are reserved here. The PascalCase
-    // block names (`Table`, `Meta`, …) are deliberately NOT keywords — see
-    // `keyword_from_str`.
+    // Only these four lowercase directives are reserved; PascalCase block
+    // names stay `Ident` — see `keyword_from_str`.
     /// `spec`
     KwSpec,
     /// `import`
@@ -112,10 +104,8 @@ pub enum TokenKind {
 
     // ---- Relationship operators ---------------------------------------------
     //
-    // Only three — the language deliberately has no `<>` for many-to-many
-    // (`docs/07`, "Many-to-many has no arrow"): SQL needs a join table for
-    // that anyway, so it gets written into the model instead of being
-    // hidden behind an operator.
+    // Three only; no `<>` for many-to-many (`docs/07`). SQL needs a join
+    // table anyway, so it is written into the model.
     /// `>` — one-to-many
     Gt,
     /// `<` — many-to-one (back-reference, creates no column)
@@ -125,10 +115,9 @@ pub enum TokenKind {
 
     // ---- Errors --------------------------------------------------------
     //
-    // The lexer never returns a `Result` and never panics. Errors become
-    // tokens. A language server almost always receives unfinished text —
-    // if the lexer bails out there, syntax highlighting stops while
-    // you're typing.
+    // Errors become tokens; the lexer never returns a `Result` and never
+    // panics. Unfinished text is the normal case, and a lexer that bails
+    // out stops syntax highlighting mid-keystroke.
     /// A character that doesn't occur in the language, e.g. `§`.
     Unknown,
     /// A string literal without a closing `"`.
@@ -140,10 +129,8 @@ pub enum TokenKind {
 
     /// End of the file. Always the last token, with an empty span.
     ///
-    /// An explicit EOF token is an old compiler trick: the parser never
-    /// has to deal with `Option<Token>` anywhere and can always look at
-    /// "the current token". That saves a surprising number of case
-    /// distinctions.
+    /// Explicit, so the parser never handles an `Option<Token>` and can
+    /// always ask for "the current token".
     Eof,
 }
 
@@ -220,24 +207,17 @@ impl TokenKind {
 
 /// Is `text` a reserved directive?
 ///
-/// # Why only four words are here
+/// # Why only four words
 ///
-/// The language has two classes of keywords (see `docs/01`, section 1.6):
+/// The language has two keyword classes (`docs/01`, "Case conventions and
+/// keywords"): lowercase directives (`spec`, `import`, `as`, `use`) and
+/// PascalCase block names (`Table`, `Meta`, `Group`, …). Only the
+/// directives are reserved; block names stay [`TokenKind::Ident`] and are
+/// recognized by *position* — contextual keywords.
 ///
-/// | Class | Spelling | Examples |
-/// |---|---|---|
-/// | Directive | `lowercase` | `spec`, `import`, `as`, `use` |
-/// | Block | `PascalCase` | `Table`, `Meta`, `Group`, `Index`, `File` … |
-///
-/// Only the directives are **reserved**. The block names remain ordinary
-/// [`TokenKind::Ident`] and are only recognized as keywords by the parser
-/// based on their *position* — this is called **contextual keywords**.
-///
-/// The reason is practical, not aesthetic: in an ERP model, `Group`,
-/// `File`, `Index`, and `Document` are perfectly ordinary table names. If
-/// they were reserved, nobody could write `Table Group { … }`. The price
-/// is a small ambiguity that the parser resolves — see `grammar.rs`,
-/// `parse_item`.
+/// In an ERP model `Group`, `Index` and `Document` are ordinary table
+/// names, so `Table Group { … }` has to stay writable. The price is one
+/// ambiguity, resolved in `grammar::parse_item`.
 pub const fn keyword_from_str(text: &str) -> Option<TokenKind> {
     // `match` on `&str` isn't allowed in a const fn, but on bytes it is.
     match text.as_bytes() {

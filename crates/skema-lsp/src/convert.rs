@@ -14,14 +14,13 @@ use std::path::{Path, PathBuf};
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range, Url};
 use skema_syntax::{Severity, Span};
 
-/// Byte offset → LSP position. The column counts UTF-16 code units, not
-/// bytes and not characters – the protocol's default encoding.
+/// Byte offset → LSP position. The column counts UTF-16 code units — the
+/// protocol's default encoding — not bytes and not characters.
 ///
-/// The counting itself is `skema_api::location`'s, which produces the same
-/// two numbers 1-based for everything that shows a position to a human. LSP
-/// is the one 0-based consumer, so this subtracts rather than recounting:
-/// two implementations of "which line and column is this byte in" is exactly
-/// the kind of pair that agrees until it doesn't.
+/// The counting is `skema_api::location`'s, which is 1-based for everything
+/// human-facing. LSP is the one 0-based consumer, so this subtracts instead
+/// of recounting: two implementations of "which line and column is this
+/// byte in" agree until they don't.
 pub fn position_of(src: &str, byte_offset: usize) -> Position {
     let (line, column) = skema_api::location::utf16_line_col(src, byte_offset as u32);
     Position::new(line - 1, column - 1)

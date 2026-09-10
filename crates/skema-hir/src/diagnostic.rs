@@ -1,15 +1,12 @@
 //! Diagnostics across file boundaries.
 //!
-//! [`skema_syntax::Diagnostic`] is enough for the parser: one file, one
-//! source text, a span is unambiguous. As soon as multiple files are in play
-//! (every rule from `docs/02` onward is), a diagnostic must additionally say
-//! **in which** file its span applies – hence a dedicated type instead of
-//! reusing the parser's type.
+//! [`skema_syntax::Diagnostic`] suffices for the parser: one file, so a span
+//! is unambiguous. Every rule from `docs/02` on spans several files, so a
+//! diagnostic must also say **which** file its span belongs to.
 //!
-//! Rule of thumb for the `file` a diagnostic carries: **the file whose text
-//! the span comes from** – not the file a rule happens to be evaluating. A
-//! relationship target `>cat.Copy.id` is reported where `cat.Copy.id` is
-//! written, not in `cat.skema` itself.
+//! That file is always **the one whose text the span comes from**, not the
+//! one a rule happens to be evaluating: `>cat.Copy.id` is reported where it
+//! is written, not in `cat.skema`.
 
 use serde::Serialize;
 

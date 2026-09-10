@@ -1,18 +1,14 @@
-//! `highlightTokens`: one merged, UTF-16-offset token stream for a CM6 (or
-//! similar) editor's syntax highlighting, combining the lexer's full
-//! lossless coverage (comments/strings/numbers stay colored even mid
-//! syntax-error) with the AST-driven semantic classification from
-//! `skema_syntax::classify` (block keywords, field/type/flag names – things
-//! only the parser, not the lexer, can tell apart). See
-//! `skema_syntax::semantic`'s module doc for why this two-layer split
-//! exists instead of one.
+//! `highlightTokens`: one merged, UTF-16-offset token stream for a CM6-style
+//! editor. It combines the lexer's lossless coverage (comments, strings and
+//! numbers stay colored mid syntax-error) with the AST-driven
+//! classification from `skema_syntax::classify` (block keywords,
+//! field/type/flag names, which the lexer cannot tell apart).
 //!
-//! Deliberately a *flat* `Vec<u32>` of `[class, utf16Start, utf16End]`
-//! triples, not a `Vec` of a `Tsify` struct: this runs on every keystroke,
-//! and skipping one struct allocation and JS object per token keeps it
-//! cheap. [`highlight_class_names`] hands over the `class` ↔ name mapping
-//! so the class codes never need to be duplicated by hand on the
-//! TypeScript side.
+//! A *flat* `Vec<u32>` of `[class, utf16Start, utf16End]` triples, not a
+//! `Vec` of structs: this runs on every keystroke, and one fewer allocation
+//! and JS object per token keeps it cheap. [`highlight_class_names`]
+//! supplies the `class` ↔ name mapping so the codes are never duplicated in
+//! TypeScript.
 
 use skema_syntax::{SemanticKind, Span, TokenKind};
 

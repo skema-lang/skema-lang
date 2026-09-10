@@ -14,32 +14,25 @@
 //!
 //! # Why this is its own crate
 //!
-//! Two front ends need exactly this and nothing else: `skema-wasm` serves it
-//! to a browser, `skema-lsp` serves it to an editor over LSP. Everything
-//! here is one analysis away from `skema-hir` but is not *of* it – a display
-//! path, a UTF-16 offset and a highlight class are all concepts the core
-//! deliberately does not have (`skema_syntax::Span` is byte offsets, "and
-//! nothing else").
+//! Two front ends need exactly this: `skema-wasm` serves it to a browser,
+//! `skema-lsp` to an editor. A display path, a UTF-16 offset and a highlight
+//! class are concepts the core deliberately lacks — `skema_syntax::Span` is
+//! byte offsets and nothing else — so they cannot live in `skema-hir`.
 //!
-//! Duplicating it per front end would mean two answers to questions like
-//! "where exactly does this `Meta` entry's value start", and a diagram drawn
-//! by the editor would slowly stop matching the one drawn in the browser.
-//! Sharing it also means the two speak the same JSON: the TypeScript types
-//! `skema-wasm` generates describe `skema-lsp`'s custom responses too, which
-//! is what lets a client vendor those declarations without a second schema.
+//! One copy per front end would mean two answers to "where does this `Meta`
+//! entry's value start", and the diagram drawn in an editor would drift from
+//! the one drawn in the browser. Sharing also means both speak the same
+//! JSON: the TypeScript types `skema-wasm` generates describe `skema-lsp`'s
+//! custom responses too, so a client needs no second schema.
 //!
 //! # The `typescript` feature
 //!
-//! Off by default, and `skema-lsp` leaves it off: `tsify`/`wasm-bindgen` are
-//! how a type crosses into JavaScript, not part of what the type *is*. With
-//! the feature on, every DTO here additionally derives `Tsify` and the
-//! boundary types gain their wasm ABI – which is all `skema-wasm` needs to
-//! stay a thin wrapper rather than a second copy of these structures.
+//! Off by default; `skema-lsp` leaves it off. `tsify`/`wasm-bindgen` are how
+//! a type crosses into JavaScript, not part of what it *is*. On, every DTO
+//! also derives `Tsify` and the boundary types gain their wasm ABI — all
+//! `skema-wasm` needs to stay a thin wrapper.
 //!
-//! Nothing here can fail (there is no I/O in this API), so nothing returns a
-//! `Result` – consistent with the core's "errors are data, not control flow"
-//! stance (`skema_syntax::parse`/`skema_hir::analyze` never return one
-//! either).
+//! There is no I/O here, so nothing can fail and nothing returns a `Result`.
 
 pub mod context;
 pub mod dto;
@@ -74,10 +67,9 @@ pub use style::{StyleBlock, StyleBlocks, StyleScope, style_blocks};
 
 pub const DEFAULT_FILENAME: &str = "input.skema";
 
-/// The cheapest thing that answers "is *this* text valid": one file, no
-/// `import` resolution, so an `import` in it surfaces as an ordinary "import
-/// target not found" diagnostic. Anything with more than one file goes
-/// through [`analyze_project`].
+/// Answers "is *this* text valid" for one file, without resolving `import` —
+/// an `import` surfaces as an ordinary "import target not found" diagnostic.
+/// More than one file goes through [`analyze_project`].
 pub fn check(source: &str, filename: Option<&str>) -> CheckResult {
     let filename = filename.unwrap_or(DEFAULT_FILENAME);
     let (_model, diagnostics) = run_analysis(source, filename);
@@ -107,10 +99,9 @@ pub fn export_model(source: &str, filename: Option<&str>, with_locations: bool) 
     }
 }
 
-/// The language's own vocabulary, as the checking phase itself knows it
-/// (`skema_hir::catalog`) – so an editor's completion offers exactly the
-/// keys `skema-hir` will accept, instead of a hand-copied list in
-/// TypeScript that drifts the first time the language grows a key.
+/// The language's vocabulary as the checking phase knows it
+/// (`skema_hir::catalog`), so completion offers exactly the keys
+/// `skema-hir` accepts and no hand-copied TypeScript list can drift.
 pub fn builtins() -> Builtins {
     Builtins {
         meta_keys: owned(catalog::META_KEYS),
@@ -149,9 +140,8 @@ pub struct Builtins {
     pub flag_keys: Vec<String>,
     pub index_flag_keys: Vec<String>,
     pub builtin_types: Vec<String>,
-    /// Every block keyword the parser recognizes, straight from
-    /// `BlockKind` – the same list that decides whether a word opens a
-    /// block at all (`grammar::parse_item_kind`).
+    /// Every block keyword the parser recognizes, from `BlockKind` — the
+    /// list that decides whether a word opens a block at all.
     pub block_keywords: Vec<String>,
 }
 
@@ -159,9 +149,8 @@ fn owned(words: &[&str]) -> Vec<String> {
     words.iter().map(|w| (*w).to_owned()).collect()
 }
 
-/// Derived from `BlockKind` itself rather than written out again here, so
-/// a new block keyword in the language shows up in completion without
-/// anyone remembering to update a second list.
+/// Derived from `BlockKind`, so a new block keyword reaches completion
+/// without anyone updating a second list.
 fn block_keywords() -> Vec<String> {
     use skema_syntax::ast::BlockKind::{
         Database, Datatype, Dialect, Document, Enum, Field, Group, Index, Lint, Meta, Partial,

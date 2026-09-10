@@ -6,12 +6,11 @@
 //!
 //! # What this does and does not resolve
 //!
-//! Name resolution proper belongs to `skema-hir` (`rules/resolve.rs`), which
-//! knows what a name means. This only needs to know *where it was written*,
-//! and answers that from two facts the tree carries directly: a file's
-//! `Document` name, and its `import … as` aliases. A wrong guess here costs
-//! a jump that does not happen - never a wrong diagnostic - so the honest
-//! trade is to stay simple and let the checker own correctness.
+//! Name resolution proper is `skema-hir`'s (`rules/resolve.rs`). This only
+//! needs *where a name was written*, and answers from two facts the tree
+//! carries directly: the file's `Document` name and its `import … as`
+//! aliases. A wrong guess costs a jump that does not happen, never a wrong
+//! diagnostic — so correctness stays with the checker.
 
 use std::path::Path;
 

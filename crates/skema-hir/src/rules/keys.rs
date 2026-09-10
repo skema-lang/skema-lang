@@ -3,16 +3,13 @@
 //! > Known keys are validated and autocompleted. Custom keys must start with
 //! > `x-` and be quoted. Anything else is an error.
 //!
-//! The rule applies everywhere the language has key/value pairs: in `Meta`,
-//! in field bodies, in `[]` flags, in `Index` flags. What counts as a
-//! "known" key depends on the surrounding block – hence a small table
-//! instead of a single constant.
+//! It applies wherever the language has key/value pairs: `Meta`, field
+//! bodies, `[]` flags, `Index` flags. What counts as "known" depends on the
+//! surrounding block, hence a table rather than one constant.
 //!
-//! `Style` and `Dialect` are deliberately missing from the tables: `docs/13`,
-//! "Known limitations", lists both word lists as not yet finalized. There,
-//! only the context-independent half of the rule is checked – a quoted key
-//! without `x-` is always wrong, regardless of whether the list of
-//! unquoted keys is already settled.
+//! `Style` and `Dialect` are absent on purpose — `docs/13` lists both word
+//! lists as unfinalized. For them only the context-independent half is
+//! checked: a quoted key without `x-` is wrong either way.
 
 use skema_syntax::ast::{self, BlockKind};
 

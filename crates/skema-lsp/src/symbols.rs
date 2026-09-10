@@ -1,15 +1,13 @@
 //! The declarations a file makes, read off the syntax tree.
 //!
-//! Two features want the same list and would otherwise each walk the tree
-//! their own way: the outline (`textDocument/documentSymbol`) and
-//! go-to-definition, which needs somewhere to jump *to*.
+//! Two features want this list: the outline
+//! (`textDocument/documentSymbol`) and go-to-definition, which needs
+//! somewhere to jump *to*.
 //!
-//! Read from the AST rather than from the resolved model on purpose. The
-//! model is the better answer for "what does this table consist of" - it has
-//! `use`d partials applied and types resolved - but it deliberately does not
-//! contain what an outline is about: a `Datatype`, a `Partial`, the `Project`
-//! block itself. Those are declarations, not model entities, and the tree is
-//! where they live.
+//! Read from the AST, not the resolved model. The model answers "what does
+//! this table consist of" better — partials applied, types resolved — but
+//! it does not contain what an outline is about: a `Datatype`, a `Partial`,
+//! the `Project` block. Those are declarations, and they live in the tree.
 
 use skema_syntax::Span;
 use skema_syntax::ast::{Block, BlockKind, Item, ItemKind, Path, SourceFile};

@@ -1,25 +1,20 @@
 //! Which file is the project's root file.
 //!
-//! `docs/02` is explicit that a single file cannot be fully checked in
-//! isolation: `mode` and `dialect` come from the one `Project` block, and
-//! project membership is reachability from the file that carries it. The
-//! first version of this server sidestepped that by treating whatever file
-//! the editor opened as the root, which makes every non-root file in a real
-//! project report a missing `Project` block and lose its `strict`-only
-//! lints.
+//! A single file cannot be fully checked in isolation (`docs/02`): `mode`
+//! and `dialect` come from the one `Project` block, and membership is
+//! reachability from the file carrying it. Treating the opened file as the
+//! root — what this server did first — makes every non-root file report a
+//! missing `Project` block and lose its `strict`-only lints.
 //!
-//! So the root is *elected*, not assumed: every `.skema` file in the
-//! workspace that declares a `Project` block is a candidate, and a file
-//! belongs to the candidate whose import graph actually reaches it - the
-//! language's own membership rule, asked rather than guessed. A file no
-//! candidate reaches falls back to being its own root, which is both the old
-//! behaviour and the only sensible answer for a scratch file.
+//! So the root is *elected*: every workspace file declaring a `Project` is a
+//! candidate, and a file belongs to the candidate whose import graph reaches
+//! it. A file no candidate reaches becomes its own root, which is the right
+//! answer for a scratch file.
 //!
-//! The election is cached per file, because it costs a parse of every
-//! candidate's project. It is dropped whenever something could have changed
-//! the import graph on disk - a save, a create, a delete - rather than on
-//! every keystroke: typing inside a file cannot move it into another
-//! project, and typing an `import` does so only once the file is saved.
+//! Cached per file, because an election costs a parse of every candidate's
+//! project. Dropped on save, create and delete — anything that could change
+//! the import graph on disk — not on every keystroke: typing cannot move a
+//! file into another project until the file is saved.
 
 use std::collections::HashMap;
 use std::io;

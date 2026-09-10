@@ -1,11 +1,9 @@
 //! The resolved model – the JSON export for other tools.
 //!
-//! Unlike [`skema_syntax::ast`], this type no longer represents the
-//! *syntax* but the *meaning*: `use` partials are inlined, relationship
-//! targets are resolved, physical names are cascaded. A field here exists
-//! only if the checking phase understood it – faulty parts are missing
-//! rather than the whole model being refused (the same stance as the
-//! parser, see `skema_syntax`).
+//! Where [`skema_syntax::ast`] holds *syntax*, this holds *meaning*: `use`
+//! partials inlined, relationship targets resolved, physical names
+//! cascaded. A field exists here only if the checking phase understood it —
+//! faulty parts are missing, the model is never refused outright.
 
 use std::collections::BTreeMap;
 
@@ -62,12 +60,12 @@ pub struct TypeRef {
     pub args: Vec<String>,
 }
 
-/// A field's or index's `[]`-flags, keyed by their keyword (`pk`, `unique`,
-/// `default`, a custom `x-`-flag, …). A valueless flag (`[pk]`) maps to
-/// `true`; a valued flag (`` [default=`now()`] ``) maps to its stringified
-/// value. Unrecognized keys are carried through unchanged rather than
-/// dropped – the known/custom-key validation (`docs/01`) is a separate
-/// concern handled by `rules::keys`, not by this export shape.
+/// A field's or index's `[]`-flags, keyed by keyword. A valueless flag
+/// (`[pk]`) maps to `true`, a valued one (`` [default=`now()`] ``) to its
+/// stringified value.
+///
+/// Unrecognized keys are carried through, not dropped: validating them is
+/// `rules::keys`' job, not this export shape's.
 pub type Flags = BTreeMap<String, FlagValue>;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -83,10 +81,9 @@ pub struct Relation {
     pub kind: RelationKind,
     /// `Document` namespace of the file declaring the target table.
     ///
-    /// Without it, `target_table` alone is ambiguous: two files may each
-    /// declare a `Table Copy`, and a tool drawing the relationship would
-    /// have to guess which one is meant. Namespace plus name is the pair
-    /// that identifies a table project-wide (`docs/02`).
+    /// `target_table` alone is ambiguous — two files may each declare a
+    /// `Table Copy`. Namespace plus name identifies a table project-wide
+    /// (`docs/02`).
     pub target_namespace: String,
     pub target_table: String,
     pub target_field: String,

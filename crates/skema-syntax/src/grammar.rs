@@ -29,9 +29,9 @@
 //! body      := "{" item* "}"
 //! ```
 //!
-//! # The one ambiguity — and how it's resolved
+//! # The one ambiguity
 //!
-//! Three lines of the language look identical to the parser:
+//! Three lines look identical to the parser — all are `Ident … "{"`:
 //!
 //! ```text
 //! Table Customer { … }      block
@@ -39,15 +39,10 @@
 //! draft          { … }      enum value
 //! ```
 //!
-//! All three are `Ident … "{"`. This is resolved via a **word list**: if
-//! the first word is one of the fourteen block words ([`BlockKind`]), it's
-//! a block — otherwise a field. This is called *contextual keywords*:
-//! `Table` is only a keyword where a statement begins.
-//!
-//! The price for this is small and well known: a field named `Index` gets
-//! read incorrectly. The payoff is large: `Table Group { … }` and
-//! `Table Document { … }` remain writable — in an ERP model, those are
-//! perfectly ordinary table names.
+//! Resolved by word list: a first word in [`BlockKind`] opens a block,
+//! anything else is a field (contextual keywords). The price is that a
+//! field named `Index` is read wrong; the payoff is that `Table Group { … }`
+//! stays writable, and in an ERP model that is an ordinary table name.
 
 use crate::ast::*;
 use crate::parser::Parser;
@@ -315,22 +310,18 @@ impl Parser<'_> {
 
     /// Ends a statement.
     ///
-    /// `;` **separates** statements. Right before the `}` of a block
-    /// there's nothing left to separate — so it's optional there:
+    /// `;` **separates** statements, so before a block's `}` there is
+    /// nothing left to separate and it is optional there (`docs/01`,
+    /// "Statement termination"):
     ///
     /// ```text
     /// Enum OrderStatus {
     ///   draft { label = "Draft" }    ← no `;` needed
-    ///   paid;                        ← needed here, something else follows
+    ///   paid;                        ← needed, something else follows
     /// }
     /// ```
     ///
-    /// Between two statements it stays mandatory — a forgotten `;` in the
-    /// middle of a block is still reported.
-    ///
-    /// **Note, a deliberate deviation:** `docs/01`, section 1.4 requires
-    /// the `;` without exception, but `examples/myexample.skema` omits it
-    /// in `Enum` values. Here, the example wins.
+    /// Between two statements it stays mandatory.
     fn expect_terminator(&mut self) {
         if self.at(T::RBrace) {
             return;

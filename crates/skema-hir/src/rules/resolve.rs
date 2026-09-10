@@ -684,12 +684,11 @@ fn value_setting(items: &[ast::Item], key: &str) -> Option<String> {
     })
 }
 
-/// Turns a field's or index's `[]`-flags into the export's flat `key ->
-/// value` shape (`model::Flags`): a valueless flag maps to `true`, a valued
-/// one to its stringified value. Deliberately generic – it doesn't check
-/// against a known-flags whitelist (that's `rules::keys`' job), so a custom
-/// `x-`-flag or a flag this analysis doesn't otherwise interpret still ends
-/// up in the export instead of being silently dropped.
+/// Turns a field's or index's `[]`-flags into the export's flat
+/// `key -> value` shape (`model::Flags`).
+///
+/// Checks against no whitelist — that is `rules::keys`' job — so a custom
+/// `x-` flag reaches the export instead of being silently dropped.
 fn build_flags(attrs: &[ast::Attr]) -> model::Flags {
     attrs
         .iter()

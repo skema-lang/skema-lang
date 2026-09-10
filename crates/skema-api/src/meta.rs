@@ -2,23 +2,19 @@
 //! raw AST, with the offsets an editor needs to change one entry without
 //! touching anything else in the file.
 //!
-//! **Why the raw AST and not the resolved model**: `skema-hir` drops `Meta`
-//! entirely while resolving (it only validates the keys, never copies them
-//! into `model::Table`), and the custom `x-…` keys this is mostly about
-//! (`docs/01`, 1.11: "custom keys are passed through unchanged") are by
-//! definition not part of the checked model. The syntax tree is the only
-//! place they survive.
+//! **Why the raw AST, not the resolved model**: `skema-hir` validates `Meta`
+//! keys but never copies them into `model::Table`, and the custom `x-…` keys
+//! this is mostly about (`docs/01`, "Custom keys") are by definition outside
+//! the checked model. The syntax tree is where they survive.
 //!
-//! **Why UTF-16 offsets here**, unlike the byte `span`s on the exported
-//! model: this type exists to drive *edits* in a browser editor, where a
-//! position is a UTF-16 code-unit offset into the document. The model's
-//! spans describe *the model*; these describe *the text you are about to
-//! change*, so they speak the editor's coordinates. The type names say so
-//! ([`Utf16Range`]) precisely so the two can't be confused at the call site.
+//! **Why UTF-16 offsets**, unlike the model's byte `span`s: this drives
+//! *edits* in a browser editor, so it speaks the editor's coordinates. The
+//! model's spans describe the model; these describe the text about to
+//! change. [`Utf16Range`] names the difference so call sites cannot confuse
+//! them.
 //!
-//! One parse covers every table in the file – the caller reading positions
-//! back for N tables on load should not pay for N parses of the same
-//! source.
+//! One parse covers every table in the file — reading N tables' positions on
+//! load should not cost N parses.
 
 use serde::Serialize;
 use skema_syntax::ast::{self, BlockKind};

@@ -1,8 +1,5 @@
-//! Print the AST as indented text.
-//!
-//! Not part of the compiler — but the most useful tool while building a
-//! parser: you see immediately what was actually read, instead of digging
-//! it out of `{:#?}`. See `examples/dump_ast.rs`.
+//! Print the AST as indented text — readable where `{:#?}` is not.
+//! See `examples/dump_ast.rs`.
 
 use crate::ast::*;
 use std::fmt::Write as _;

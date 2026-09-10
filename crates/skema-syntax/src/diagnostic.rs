@@ -1,18 +1,7 @@
 //! Error and warning messages.
 //!
-//! # Why not `Result<T, Error>`?
-//!
-//! The obvious Rust reflex would be `fn parse(src: &str) -> Result<Ast, Error>`.
-//! For an IDE frontend, that's the wrong shape:
-//!
-//! * You want **all** errors at once, not just the first. Otherwise the
-//!   user hops from error to error.
-//! * You want a tree **despite** errors, so autocompletion and go-to-
-//!   definition keep working while typing.
-//!
-//! That's why the signature is later `fn parse(src: &str) -> (Ast, Vec<Diagnostic>)`.
-//! Errors are data, not control flow. That's the same approach taken by
-//! rustc, TypeScript, and rust-analyzer.
+//! Diagnostics are returned alongside the tree, not in a `Result` — see
+//! [`crate::parse`] for why.
 
 use serde::Serialize;
 
@@ -20,8 +9,8 @@ use crate::Span;
 
 /// How bad is it?
 ///
-/// The order matches the LSP protocol (Error = 1 … Hint = 4), which makes
-/// the conversion at the protocol boundary trivial.
+/// Ordered like the LSP protocol (Error = 1 … Hint = 4), so the conversion
+/// at the protocol boundary stays trivial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub enum Severity {
     Error,

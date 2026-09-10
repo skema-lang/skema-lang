@@ -1,8 +1,8 @@
 //! Writing a diagram position back into the model's own source.
 //!
-//! A position lives in the declaration it belongs to, as the language's
-//! reserved custom key (`docs/01`, 1.11: "custom keys must start with `x-`
-//! and be quoted … passed through unchanged"):
+//! A position lives in the declaration it belongs to, as a custom key
+//! (`docs/01`, "Custom keys": quoted, `x-` prefixed, passed through
+//! unchanged):
 //!
 //! ```skema
 //! Table Customer {
@@ -10,26 +10,24 @@
 //! }
 //! ```
 //!
-//! So a layout travels with the file, shows up in a diff like any other
-//! decision about the model, and survives being opened in a different tool -
-//! unlike a layout kept in a browser's `localStorage` or an editor's
-//! workspace state.
+//! So a layout travels with the file, shows up in a diff, and survives being
+//! opened in a different tool — unlike one kept in `localStorage` or an
+//! editor's workspace state.
 //!
 //! # Why this is here and not in the front ends
 //!
-//! It is the same edit in every one of them: a browser editor dragging a
-//! table, and an LSP client dragging the same table in a webview. Both must
-//! produce the *smallest* edit - replace one value, or add one entry, or add
-//! a whole `Meta` block - and both must get the offsets from the same reader
-//! ([`crate::meta`]) that produced them. Two copies of that reasoning would
-//! disagree the first time the language grows a way to write a `Meta` entry.
+//! It is the same edit everywhere: a browser editor dragging a table, an LSP
+//! client dragging it in a webview. Both must produce the *smallest* edit —
+//! replace a value, add an entry, or add a whole `Meta` block — from the
+//! same reader ([`crate::meta`]) that produced the offsets. Two copies would
+//! disagree the first time the language grows another way to write a `Meta`
+//! entry.
 //!
 //! # The one rule for callers
 //!
-//! `source` must be the file's **current** text. The returned range is a
-//! UTF-16 offset pair into exactly that revision, and a single keystroke
-//! anywhere before it invalidates it. Read the text, build the edit, dispatch
-//! it - without awaiting anything in between.
+//! `source` must be the file's **current** text. The returned UTF-16 range
+//! belongs to exactly that revision and one keystroke before it invalidates
+//! it. Read, build the edit, dispatch — without awaiting in between.
 
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "typescript")]

@@ -1,14 +1,9 @@
 //! Public, stable catalogs of the language's own vocabulary – known key
 //! names, flag names, built-in type names.
 //!
-//! `docs/01`, "known keys are validated and autocompleted": [`rules::keys`]
-//! and [`rules::resolve`] check *against* these lists. This module exists
-//! so something outside this crate (a browser editor via `skema-wasm`,
-//! eventually `skema-lsp`'s own completion) can *read* them too, instead of
-//! re-deriving or duplicating the language's own keyword catalog.
-//!
-//! [`rules::keys`]: crate::rules
-//! [`rules::resolve`]: crate::rules
+//! `docs/01`, "Custom keys": `rules::keys` and `rules::resolve` check
+//! *against* these lists. Public so the completion in `skema-wasm` and
+//! `skema-lsp` can read the same catalog instead of duplicating it.
 
 pub const META_KEYS: &[&str] = &["author", "note", "version", "styleClasses"];
 pub const LINT_KEYS: &[&str] = &[
@@ -31,14 +26,12 @@ pub const INDEX_FLAG_KEYS: &[&str] = &["unique"];
 
 /// The built-in, dialect-independent types (`docs/02`, `docs/06`).
 ///
-/// `docs/02` describes `mode = draft` as "simple types suffice: string,
-/// int, float, bool" – the reference project `examples/generic/` (itself
-/// `mode = draft`) also uses `uuid`, `timestamp`, `varchar(n)`, `text`,
-/// `date` throughout. Read as "suffices, but doesn't forbid anything more
-/// specific" rather than as a closed allowlist – that's the reading that
-/// fits the reference project, and the one that applies here. `mode` thus
-/// no longer decides the type catalog, only `Lint` (`docs/04`) and the
-/// future catalog extension per `dialect` do.
+/// `docs/02` says `mode = draft` gets by on `string`/`int`/`float`/`bool`,
+/// but the reference project `examples/generic/` is `mode = draft` and uses
+/// `uuid`, `timestamp`, `varchar(n)`, `text` and `date` throughout. Read
+/// here as "suffices, but forbids nothing more specific": `mode` does not
+/// decide the type catalog. The full catalog is an open language question
+/// (`docs/13`, "Built-in type catalog").
 pub const BUILTIN_TYPES: &[&str] = &[
     "string",
     "int",

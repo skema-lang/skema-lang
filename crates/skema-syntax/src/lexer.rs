@@ -1,8 +1,4 @@
-//! The lexer (also: scanner or tokenizer).
-//!
-//! # What a lexer actually does
-//!
-//! It turns a flat character sequence into a flat token sequence:
+//! The lexer: a flat character sequence becomes a flat token sequence.
 //!
 //! ```text
 //! "Table Customer {"   ──►   [Ident 0..5]  [Whitespace 5..6]
@@ -10,33 +6,21 @@
 //!                            [LBrace 15..16] [Eof 16..16]
 //! ```
 //!
-//! Nothing more. The lexer knows **no structure**. It doesn't know that a
-//! name must follow `Table`, and it doesn't care whether a bracket is ever
-//! closed. This division of labor is the whole trick: the parser never has
-//! to deal with individual characters, escape sequences, or comment
-//! nesting — only with a handful of token kinds.
+//! It knows **no structure** — not that a name follows `Table`, not whether
+//! a bracket is ever closed. That is what keeps individual characters,
+//! escape sequences and comment nesting out of the parser.
 //!
-//! # The blueprint — applies to practically every hand-written lexer
-//!
-//! 1. Keep a **position** (here: a byte offset `pos`) in the source text.
-//! 2. Remember `start = pos`.
-//! 3. Read **one** character and decide via `match` what kind of token it
-//!    is. In almost all cases this one character is enough (plus,
-//!    occasionally, a look at the next one — "lookahead 1").
-//! 4. Devour any further characters that still belong to it.
-//! 5. Return `Token { kind, span: start..pos }` and start over.
-//!
-//! That's all. No state machine to write out by hand, no regular grammar,
-//! no generators. That's exactly how rustc, TypeScript, Go, and
-//! rust-analyzer do it too — for two reasons: better error messages and
-//! full control over the spans.
+//! Hand-written rather than generated, for error messages and full control
+//! over the spans. The shape is the usual one: remember `start = pos`,
+//! `match` on one character (occasionally peeking at the next), consume
+//! what still belongs to the token, emit `Token { kind, span }`, repeat.
 //!
 //! # The two rules that matter in an LSP context
 //!
-//! * **The lexer never panics and never returns a `Result`.** Errors become
-//!   tokens ([`TokenKind::Unknown`] etc.).
-//! * **The token stream is lossless.** Every byte of the source text lives
-//!   in exactly one token. See the `tokens_are_lossless` test.
+//! * **Never panics, never returns a `Result`.** Errors become tokens
+//!   ([`TokenKind::Unknown`] etc.).
+//! * **The token stream is lossless.** Every byte lives in exactly one
+//!   token — asserted by `tokens_are_lossless`.
 
 use crate::span::{Span, TextSize};
 use crate::token::{Token, TokenKind, keyword_from_str};

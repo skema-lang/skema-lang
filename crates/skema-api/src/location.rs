@@ -1,25 +1,20 @@
-//! Byte offset → human position, for everything that shows one.
+//! Byte offset → human position. The one place in the workspace that
+//! converts (`skema_syntax::Span` is byte offsets and nothing else).
 //!
-//! Columns count **UTF-16 code units**, and every front end in the workspace
-//! shares that: `skema-wasm` because JavaScript strings – and therefore
-//! editor positions in something like CodeMirror or Monaco – are measured
-//! that way, `skema-lsp` because the protocol mandates it, and `skema-cli`/
-//! `skema-py` because they render the same [`crate::Diagnostic`] the other
-//! two do. `str::encode_utf16` yields one `u16` per code unit, so a
-//! character outside the Basic Multilingual Plane counts as the 2 units (a
-//! surrogate pair) that JavaScript itself would see.
+//! Columns count **UTF-16 code units** everywhere: `skema-wasm` because
+//! JavaScript strings and editor positions are measured that way,
+//! `skema-lsp` because the protocol mandates it, `skema-cli`/`skema-py`
+//! because they render the same [`crate::Diagnostic`].
 //!
-//! An earlier `line_col` in `skema-loader` counted Unicode scalar values
-//! instead, which is the more natural choice for a terminal caret. It was
-//! dropped rather than kept alongside: two counting schemes meant a
-//! diagnostic could name two different columns depending on which tool
-//! printed it, and the disagreement only ever showed up on astral
-//! characters – i.e. it would have been found by a user, not by a test.
+//! A single counting scheme is the point. An earlier `line_col` in
+//! `skema-loader` counted scalar values — more natural for a terminal caret,
+//! but it made one diagnostic name two different columns depending on which
+//! tool printed it, and only on astral characters, so a user would have
+//! found it before a test did.
 //!
-//! Line and column are 1-based here, matching the convention in `skema-cli`
-//! and `skema-py` – `skema-lsp` is the one legitimate 0-based exception,
-//! mandated by the LSP protocol itself, and [`crate::location`] is still
-//! where it gets its numbers from (`convert::position_of`).
+//! Line and column are 1-based. `skema-lsp` is the one 0-based exception,
+//! mandated by LSP, and it still gets its numbers from here
+//! (`convert::position_of`).
 
 use serde::Serialize;
 #[cfg(feature = "typescript")]
@@ -59,17 +54,14 @@ pub fn locate(src: &str, filename: &str, span: skema_syntax::Span) -> Location {
     }
 }
 
-/// Fast byte-offset → flat UTF-16-offset conversion for **many** spans
-/// against the same source text (a CM6-style editor position is one flat
-/// offset, not a line/column pair).
+/// Byte offset → flat UTF-16 offset for **many** spans against the same
+/// source (a CM6-style editor position is one flat offset, not line/column).
 ///
-/// [`utf16_line_col`] above recomputes `encode_utf16().count()` from byte 0
-/// on every call – fine for the handful of spans in a diagnostics list, too
-/// slow for the hundreds of token spans a highlighter re-touches on every
-/// keystroke. This builds one sparse breakpoint table per source string in
-/// a single pass, then converts each span endpoint in `O(log k)`, where `k`
-/// is the number of multi-byte characters – zero, i.e. an identity mapping,
-/// for the plain-ASCII source this DSL mostly consists of.
+/// [`utf16_line_col`] recounts from byte 0 on every call — fine for a
+/// diagnostics list, too slow for the hundreds of token spans a highlighter
+/// touches per keystroke. This builds a sparse breakpoint table in one pass
+/// and converts in `O(log k)`, `k` = number of multi-byte characters, i.e.
+/// an identity mapping for the mostly-ASCII source this DSL consists of.
 #[derive(Debug)]
 pub struct Utf16Offsets {
     /// `(byte_offset, cumulative_delta)`, sorted by `byte_offset`: from this

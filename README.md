@@ -1,31 +1,31 @@
 # skema
 
-A DSL for describing entity-relationship models – with a parser, semantic
-checking, a CLI, a language server, and Python bindings. The core is written
-in Rust and is platform-neutral, so the same frontend also runs in a browser
-as WebAssembly.
+A DSL for entity-relationship models: parser, semantic checking, CLI,
+language server, Python bindings. The core is Rust and platform-neutral, so
+the same frontend runs in a browser as WebAssembly.
 
-Model files use the **`.skema`** extension; the language definition lives in
-[`docs/`](docs/README.md), reference models in [`examples/`](examples/).
+Model files use the **`.skema`** extension. The language definition lives in
+[`docs/src/`](docs/src/README.md), reference models in
+[`examples/`](examples/).
 
-> `docs/` is the finished, final language reference (English) and is no
-> longer changed by this project. This README describes the implementation
-> built on top of it – crates, tools, build status.
+> `docs/` is the finished language reference (English). This README covers
+> the implementation on top of it — crates, tools, build status.
 
 ## Getting started
 
 ```bash
-direnv allow          # once – after that the toolchain is available automatically
+direnv allow          # once; the toolchain is then available automatically
 # or without direnv:
 devenv shell
 
 check                 # fmt + clippy + tests
-t                      # tests only
-fix                    # fmt + clippy --fix
+t                     # tests only
+fix                   # fmt + clippy --fix
+wasm-test             # skema-wasm's tests under wasm32, in Node
 ```
 
-Without `direnv`, every command must be prefixed with `devenv shell -- `. For
-fish users, the following hook is worth adding:
+Without `direnv`, prefix every command with `devenv shell -- `. Fish users
+want this hook:
 
 ```fish
 echo 'direnv hook fish | source' >> ~/.config/fish/config.fish
@@ -42,43 +42,41 @@ cargo run -p skema-cli -- export --json examples/generic/project.skema > model.j
 cargo run -p skema-cli -- export --json --locations examples/generic/project.skema
 ```
 
-`check` loads the root file along with everything it reaches via `import`
-("Project membership is reachability-defined", `docs/02`), and reports every
-syntax and semantic error as `path:line:column: severity: text`. `export`
-additionally writes the resolved model to stdout – tables with `Partial`s
-applied, resolved relationships, and cascaded physical names – with messages
-on stderr, so the redirect above yields nothing but the model.
+`check` loads the root file plus everything it reaches via `import` (project
+membership is reachability-defined, `docs/02`) and reports every syntax and
+semantic error as `path:line:column: severity: text`. `export` also writes
+the resolved model to stdout — `Partial`s applied, relationships resolved,
+physical names cascaded — with messages on stderr, so the redirect above
+yields the model alone.
 
 Both emit `skema-api`'s types
 ([`crates/skema-api/src/dto.rs`](crates/skema-api/src/dto.rs)), the same ones
 the language server and the browser editor answer with. `--locations` adds a
-`location` (file, line, 1-based UTF-16 column) to every entity in the model;
-it is off by default because it roughly doubles the output and a consumer
-reading only the structure never looks at it. Diagnostics always carry
-theirs.
+`location` (file, line, 1-based UTF-16 column) to every entity. Off by
+default: it roughly doubles the output and a consumer reading only the
+structure never looks at it. Diagnostics always carry theirs.
 
 ### Language server – `skema-lsp`
 
-Stdio-based, for VSCode extensions and similar editor integrations. Serves
-live diagnostics, hover, go-to-definition, completion, semantic tokens and
-the document outline — everything from `skema-api`, so an editor and the
-browser editor answer the same questions the same way.
+Stdio-based, for VSCode extensions and similar integrations. Serves live
+diagnostics, hover, go-to-definition, completion, semantic tokens and the
+document outline — all from `skema-api`, so an editor and the browser editor
+answer identically.
 
-It **elects the root file** rather than assuming one: every `.skema` file in
-the workspace that declares a `Project` block is a candidate, and a file
-belongs to the candidate whose import graph reaches it (`docs/02`, "project
-membership is reachability-defined"). A file no candidate reaches is
-analyzed as its own root, and the client is told so — it then lacks `mode`
-and `dialect`, which is a property of the language, not a limitation of the
-server.
+It **elects the root file** rather than assuming one. Every workspace
+`.skema` file declaring a `Project` block is a candidate, and a file belongs
+to the candidate whose import graph reaches it (`docs/02`). A file no
+candidate reaches is analyzed as its own root and the client is told so; it
+then lacks `mode` and `dialect`, which is a property of the language, not a
+limitation of the server.
 
-Three things a live ER diagram needs have no LSP equivalent and are served
-as custom `skema/` messages ([`protocol.rs`](crates/skema-lsp/src/protocol.rs)):
+An ER diagram needs three things LSP has no word for, served as custom
+`skema/` messages ([`protocol.rs`](crates/skema-lsp/src/protocol.rs)):
 `skema/model` (the resolved model plus `Meta` offsets and `Style` blocks),
-`skema/positionEdit` (the smallest edit that stores a dragged position), and
+`skema/positionEdit` (the smallest edit that stores a dragged position) and
 a `skema/modelChanged` notification. They carry `skema-api`'s own types, so
-a client can type them with the `.d.ts` that `skema-wasm` generates instead
-of a second, hand-written schema.
+a client types them with the `.d.ts` `skema-wasm` generates instead of a
+second, hand-written schema.
 
 ### Python bindings – `skema`
 
@@ -101,13 +99,12 @@ located = skema.export("project.skema", with_locations=True)["model"]
 
 Build with [`maturin`](https://www.maturin.rs/) from `crates/skema-py`
 (`maturin develop` in an activated venv). Both functions always return a
-`dict`, never an exception for a faulty model – errors are data (`ok: False`
-plus `diagnostics`), not control flow, the same stance as throughout the
-core. An unreadable root file is one diagnostic in that same list rather
-than a separately shaped error.
+`dict` and never raise: errors are data (`ok: False` plus `diagnostics`),
+not control flow, as everywhere in the core. An unreadable root file is one
+more diagnostic in that same list.
 
-The `dict` holds `skema-api`'s structures, so it has the same keys the CLI's
-`--json`, the language server and the browser editor use.
+The `dict` holds `skema-api`'s structures, so it has the same keys as the
+CLI's `--json`, the language server and the browser editor.
 
 ## Layout
 
@@ -121,7 +118,7 @@ crates/
   skema-lsp/      ✅ Binary `skema-lsp`: language server (stdio)
   skema-py/       ✅ pyo3 bindings over skema-loader: check() / export()
   skema-wasm/     ✅ wasm-bindgen wrapper around skema-api
-docs/                    Language definition (finished, English)
+docs/src/                Language definition (mdBook, English)
 examples/                Reference models – also the test corpus for skema-hir
 ```
 
@@ -158,33 +155,30 @@ Within `skema-hir`:
 ### The architecture rule
 
 `skema-syntax` and `skema-hir` are **platform-neutral**: no `std::fs`, no
-network, no `tokio`. Files are read by the calling side (`skema-loader`,
-used by `skema-cli`, `skema-py` and `skema-lsp`); only `&str` or
-already-parsed trees are passed down. Only this way does the core stay
-compilable to WASM and embeddable in the language server.
+network, no `tokio`. The caller reads files and passes down `&str` or
+already-parsed trees. That is what keeps the core compilable to WASM and
+embeddable in the language server.
 
-`skema-loader` is the one crate that has both a filesystem and `skema-api`,
-so it is where a project turns into an answer: `analyze` runs the checker
-and returns `skema-api`'s model and diagnostics. All three disk-based front
-ends go through it, which is what makes `skema check --json`,
-`skema.export()` and the language server describe a model identically.
-`skema-api` itself keeps its own in-memory counterpart (`project.rs`) for
-the browser, where there is no filesystem to load from.
+`skema-loader` is the one crate with both a filesystem and `skema-api`, so
+it is where a project becomes an answer: `analyze` runs the checker and
+returns `skema-api`'s model and diagnostics. All three disk-based front ends
+go through it, which is why `skema check --json`, `skema.export()` and the
+language server describe a model identically. For the browser, where there
+is no filesystem, `skema-api` keeps its own in-memory counterpart
+(`project.rs`).
 
-`skema-wasm` and `skema-py` each get their **own** crate. Mixing
-`wasm-bindgen` and `pyo3` in the same crate leads to feature-flag chaos.
+`skema-wasm` and `skema-py` each get their **own** crate — mixing
+`wasm-bindgen` and `pyo3` leads to feature-flag chaos.
 
-`skema-api` follows the same rule and is where the two editor front ends
-meet. An editor needs more than "is this valid": the resolved model with a
-location per entity, the exact offsets of a `Meta` entry, the `Style`
-cascade, a token stream to colour. None of that is `skema-hir`'s business –
-it knows byte offsets "and nothing else" – but all of it is needed twice,
-by `skema-wasm` in a browser and by `skema-lsp` in an editor. Written once
-per front end, the two would drift, and a diagram drawn in VSCode would
-slowly stop matching the one drawn in the browser. Its `typescript` feature
-(off by default) adds the `tsify`/`wasm-bindgen` derives that only the WASM
-boundary needs, so `skema-lsp` links the same types without either
-dependency.
+`skema-api` is where the two editor front ends meet. An editor needs more
+than "is this valid": the resolved model with a location per entity, the
+exact offsets of a `Meta` entry, the `Style` cascade, a token stream to
+colour. None of that belongs in `skema-hir`, which knows byte offsets and
+nothing else, but all of it is needed twice. Written per front end, the two
+would drift and a diagram drawn in VSCode would stop matching the browser's.
+Its `typescript` feature (off by default) adds the `tsify`/`wasm-bindgen`
+derives only the WASM boundary needs, so `skema-lsp` links the same types
+without either dependency.
 
 ## Roadmap
 
@@ -199,7 +193,7 @@ dependency.
 | 7 | **Python bindings** – `check()` / `export()` | ✅ |
 | 8 | **JSON export** – serde serialization of the model | ✅ |
 | 9 | **Imports** – module graph, cycle detection | ✅ |
-| 10 | **LSP features** – hover, go-to-definition, autocompletion | ✅ |
+| 10 | **LSP features** – hover, go-to-definition, completion, semantic tokens, outline | ✅ |
 | 11 | **Workspace-wide root file detection** in the LSP (instead of "open file = root") | ✅ |
 | 12 | **VSCode extension** – TS client + bundled binary | ✅ ([skema-vscode](https://gitlab.com/skema-language/skema-vscode)) |
 | 13 | **WASM** – parser in the browser | ✅ |
@@ -207,8 +201,7 @@ dependency.
 
 ## Releasing
 
-A release is a chain, and the only thing that starts it is a green default
-branch:
+A release is a chain. Only a green default branch starts it:
 
 1. `release` (default branch) works out the next version from the commits
    since the last tag, writes it into `Cargo.toml`/`Cargo.lock`, and pushes
@@ -222,15 +215,14 @@ branch:
    fetch *that tag's* artifacts, commit them, and tag themselves. Both are
    `strategy: depend`, so a downstream failure shows up here.
 
-Pushing a tag by hand does the same thing from step 2 on; the automation adds
-a trigger, not a second release path.
+Pushing a tag by hand does the same from step 2 on; the automation adds a
+trigger, not a second release path.
 
-**How the version is picked.** Conventional-commit markers when the history
-has them, `patch` when it does not — this repo's log is not written that way
-today, so the honest default is the smallest step. `feat:` earns a minor, a
-`!` or a `BREAKING CHANGE:` trailer earns a major. Pre-1.0 that major is
-capped at a minor: reaching 1.0 should be a decision someone makes, not
-something a `!` does by accident.
+**How the version is picked.** Conventional-commit markers where the history
+has them, `patch` where it does not — this repo's log is not written that
+way today, so the default is the smallest step. `feat:` earns a minor; `!`
+or a `BREAKING CHANGE:` trailer earns a major. Pre-1.0 that major is capped
+at a minor: reaching 1.0 should be a decision, not an accident.
 
 ```bash
 scripts/release.sh --dry-run     # what would happen, touching nothing
@@ -247,11 +239,10 @@ access token anywhere:
   repository**. Off by default; GA in GitLab 18.4, every tier. `CI_JOB_TOKEN`
   then does all the pushing.
 - A `RELEASE_TRIGGER_TOKEN` variable (masked, protected) holding a pipeline
-  trigger token. A job-token push deliberately starts no pipeline — which is
-  exactly what stops the release job re-triggering itself — so the pipeline
-  that publishes has to be requested explicitly. A trigger token can do
-  nothing but start a pipeline, so it is a much smaller thing to leak than a
-  token with write access to the repository.
+  trigger token. A job-token push starts no pipeline — which is what stops
+  the release job re-triggering itself — so the publishing pipeline has to
+  be requested explicitly. A trigger token can only start a pipeline, so it
+  is far smaller to leak than one with repository write access.
 - Both downstream projects must allow this one to trigger them, under
   Settings → CI/CD → Job token permissions.
 
@@ -259,52 +250,49 @@ Everything in the chain is Free-tier: multi-project triggering left Premium in
 12.8, and only the pipeline *graph* that draws it is paid.
 
 **No Cargo registry.** Publishing the library crates to GitLab's Cargo
-registry is not wired up, because GitLab has not shipped it — the feature flag
-is not rolled out on GitLab.com and the `cargo publish` flow is still open on
-[gitlab-org/gitlab#33060](https://gitlab.com/gitlab-org/gitlab/-/work_items/33060).
-That is a maturity gap, not a tier one. The binaries, the wheel and the WASM
-bundle all go to the generic package registry instead, which is what the
-downstream repos consume; see the note in `.gitlab-ci.yml` for what to restore
-when it does ship.
+registry is not wired up: GitLab has not shipped it. The feature flag is not
+rolled out on GitLab.com and `cargo publish` is still open on
+[gitlab-org/gitlab#33060](https://gitlab.com/gitlab-org/gitlab/-/work_items/33060)
+— a maturity gap, not a tier one. Binaries, wheel and WASM bundle go to the
+generic package registry instead, which is what the downstream repos
+consume. See `.gitlab-ci.yml` for what to restore when it ships.
 
 ## Technical decisions
 
 | Decision | Why |
 |---|---|
-| Hand-written lexer + recursive-descent parser | Full control over spans and error recovery. Parser generators like `pest` cannot meaningfully recover from syntax errors – the normal case in an IDE. |
-| Byte offsets (`u32`), no line/column | Halves the memory footprint per node. Conversion happens in exactly one place, `skema-api::location`, and counts UTF-16 code units – what JavaScript and the LSP protocol both measure in. `skema-lsp` subtracts 1 for its 0-based positions rather than counting again. |
-| Only `spec`/`import`/`as`/`use` are reserved words | The block keywords (`Table`, `Group`, `Field`, …) are context-dependent, so that `Table Group { … }` remains writable – in an ERP model those are normal table names. |
-| Permissive parser, strict checking phase | The parser accepts any nesting and always produces a tree; "`Lint` belongs in `Project`" is a clear message from `skema-hir` rather than a syntax error that drags down the rest of the file. |
-| `(Ast, Vec<Diagnostic>)` instead of `Result` | An IDE needs *all* errors and *still* a tree. `skema-hir::analyze` carries the principle through: always a model, always a diagnostic list. |
-| `skema-loader` as its own crate | `skema-cli` and `skema-py` read exclusively from disk, `skema-lsp` should use the unsaved editor content for open files. A swappable read function (`load_with`) instead of three copies of the same import-graph logic – and one `analyze` instead of three copies of "run the checker, then pair every `FileId` back with its path". |
-| `lsp-server` instead of `tower-lsp` | Synchronous, without `tokio`. Fewer Rust concepts at once, and it's the library behind rust-analyzer. |
-| `pyo3` with `abi3-py39` | A built extension runs on Python 3.9 and up, without needing to recompile per Python version. |
-| devenv instead of rustup | On NixOS, `nix profile` doesn't provide `clippy`/`rustfmt`/`rust-analyzer`; devenv pins the entire toolchain per-project in `devenv.lock`. |
+| Hand-written lexer + recursive-descent parser | Full control over spans and error recovery. Generators like `pest` cannot meaningfully recover from syntax errors — the normal case in an IDE. |
+| Byte offsets (`u32`), no line/column | Halves the footprint per node. Exactly one place converts, `skema-api::location`, and it counts UTF-16 code units — what JavaScript and LSP both measure in. `skema-lsp` subtracts 1 for its 0-based positions instead of recounting. |
+| Only `spec`/`import`/`as`/`use` reserved | Block keywords (`Table`, `Group`, `Field`, …) are contextual, so `Table Group { … }` stays writable — in an ERP model those are normal table names. |
+| Permissive parser, strict checking phase | The parser accepts any nesting and always produces a tree. "`Lint` belongs in `Project`" is then a clear message from `skema-hir`, not a syntax error that drags down the file. |
+| `(Ast, Vec<Diagnostic>)` instead of `Result` | An IDE needs *all* errors and *still* a tree. `skema-hir::analyze` follows through: always a model, always a diagnostic list. |
+| `skema-loader` as its own crate | The CLI and Python read only from disk, `skema-lsp` prefers the unsaved editor buffer. One swappable read function (`load_with`) instead of three copies of the import-graph walk, and one `analyze` instead of three copies of "run the checker, then map every `FileId` back to a path". |
+| `lsp-server` instead of `tower-lsp` | Synchronous, no `tokio`. Fewer concepts at once, and it is the library behind rust-analyzer. |
+| `pyo3` with `abi3-py39` | One built extension runs on Python 3.9 and up, with no recompile per version. |
+| devenv instead of rustup | On NixOS, `nix profile` provides no `clippy`/`rustfmt`/`rust-analyzer`; devenv pins the whole toolchain per project in `devenv.lock`. |
 
 ## Known gaps
 
-**Language design** – questions not yet finally settled are listed in
-[`docs/13`, "Known limitations"](docs/13-reference.md#known-limitations):
+**Language design** – open questions are listed in
+[`docs/13`, "Known limitations"](docs/src/13-reference.md#known-limitations):
 composite primary keys, naming scheme for unnamed indexes, index name
 collisions across shared `Partial`s, the full `Style`/`Dialect` property
-catalog, per-rule `Lint` severity overrides. `skema-hir` deliberately checks
-only the already-settled part there, so as not to enforce a rule the
-language itself hasn't decided on yet.
+catalog, per-rule `Lint` severity overrides. `skema-hir` checks only the
+settled part, so it never enforces a rule the language has not decided.
 
 **Implementation** – what goes beyond the current state:
 
-- For `Datatype` arguments, `skema-hir` only checks the **count**, not the
-  type of each individual argument (`decimal("abc", 2)` is not detected as a
-  type error).
-- The built-in type catalog for `dialect = postgres/mysql/oracledb` is
-  deliberately not maintained (`docs/13`) – unknown type names under these
-  dialects produce only a warning, not an error.
-- `skema-lsp`'s go-to-definition resolves a name by the file's `Document`
-  name and its `import … as` aliases rather than through `skema-hir`'s own
-  name resolution. A wrong guess costs a jump that does not happen, never a
-  wrong diagnostic - but it is a second, simpler answer to a question the
-  checker already answers properly.
-- The root election re-elects on save, not on every keystroke: an `import`
-  typed but not yet saved does not move a file into a project.
-- No lossless syntax tree. A formatter that preserves comments will later
-  need `rowan` instead of the current AST.
+- For `Datatype` arguments, `skema-hir` checks the **count** only, not each
+  argument's type (`decimal("abc", 2)` is not caught).
+- The built-in type catalog for `dialect = postgres/mysql/oracledb` is not
+  maintained (`docs/13`). An unknown type name under those dialects is a
+  warning, not an error.
+- `skema-lsp`'s go-to-definition resolves a name from the file's `Document`
+  name and `import … as` aliases, not through `skema-hir`'s name
+  resolution. A wrong guess costs a jump that does not happen, never a wrong
+  diagnostic — but it is a second answer to a question the checker already
+  answers properly.
+- The root election re-elects on save, not per keystroke: an `import` typed
+  but unsaved does not move a file into a project.
+- No lossless syntax tree. A comment-preserving formatter will need `rowan`
+  instead of the current AST.

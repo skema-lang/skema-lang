@@ -1,18 +1,15 @@
 //! One analysis of one project, and everything the features read from it.
 //!
-//! The server keeps the most recent analysis per root file rather than
-//! re-running it per request: hover, go-to-definition, completion, the
-//! diagram and the diagnostics all ask the same three questions - what does
-//! this project contain, where is each part written, and what is wrong with
-//! it - and answering them once per edit instead of once per keystroke-plus-
-//! hover is the difference between a server that keeps up and one that
-//! stutters on a large model.
+//! The server caches the most recent analysis per root file instead of
+//! re-running it per request. Hover, go-to-definition, completion, the
+//! diagram and the diagnostics all ask the same three questions — what does
+//! this project contain, where is each part written, what is wrong with it —
+//! and answering them once per edit is what keeps a large model responsive.
 //!
-//! Everything past the load is `skema_loader::analyze`'s, which answers in
-//! `skema-api`'s types: the same resolved model, with the same locations,
-//! that the browser editor draws its diagram from and that `skema check`
-//! prints. What stays here is what is specific to *being a server* – the
-//! per-root cache, and the translation into LSP's own diagnostic type.
+//! Everything past the load is `skema_loader::analyze`'s, in `skema-api`'s
+//! types: the same resolved model the browser editor draws from and
+//! `skema check` prints. What stays here is server-specific — the per-root
+//! cache and the translation into LSP's diagnostic type.
 
 use std::collections::HashMap;
 use std::io;

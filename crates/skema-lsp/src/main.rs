@@ -16,10 +16,9 @@
 //!
 //! One analysis per edit, not one per request. A `didChange` re-loads the
 //! project around the changed file, re-analyzes it, publishes diagnostics
-//! and tells any open diagram that the model moved; every request after that
-//! reads the cached result. The parser is fast enough for this to be the
-//! simple, correct thing rather than an optimization to defer: the file is
-//! re-parsed in full on every keystroke anyway (`TextDocumentSyncKind::FULL`).
+//! and tells any open diagram the model moved; later requests read the
+//! cached result. The file is re-parsed in full on every keystroke anyway
+//! (`TextDocumentSyncKind::FULL`), and the parser is fast enough.
 
 mod analysis;
 mod completion;

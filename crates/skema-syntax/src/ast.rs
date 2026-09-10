@@ -1,18 +1,10 @@
 //! The abstract syntax tree (AST) of the `.skema` language.
 //!
-//! # The design idea: few nodes, lots of reuse
+//! # Few nodes, lots of reuse
 //!
-//! Looking at `examples/myexample.skema`, you'll notice that almost every
-//! line follows the same shape:
-//!
-//! ```text
-//! Name  [Type]  [flags]  { Body }
-//! ```
-//!
-//! That holds for fields (`email varchar [unique] { note = "…" }`), for
-//! enum values (`draft { label="Draft" }`), and for blocks (`Table Customer { … }`).
-//! The AST takes advantage of this: there are **five** load-bearing node
-//! kinds instead of one per keyword.
+//! Almost every line in the language has the same shape:
+//! `Name [Type] [flags] { Body }`. Five node kinds cover all of it, instead
+//! of one per keyword.
 //!
 //! | Node | Covers |
 //! |---|---|
@@ -22,23 +14,13 @@
 //! | [`Value`] | every value, wherever it appears |
 //! | [`Ref`] | `Table shop.User;` inside a `Group` |
 //!
-//! # Why the parser allows more than the language knows
+//! # Form, not meaning
 //!
-//! The AST captures **form**, not **meaning**. It allows an `Index` block
-//! to appear inside an `Enum`, or a `Project` to have a name. That's
-//! intentional and the central trick of this frontend:
-//!
-//! * An error like "`Lint` may only appear inside `Project`" is a **clear
-//!   message** from a checking phase — not a "syntax error at line 12" where
-//!   the parser no longer understands the rest of the file.
-//! * The tree stays complete even with invalid content, so autocompletion
-//!   and go-to-definition keep working.
-//! * The grammar stays small: **one** body-parsing function for all blocks
-//!   instead of fourteen nearly identical ones.
-//!
-//! This division of labor is called "parse permissively, validate strictly"
-//! and is the reason modern IDE frontends work at all. The checking phase
-//! belongs later in the `skema-hir` crate.
+//! The AST allows an `Index` block inside an `Enum`, or a named `Project`.
+//! Deliberately: "`Lint` may only appear inside `Project`" is then a clear
+//! message from `skema-hir` instead of a syntax error that drags down the
+//! rest of the file. The tree stays complete, so completion and
+//! go-to-definition keep working, and one body parser serves all blocks.
 
 use crate::{Span, TextSize};
 
@@ -48,13 +30,10 @@ use crate::{Span, TextSize};
 
 /// A name in the source text.
 ///
-/// Unlike [`crate::Token`], the AST holds the text **by value** (`String`).
-/// The reason is ergonomics, not laziness: a `&'a str` would tie the whole
-/// tree to the source-text buffer, and a language server wants to keep the
-/// tree around precisely when the buffer has already changed. A few hundred
-/// small `String`s per file is a cheap price for that.
-/// (Anyone who wants to optimize can later swap this for an interned type
-/// like `SmolStr` — the rest of the code stays the same.)
+/// The text is held **by value**, unlike in [`crate::Token`]: a `&'a str`
+/// would tie the tree to the source buffer, and a language server keeps the
+/// tree precisely when that buffer has already changed. Swappable for an
+/// interned type (`SmolStr`) later without touching the rest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident {
     pub text: String,
@@ -71,9 +50,9 @@ pub struct Path {
 impl Path {
     /// The name, if it is **not** qualified.
     ///
-    /// Declarations (`Table Customer`) need a plain name; references
-    /// (`Table shop.User`) may be qualified. Both are read by the same
-    /// parser function; the distinction is made here.
+    /// Declarations (`Table Customer`) need a plain name, references
+    /// (`Table shop.User`) may be qualified. One parser function reads both;
+    /// the distinction is made here.
     pub fn as_ident(&self) -> Option<&Ident> {
         match self.segments.as_slice() {
             [only] => Some(only),
@@ -93,16 +72,15 @@ impl Path {
 
 /// The key of an assignment.
 ///
-/// `quoted` distinguishes the two forms from `docs/01`, section 1.11:
+/// `quoted` distinguishes the two forms from `docs/01`, "Custom keys":
 ///
 /// ```text
 /// author   = "anna";       # known key, unquoted
-/// "x-jira" = "SHOP-412";   # custom key, quoted and with an x- prefix
+/// "x-jira" = "SHOP-412";   # custom key, quoted and x- prefixed
 /// ```
 ///
-/// The parser does **not** check the rule — it only records what was
-/// written. Whether `athor` is a typo is something only the checking phase
-/// knows.
+/// The parser records what was written; whether `athor` is a typo is the
+/// checking phase's call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Key {
     pub text: String,
@@ -118,15 +96,12 @@ pub struct Value {
 }
 
 impl Value {
-    /// The value as plain text, as a tool would pass it on: a string
-    /// without its quotes, a raw expression without its backticks, a list
-    /// as its comma-joined elements.
+    /// The value as plain text: a string without its quotes, a raw
+    /// expression without its backticks, a list comma-joined.
     ///
-    /// Deliberately **not** `dump::value`'s rendering, which keeps quotes
-    /// and backticks precisely so a debug dump stays unambiguous. This one
-    /// is the "what does this value *say*" form, used by the model export
-    /// (`skema-hir`) and by tools reading a `Meta` entry back out
-    /// (`skema-wasm`) alike – both want the content, not the notation.
+    /// Not `dump::value`, which keeps quotes and backticks so a debug dump
+    /// stays unambiguous. This is the content form, used by the model export
+    /// (`skema-hir`) and by `Meta` readers (`skema-wasm`) alike.
     pub fn to_text(&self) -> String {
         match &self.kind {
             ValueKind::Path(p) => p.to_dotted(),
@@ -155,9 +130,8 @@ impl Value {
 pub enum ValueKind {
     /// `draft`, `CASCADE`, `shop.OrderStatus.paid`
     ///
-    /// Identifiers and qualified names are deliberately **not**
-    /// distinguished here: whether `draft` is an enum value, a mode, or a
-    /// typo is decided by name resolution, not by the parser.
+    /// Whether `draft` is an enum value, a mode or a typo is name
+    /// resolution's call, not the parser's.
     Path(Path),
     Str(String),
     Int(i64),
@@ -169,11 +143,9 @@ pub enum ValueKind {
     List(Vec<Value>),
     /// `decimal(10)` — a type with arguments, used as a value.
     ///
-    /// Occurs in exactly one place: `type = decimal(10);` in the `Field`
-    /// block of a `Datatype` (`docs/06`, "Layering types") — a type builds
-    /// on another one there. Structurally the same as
-    /// [`FieldTypeKind::Named`], just read as a value instead of a field
-    /// type.
+    /// One place only: `type = decimal(10);` in a `Datatype`'s `Field`
+    /// block, where a type layers on another (`docs/06`). Structurally
+    /// [`FieldTypeKind::Named`], read as a value instead of a field type.
     Type {
         path: Path,
         args: Vec<Value>,
@@ -182,13 +154,9 @@ pub enum ValueKind {
 
 /// An assignment — in `{}` as well as in `[]`.
 ///
-/// # Why one type for both
-///
-/// The language strictly separates what `[]` and `{}` *mean* (`[]` produces
-/// DDL, `{}` produces documentation — `docs/01`, 1.7). Their *shape*,
-/// however, is identical: key, optional `=`, value. Two structs for this
-/// would mean two parser functions that would have to be maintained in
-/// lockstep.
+/// The language separates what the two *mean* (`[]` produces DDL, `{}`
+/// documentation — `docs/01`, "Brackets and braces"), but their *shape* is
+/// identical: key, optional `=`, value. One type, one parser function.
 ///
 /// ```text
 /// mode = draft;          Attr { key: "mode",     value: Some(draft) }
@@ -196,8 +164,8 @@ pub enum ValueKind {
 /// [default=`now()`]      Attr { key: "default",  value: Some(Raw) }
 /// ```
 ///
-/// `value: None` only makes sense in `[]`; in `{}` it's an error — reported
-/// by the checking phase, not the parser.
+/// `value: None` only makes sense in `[]`; in `{}` the checking phase
+/// reports it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attr {
     pub key: Key,
@@ -209,13 +177,11 @@ pub struct Attr {
 // Blocks
 // ===========================================================================
 
-/// Generates [`BlockKind`] together with a name table from a single list.
+/// Generates [`BlockKind`] plus its name table from a single list.
 ///
-/// A declarative macro is exactly right here: without it, every keyword
-/// would have to appear in three places (variant, `from_keyword`, `as_str`),
-/// and the third one is easy to forget. `stringify!($v)` turns the
-/// identifier `Table` into the string `"Table"` — that's why the variants
-/// are named exactly like the keywords.
+/// Without the macro every keyword would appear in three places (variant,
+/// `from_keyword`, `as_str`) and the third is easy to forget. Variants are
+/// named exactly like the keywords, so `stringify!` yields the spelling.
 macro_rules! block_kinds {
     ($($v:ident),* $(,)?) => {
         /// Which block is it?
@@ -224,10 +190,9 @@ macro_rules! block_kinds {
             $($v,)*
             /// A block name the language doesn't know.
             ///
-            /// This is not a parser error: `Dialect { postgres { … } }`
-            /// deliberately contains freely named sub-blocks. Whether the
-            /// name is allowed in that position is decided by the checking
-            /// phase.
+            /// Not a parser error: `Dialect { postgres { … } }` has freely
+            /// named sub-blocks by design. The checking phase decides
+            /// whether the name is allowed there.
             Other,
         }
 
@@ -256,20 +221,17 @@ block_kinds!(
     Project, Document, Table, Partial, Enum, Group, Datatype,
     // Settings blocks – only appear inside other blocks
     //
-    // `Field` describes, independent of any database, how a field of this
-    // type behaves — the same in `Datatype` (`docs/06`) and `Enum`
-    // (`docs/08`). Despite the name, it's a perfectly ordinary settings
-    // block like `Meta` or `Dialect`, not a field in the sense of [`Field`]
-    // (the AST node further below) — the shared name is a coincidence of
-    // the language.
+    // `Field` here is the settings block that says how a field of a type
+    // behaves, in `Datatype` (`docs/06`) and `Enum` (`docs/08`). It is not
+    // the [`Field`] AST node below — the language reuses the word.
     Meta, Style, Index, Database, Field, Dialect, Lint,
 );
 
 impl BlockKind {
     /// May this block appear at the top level?
     ///
-    /// Lives here rather than in the checking phase because it's a property
-    /// of the language, not a rule about a specific model.
+    /// A property of the language, not a rule about a model — so it lives
+    /// here, not in the checking phase.
     pub const fn is_declaration(self) -> bool {
         matches!(
             self,
@@ -286,8 +248,7 @@ impl BlockKind {
 
 /// A block with a `{ … }` body.
 ///
-/// Covers every level — the nesting arises because `items` in turn contains
-/// [`Item`]s, which may themselves be `Block`s.
+/// Covers every level: `items` holds [`Item`]s, which may be `Block`s again.
 ///
 /// ```text
 /// Table Customer                    { … }   name = Customer
@@ -304,24 +265,20 @@ pub struct Block {
     pub kind: BlockKind,
     /// `Style @table` — the built-in element type behind the `@`.
     pub selector: Option<Ident>,
-    /// The name of the declaration. `Path`, so `Table shop.User` takes the
-    /// same route; whether a dot is allowed here is checked by the checking
-    /// phase.
+    /// The name of the declaration. A `Path`, so `Table shop.User` takes
+    /// the same route; the checking phase decides whether a dot is allowed.
     pub name: Option<Path>,
     /// The parameters of a `Datatype`: `decimal(precision int, scale int)`.
     pub params: Vec<Param>,
     /// The `{` that opens the body.
     ///
-    /// Not optional: a `Block` is only built when a body actually follows
-    /// (without one, the same syntax is a [`Ref`] instead — see
-    /// `grammar::parse_block_or_ref`), so there is always exactly one.
+    /// Always present: without a body the same syntax parses as a [`Ref`]
+    /// (`grammar::parse_block_or_ref`).
     ///
-    /// Recorded because the parser is the only place that ever sees this
-    /// token: [`Item::span`] covers keyword-through-`}` and says nothing
-    /// about where the *body* starts, so every consumer that wants to
-    /// insert something into a block (an editor adding a `Meta { … }` to a
-    /// table, a formatter, a code action) would otherwise have to re-lex
-    /// the source to find it.
+    /// Recorded because only the parser ever sees this token. [`Item::span`]
+    /// covers keyword-through-`}` and says nothing about where the *body*
+    /// starts, so anything inserting into a block (an editor adding a
+    /// `Meta { … }`, a formatter, a code action) would have to re-lex.
     pub body_brace: Span,
     pub items: Vec<Item>,
 }
@@ -346,9 +303,8 @@ impl Block {
 /// A parameter of a `Datatype`: `precision int` in
 /// `Datatype decimal(precision int, scale int) { … }`.
 ///
-/// "Parameters are declared like fields — name, then type" (`docs/06`).
-/// `ty` is `Option` because an incomplete line while typing is the normal
-/// case; the node stays usable regardless.
+/// Parameters are declared like fields — name, then type (`docs/06`). `ty`
+/// is optional because a half-typed line is the normal case in an editor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub name: Ident,
@@ -358,9 +314,8 @@ pub struct Param {
 
 /// A reference without a body: `Table shop.User;` inside a `Group`.
 ///
-/// Syntactically the start of a [`Block`] — only the line ends with `;`
-/// instead of `{`. That's why both are read by the same parser function,
-/// which only branches at the very end.
+/// Syntactically the start of a [`Block`], ending in `;` instead of `{` —
+/// so one parser function reads both and branches at the end.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ref {
     pub keyword: Ident,
@@ -374,8 +329,7 @@ pub struct Ref {
 
 /// A named entry in the body of a block.
 ///
-/// Despite the name, `Field` covers three things because they share the
-/// same shape:
+/// Covers three things, because they share one shape:
 ///
 /// ```text
 /// email varchar [unique] { note = "…" };   table field
@@ -405,8 +359,8 @@ pub struct FieldType {
 pub enum FieldTypeKind {
     /// `varchar`, `decimal(10, 2)`, `shop.OrderStatus`
     ///
-    /// Whether `shop.OrderStatus` is a data type or an enum can't be told
-    /// from the syntax — name resolution settles that.
+    /// Data type or enum is not visible in the syntax — name resolution
+    /// settles it.
     Named { path: Path, args: Vec<Value> },
     /// `>Customer.id`, `<>Tag.id`
     Relation { op: RelationOp, target: Path },
@@ -414,10 +368,9 @@ pub enum FieldTypeKind {
 
 /// The cardinality of a relationship.
 ///
-/// Only three values — the language deliberately has no many-to-many sign.
-/// `docs/07`, "Many-to-many has no arrow": SQL needs a join table for that
-/// anyway, so it gets written into the model instead of being hidden behind
-/// an operator.
+/// Three values; the language has no many-to-many sign (`docs/07`). SQL
+/// needs a join table for that anyway, so it is written into the model
+/// instead of hidden behind an operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RelationOp {
     /// `>` — many `A`s belong to one `B`; the column is created on `A`.
@@ -441,9 +394,8 @@ impl RelationOp {
 
 /// An entry in the `Index` block: `[name] (column, …) [flags];`
 ///
-/// The name is optional, like every named thing in the language
-/// (`docs/10`). An unnamed index later gets a generated name — decided by
-/// the checking phase, not the parser.
+/// The name is optional (`docs/10`); an unnamed index gets a generated one
+/// in the checking phase.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IndexEntry {
     pub name: Option<Ident>,
@@ -458,9 +410,8 @@ pub struct IndexEntry {
 
 /// `spec 1;` — the language definition version the file is written against.
 ///
-/// `Option` because an incomplete line (`spec ;`) is the normal case while
-/// editing. The node stays in the tree regardless, so the IDE knows a
-/// `spec` is here.
+/// `version` is optional so a half-typed `spec ;` still yields a node and
+/// the IDE knows a `spec` is here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spec {
     pub version: Option<i64>,
@@ -500,17 +451,16 @@ pub enum ItemKind {
     IndexEntry(IndexEntry),
     /// An unreadable section. The parser skipped it and moved on.
     ///
-    /// An error as a node instead of an abort: only this way do the *other*
-    /// declarations in the file stay usable while someone is typing.
+    /// A node instead of an abort, so the other declarations in the file
+    /// stay usable while someone is typing.
     Error,
 }
 
 /// A whole file.
 ///
-/// Deliberately just a flat list: `spec`, `import`, and declarations are
-/// all [`Item`]s. That `spec` must come first and `import` may not appear
-/// inside a `Table` is a **rule**, not a **shape** — and rules are checked
-/// by the checking phase.
+/// A flat list: `spec`, `import` and declarations are all [`Item`]s. That
+/// `spec` comes first and `import` may not sit inside a `Table` is a rule,
+/// not a shape, and rules belong to the checking phase.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceFile {
     pub items: Vec<Item>,
@@ -529,11 +479,9 @@ impl SourceFile {
     /// The first top-level block of `kind` declared under `name`, e.g. the
     /// `Table Customer` of a file.
     ///
-    /// Purely syntactic: it matches the name as written, without namespace
-    /// resolution or duplicate checking – that's `skema-hir`'s job (see
-    /// `symbols::collect_file_facts`, which builds a full declaration table
-    /// instead). This is the cheap lookup for a tool that already knows
-    /// which declaration it is looking for.
+    /// Purely syntactic — the name as written, no namespace resolution, no
+    /// duplicate check. Those live in `skema_hir::symbols`. This is the
+    /// cheap lookup for a caller that already knows what it wants.
     pub fn declaration(&self, kind: BlockKind, name: &str) -> Option<&Block> {
         self.blocks().find(|b| {
             b.kind == kind

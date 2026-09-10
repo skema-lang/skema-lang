@@ -1,22 +1,17 @@
 //! What is being typed, and where.
 //!
-//! Completion needs to know whether the caret sits in a `[]` flag list, in a
-//! type position, after a relation arrow, or in the body of a `Meta` block.
-//! The scan uses the language's own token stream ([`crate::highlight`])
-//! rather than regexes over raw text, so a `{` inside a string or a `#`
-//! comment cannot throw the block nesting off - the lexer already knows what
-//! is code and what is not.
+//! Completion needs to know whether the caret sits in a `[]` flag list, a
+//! type position, after a relation arrow, or in a `Meta` body. The scan uses
+//! the language's own token stream ([`crate::highlight`]), not regexes, so a
+//! `{` inside a string or comment cannot throw the nesting off.
 //!
-//! It is a heuristic, and deliberately so: it decides what to *offer*, never
-//! what is *allowed*. Placement rules are `skema-hir`'s job, and it reports
-//! them as diagnostics a moment later - the same "parse permissively,
-//! validate strictly" split the language itself is built on.
+//! A heuristic by design: it decides what to *offer*, never what is
+//! *allowed*. Placement rules stay with `skema-hir`, which reports them as
+//! diagnostics a moment later.
 //!
-//! What it deliberately does **not** do is pick the words. A context is a
-//! description of a caret; turning that into a list of suggestions needs the
-//! catalogs ([`crate::builtins`]) and the analyzed project, and how a
-//! suggestion is presented differs per front end. So this returns the
-//! question, and each client answers it.
+//! It does not pick the words. That needs the catalogs
+//! ([`crate::builtins`]) and the analyzed project, and presentation differs
+//! per front end — so this returns the question and each client answers it.
 
 use crate::highlight::{Class, classified};
 
