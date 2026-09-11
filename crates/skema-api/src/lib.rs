@@ -39,7 +39,6 @@ pub mod dto;
 pub mod highlight;
 pub mod location;
 pub mod meta;
-pub mod position;
 pub mod project;
 pub mod reference;
 pub mod style;
@@ -62,7 +61,6 @@ pub use meta::{
     EnumMeta, EnumMetas, GroupMeta, GroupMetas, MetaEntry, TableMeta, TableMetas, Utf16Range,
     enum_metas, group_metas, table_metas,
 };
-pub use position::{DeclKind, POSITION_KEY, TextEdit, position_edit, read_position};
 pub use project::{ProjectFile, ProjectFileStatus, ProjectInput, ProjectResult, analyze_project};
 pub use reference::{block_reference_markdown, flag_reference};
 pub use style::{StyleBlock, StyleBlocks, StyleScope, style_blocks};

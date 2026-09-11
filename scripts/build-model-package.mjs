@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regenerates the @skema-language/model package from the wasm-bindgen output.
+// Regenerates the @skema/model package from the wasm-bindgen output.
 //
 //   (cd crates/skema-wasm && wasm-pack build --target web --release)
 //   node scripts/build-model-package.mjs

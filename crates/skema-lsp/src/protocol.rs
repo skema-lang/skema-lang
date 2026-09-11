@@ -12,14 +12,11 @@
 //! instead of a second, hand-written schema that drifts.
 
 use serde::{Deserialize, Serialize};
-use skema_api::{
-    Diagnostic, EnumMeta, ExportedModel, GroupMeta, StyleBlock, TableMeta, position::DeclKind,
-};
+use skema_api::{Diagnostic, EnumMeta, ExportedModel, GroupMeta, StyleBlock, TableMeta};
 
 /// Request: the whole project around one file, as a diagram needs it.
 pub const MODEL_REQUEST: &str = "skema/model";
 /// Request: the smallest edit that stores a dragged position.
-pub const POSITION_EDIT_REQUEST: &str = "skema/positionEdit";
 /// Notification: this project was re-analyzed. Carries no payload beyond
 /// the root, so a client with no diagram open pays nothing; one with a
 /// diagram open answers by asking for the model.
@@ -74,26 +71,6 @@ pub struct FileMetas {
 pub struct FileStyles {
     pub path: String,
     pub blocks: Vec<StyleBlock>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PositionEditParams {
-    /// The file declaring `name` - the model says which that is, and it is
-    /// not necessarily the file the client has open.
-    pub uri: lsp_types::Url,
-    pub kind: DeclKind,
-    pub name: String,
-    pub x: f64,
-    pub y: f64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PositionEditResponse {
-    /// `None` when the file declares no such thing - a stale diagram after
-    /// a rename, which is not an error worth failing the request over.
-    pub edit: Option<lsp_types::TextEdit>,
 }
 
 #[derive(Debug, Clone, Serialize)]

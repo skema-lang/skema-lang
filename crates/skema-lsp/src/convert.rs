@@ -50,23 +50,6 @@ pub fn offset_of(src: &str, position: Position) -> usize {
     src.len()
 }
 
-/// UTF-16 offset into `src` → LSP position. Used for the edits `skema-api`
-/// returns, whose offsets are already in the editor's coordinates.
-pub fn position_of_utf16(src: &str, utf16_offset: u32) -> Position {
-    let mut units = 0u32;
-    for (line, text) in src.split_inclusive('\n').enumerate() {
-        let line_units: u32 = text.encode_utf16().count() as u32;
-        if units + line_units > utf16_offset {
-            return Position::new(line as u32, utf16_offset - units);
-        }
-        units += line_units;
-    }
-    // Past the end: the very end of the document is the honest answer.
-    let lines = src.split_inclusive('\n').count().max(1) - 1;
-    let last = src.rsplit_once('\n').map_or(src, |(_, tail)| tail);
-    Position::new(lines as u32, last.encode_utf16().count() as u32)
-}
-
 pub fn range_of(src: &str, span: Span) -> Range {
     Range::new(
         position_of(src, span.start as usize),
@@ -138,18 +121,6 @@ mod tests {
         assert_eq!(
             offset_of(MIXED, Position::new(0, 999)),
             MIXED.find('\n').expect("a line break")
-        );
-    }
-
-    #[test]
-    fn utf16_offsets_land_on_the_same_place_as_byte_offsets() {
-        // The `🙂` is one char, two UTF-16 units, four bytes: the two
-        // conversions must still agree on where the line's end is.
-        let byte_offset = MIXED.find('🙂').expect("🙂");
-        let utf16_offset = MIXED[..byte_offset].encode_utf16().count() as u32;
-        assert_eq!(
-            position_of_utf16(MIXED, utf16_offset),
-            position_of(MIXED, byte_offset)
         );
     }
 }

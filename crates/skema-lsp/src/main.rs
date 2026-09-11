@@ -312,11 +312,6 @@ impl Server {
                 let result = self.model(&params);
                 self.respond(id, &result)
             }
-            protocol::POSITION_EDIT_REQUEST => {
-                let params: protocol::PositionEditParams = serde_json::from_value(request.params)?;
-                let result = self.position_edit(&params);
-                self.respond(id, &result)
-            }
             _ => self.respond(id, &serde_json::Value::Null),
         }
     }
@@ -435,31 +430,6 @@ impl Server {
             metas,
             styles,
         })
-    }
-
-    fn position_edit(
-        &mut self,
-        params: &protocol::PositionEditParams,
-    ) -> protocol::PositionEditResponse {
-        let edit = convert::path_of(&params.uri)
-            .and_then(|path| self.source_of(&path))
-            .and_then(|source| {
-                let edit = skema_api::position_edit(
-                    &source,
-                    params.kind,
-                    &params.name,
-                    params.x,
-                    params.y,
-                )?;
-                Some(lsp_types::TextEdit {
-                    range: lsp_types::Range::new(
-                        convert::position_of_utf16(&source, edit.range.start),
-                        convert::position_of_utf16(&source, edit.range.end),
-                    ),
-                    new_text: edit.insert,
-                })
-            });
-        protocol::PositionEditResponse { edit }
     }
 
     /// The current text of a file: the editor's buffer, the last analysis,

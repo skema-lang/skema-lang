@@ -107,8 +107,7 @@ pub fn enum_metas(source: &str) -> EnumMetas {
 }
 
 /// Every `Group` in `source`, with its `Meta` entries – the same shape as
-/// [`table_metas`]. A `Group`'s own diagram position is just another
-/// `x-editorPosition` entry here, exactly like a `Table`'s.
+/// [`table_metas`].
 #[wasm_bindgen(js_name = "groupMetas")]
 pub fn group_metas(source: &str) -> GroupMetas {
     skema_api::group_metas(source)

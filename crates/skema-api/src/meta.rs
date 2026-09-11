@@ -156,9 +156,7 @@ pub struct GroupMetas {
 }
 
 /// Every `Group` in `source`, with its `Meta` entries – the same shape as
-/// [`table_metas`]. A `Group`'s own diagram position (once it gets one, as a
-/// draggable frame) is just another `x-editorPosition` entry here, exactly
-/// like a `Table`'s – no separate mechanism needed.
+/// [`table_metas`].
 pub fn group_metas(source: &str) -> GroupMetas {
     let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);
@@ -245,10 +243,10 @@ mod tests {
 
     #[test]
     fn existing_custom_key_is_readable_and_replaceable_in_place() {
-        let src = r#"Table Customer { Meta { "x-editorPosition" = "120,340"; } }"#;
+        let src = r#"Table Customer { Meta { "x-custom" = "120,340"; } }"#;
         let metas = table_metas(src).tables;
         let entry = &metas[0].entries[0];
-        assert_eq!(entry.key, "x-editorPosition");
+        assert_eq!(entry.key, "x-custom");
         assert_eq!(entry.value.as_deref(), Some("120,340"));
 
         // The value range covers the quotes, so swapping in a freshly
@@ -266,7 +264,7 @@ mod tests {
         );
         assert_eq!(
             edited,
-            r#"Table Customer { Meta { "x-editorPosition" = "200,400"; } }"#
+            r#"Table Customer { Meta { "x-custom" = "200,400"; } }"#
         );
     }
 
@@ -275,14 +273,10 @@ mod tests {
         let src = r#"Table Customer { Meta { author = "anna"; } }"#;
         let metas = table_metas(src).tables;
         let at = metas[0].meta_body_start.expect("table has a Meta block") as usize;
-        let edited = format!(
-            r#"{} "x-editorPosition" = "1,2";{}"#,
-            &src[..at],
-            &src[at..]
-        );
+        let edited = format!(r#"{} "x-custom" = "1,2";{}"#, &src[..at], &src[at..]);
         assert_eq!(
             edited,
-            r#"Table Customer { Meta { "x-editorPosition" = "1,2"; author = "anna"; } }"#
+            r#"Table Customer { Meta { "x-custom" = "1,2"; author = "anna"; } }"#
         );
     }
 
@@ -291,12 +285,12 @@ mod tests {
         // The note's "ü" is 2 UTF-8 bytes but 1 UTF-16 unit: an editor
         // offset must count it once, or every later edit lands one
         // character off.
-        let src = r#"Table T { Meta { note = "grün"; "x-editorPosition" = "1,2"; } }"#;
+        let src = r#"Table T { Meta { note = "grün"; "x-custom" = "1,2"; } }"#;
         let metas = table_metas(src).tables;
         let position = metas[0]
             .entries
             .iter()
-            .find(|e| e.key == "x-editorPosition")
+            .find(|e| e.key == "x-custom")
             .expect("the position entry");
         let utf16: Vec<u16> = src.encode_utf16().collect();
         let range = position.value_range.expect("a value was written");
@@ -339,9 +333,9 @@ mod tests {
 
     #[test]
     fn group_meta_entries_are_readable() {
-        let src = r#"Group Core { Meta { "x-editorPosition" = "10,20"; } }"#;
+        let src = r#"Group Core { Meta { "x-custom" = "10,20"; } }"#;
         let metas = group_metas(src).groups;
-        assert_eq!(metas[0].entries[0].key, "x-editorPosition");
+        assert_eq!(metas[0].entries[0].key, "x-custom");
         assert_eq!(metas[0].entries[0].value.as_deref(), Some("10,20"));
     }
 }

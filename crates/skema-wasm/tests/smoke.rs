@@ -223,7 +223,7 @@ fn highlight_tokens_cover_the_document_in_ascending_order() {
 
 #[wasm_bindgen_test]
 fn table_metas_reach_the_boundary_intact() {
-    let source = r#"Table Customer { Meta { "x-editorPosition" = "120,340"; } }"#;
+    let source = r#"Table Customer { Meta { "x-custom" = "120,340"; } }"#;
     let metas = skema_wasm::table_metas(source).tables;
     let customer = metas.first().expect("Customer");
     assert_eq!(customer.name, "Customer");
@@ -232,7 +232,7 @@ fn table_metas_reach_the_boundary_intact() {
         customer
             .entries
             .iter()
-            .find(|e| e.key == "x-editorPosition")
+            .find(|e| e.key == "x-custom")
             .and_then(|e| e.value.as_deref()),
         Some("120,340")
     );
@@ -242,7 +242,7 @@ fn table_metas_reach_the_boundary_intact() {
 fn enum_and_group_metas_reach_the_boundary_intact() {
     let source = r#"
         Enum Status { Meta { styleClasses = [highlight]; } draft; }
-        Group Core { Meta { "x-editorPosition" = "10,20"; } Table Customer; }
+        Group Core { Meta { "x-custom" = "10,20"; } Table Customer; }
     "#;
 
     let enums = skema_wasm::enum_metas(source).enums;
@@ -263,7 +263,7 @@ fn enum_and_group_metas_reach_the_boundary_intact() {
     assert_eq!(
         core.entries
             .iter()
-            .find(|e| e.key == "x-editorPosition")
+            .find(|e| e.key == "x-custom")
             .and_then(|e| e.value.as_deref()),
         Some("10,20")
     );
