@@ -296,3 +296,4 @@ settled part, so it never enforces a rule the language has not decided.
   but unsaved does not move a file into a project.
 - No lossless syntax tree. A comment-preserving formatter will need `rowan`
   instead of the current AST.
+
