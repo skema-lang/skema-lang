@@ -29,7 +29,12 @@ G() {
 
 fresh() {
   rm -rf "$R"; mkdir -p "$R"
-  git clone --quiet "$ROOT" "$R"
+  # --no-tags: release.sh picks the release base as the highest vX.Y.Z tag in
+  # the whole repo, not the nearest one reachable from HEAD (see release.sh).
+  # A plain clone would carry over this project's real release tags, which
+  # then outrank the baseline tag below and silently change what every test
+  # here is bumping from.
+  git clone --quiet --no-tags "$ROOT" "$R"
   G remote remove origin
   mkdir -p "$R/scripts"
   # Pick up uncommitted edits to the script under test, so a run here says
