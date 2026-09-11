@@ -1,0 +1,21 @@
+{
+  "name": "@skema-language/model",
+  "version": "0.1.2",
+  "description": "TypeScript declarations for the skema model, generated from skema-api.",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/skema-language/skema.git",
+    "directory": "npm/model"
+  },
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts"
+    }
+  },
+  "files": [
+    "index.d.ts"
+  ],
+  "sideEffects": false
+}
