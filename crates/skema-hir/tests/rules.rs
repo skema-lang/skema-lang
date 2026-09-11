@@ -172,6 +172,22 @@ fn relation_target_without_table_is_rejected() {
 }
 
 #[test]
+fn a_table_named_like_the_document_resolves_to_itself() {
+    // `shop` is both the file's own `Document` name and a `Table` in it –
+    // the local declaration must win, not the (redundant) self-namespace
+    // reading of the same name.
+    let src =
+        format!("{HEADER}\nTable shop {{ id int [pk]; }}\nTable Order {{ owner >shop.id; }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+
+    let order = model.tables.iter().find(|t| t.name == "Order").unwrap();
+    let relation = order.fields[0].relation.as_ref().unwrap();
+    assert_eq!(relation.target_table, "shop");
+    assert_eq!(relation.target_field, "id");
+}
+
+#[test]
 fn on_delete_on_the_wrong_side_is_rejected() {
     let src = format!(
         "{HEADER}\nTable B {{ id int [pk]; }}\nTable A {{ id int [pk]; b <B.id [onDelete=cascade]; }}\n"

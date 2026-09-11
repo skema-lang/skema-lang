@@ -40,12 +40,21 @@ impl<'a> Ctx<'a> {
     /// otherwise the whole path is meant locally. Returns the owning file of
     /// the **declaration**, its name with span, and the remaining path after
     /// it (e.g. the target field of a relationship).
+    ///
+    /// A local declaration takes priority over a same-named namespace (the
+    /// file's own `Document` name, or an import alias): inside its own file
+    /// a declaration never needs the namespace step, so a `Table` sharing
+    /// its name with the enclosing `Document` (or with an import alias)
+    /// must still resolve to itself instead of being shadowed by it.
     fn resolve_decl_path<'p>(
         &self,
         file: FileId,
         path: &'p ast::Path,
     ) -> Option<(FileId, &'p str, Span, &'p [ast::Ident])> {
         let (first, rest) = path.segments.split_first()?;
+        if self.lookup_decl(file, &first.text).is_some() {
+            return Some((file, first.text.as_str(), first.span, rest));
+        }
         if let Some(target) = self.namespaces.resolve_namespace(file, &first.text) {
             let (name, rest2) = rest.split_first()?;
             Some((target, name.text.as_str(), name.span, rest2))
