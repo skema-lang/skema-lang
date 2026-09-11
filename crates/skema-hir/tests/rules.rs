@@ -95,6 +95,18 @@ fn known_key_with_x_prefix_is_allowed() {
     assert!(diags.is_empty(), "{diags:#?}");
 }
 
+/// A field body needs no `[…]` flags of its own – `bar string { label =
+/// "…"; };` is the whole statement (`docs/05`, the "any part may be
+/// missing" rule).
+#[test]
+fn a_field_body_without_flags_is_allowed() {
+    let src = format!("{HEADER}\nTable T {{ bar string {{ label = \"hallo\"; }} }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let field = &model.tables[0].fields[0];
+    assert_eq!(field.label.as_deref(), Some("hallo"));
+}
+
 #[test]
 fn group_with_wrong_kind_is_rejected() {
     let src = format!("{HEADER}\nTable Order {{ id int [pk]; }}\nGroup G {{ Enum Order; }}\n");

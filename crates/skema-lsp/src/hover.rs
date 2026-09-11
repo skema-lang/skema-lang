@@ -6,26 +6,50 @@
 //! resolved model carries that. The browser editor shows it in a card next
 //! to the diagram; this is the same content where an editor puts it.
 //!
-//! Reads the model, not the tree: everything worth saying here is a
-//! *resolved* fact.
+//! Mostly reads the model, not the tree: a resolved fact beats a
+//! description of the syntax. The exception is a block keyword itself
+//! (`Document`, `Meta`, `Project`, …) - several of those carry no schema
+//! meaning and so never appear in the resolved model at all, and hovering
+//! one instead answers "what is this for, what goes inside it" from the
+//! language's own reference (`keyword_at`, [`skema_api::block_reference_markdown`]).
 
 use skema_api::{
     ExportedField, ExportedFlag, ExportedModel, ExportedTable, FlagValue, RelationKind, Span,
+    block_reference_markdown,
 };
+use skema_syntax::ast::{BlockKind, Item, ItemKind};
 
 use crate::analysis::Analysis;
 use crate::convert;
 
 /// The hover for `offset` in `file`, or `None` when the caret is on
-/// something the model has nothing to add to (a keyword, a brace, whitespace).
+/// something neither the model nor the language reference has anything to
+/// add to (a brace, whitespace, a name already explained by its context).
 pub fn hover(analysis: &Analysis, display_path: &str, offset: u32) -> Option<lsp_types::Hover> {
-    let (markdown, span) = describe(&analysis.model, display_path, offset)?;
-    let src = &analysis
+    let file = analysis
         .project
         .files
         .iter()
-        .find(|f| crate::analysis::display_path(f) == display_path)?
-        .src;
+        .find(|f| crate::analysis::display_path(f) == display_path)?;
+
+    let model_hit = describe(&analysis.model, display_path, offset);
+    let keyword_hit = keyword_at(&file.ast.items, offset).map(|(kind, span)| {
+        (
+            block_reference_markdown(kind, &skema_api::builtins()),
+            Span::from(span),
+        )
+    });
+
+    // A resolved fact and a keyword reference can cover the same offset - a
+    // `Table`'s span covers everything inside it, its own keyword included.
+    // The narrower one is what the caret is actually on (same rule as
+    // `describe`'s "innermost match wins").
+    let (markdown, span) = match (model_hit, keyword_hit) {
+        (Some(a), Some(b)) if width(b.1) < width(a.1) => b,
+        (Some(a), _) => a,
+        (None, Some(b)) => b,
+        (None, None) => return None,
+    };
 
     Some(lsp_types::Hover {
         contents: lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
@@ -33,13 +57,39 @@ pub fn hover(analysis: &Analysis, display_path: &str, offset: u32) -> Option<lsp
             value: markdown,
         }),
         range: Some(convert::range_of(
-            src,
+            &file.src,
             skema_syntax::Span {
                 start: span.start,
                 end: span.end,
             },
         )),
     })
+}
+
+/// The innermost block keyword whose own word contains `offset`, walked
+/// from the syntax tree rather than the model: `Document`, `Meta`,
+/// `Project` and the other settings blocks carry no schema meaning of their
+/// own, so they never appear in [`ExportedModel`] at all.
+fn keyword_at(items: &[Item], offset: u32) -> Option<(BlockKind, skema_syntax::Span)> {
+    for item in items {
+        let ItemKind::Block(block) = &item.kind else {
+            continue;
+        };
+        // `Other` is a name the language doesn't recognize (`postgres`
+        // inside `Dialect`) - nothing in the reference to say about it, so
+        // it is not a hit, but its children may still contain real ones.
+        if block.kind != BlockKind::Other && syntax_contains(block.keyword.span, offset) {
+            return Some((block.kind, block.keyword.span));
+        }
+        if let Some(found) = keyword_at(&block.items, offset) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+const fn syntax_contains(span: skema_syntax::Span, offset: u32) -> bool {
+    span.start <= offset && offset < span.end
 }
 
 /// Innermost match wins: a field's span sits inside its table's, and the
@@ -112,6 +162,9 @@ fn describe(model: &ExportedModel, file: &str, offset: u32) -> Option<(String, S
 fn field_markdown(field: &ExportedField, table: &ExportedTable) -> String {
     let mut out = format!("**{}** `{}`", field.name, type_label(field));
 
+    if let Some(label) = &field.label {
+        out.push_str(&format!("\n\n{label}"));
+    }
     if !field.flags.is_empty() {
         let flags: Vec<String> = field.flags.iter().map(flag_label).collect();
         out.push_str(&format!("\n\n{}", code_list(&flags)));

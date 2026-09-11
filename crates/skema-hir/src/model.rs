@@ -49,6 +49,9 @@ pub struct Field {
     pub flags: Flags,
     pub relation: Option<Relation>,
     pub note: Option<String>,
+    /// Text for humans — dropdowns, generated forms, diagrams. Unlike
+    /// `note` (a description) this is a display name (`docs/05`).
+    pub label: Option<String>,
     pub span: Span,
 }
 

@@ -269,6 +269,7 @@ pub struct ExportedField {
     pub flags: Vec<ExportedFlag>,
     pub relation: Option<ExportedRelation>,
     pub note: Option<String>,
+    pub label: Option<String>,
     pub span: Span,
     pub location: Option<Location>,
 }
@@ -421,6 +422,7 @@ fn field(f: &model::Field, ctx: &LocateCtx<'_>) -> ExportedField {
         flags: flags(&f.flags),
         relation: f.relation.as_ref().map(|r| relation(r, f.file, ctx)),
         note: f.note.clone(),
+        label: f.label.clone(),
         span: f.span.into(),
         location: ctx.locate(f.file, f.span),
     }

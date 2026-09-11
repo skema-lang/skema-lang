@@ -19,6 +19,9 @@ use crate::highlight::{Class, classified};
 pub enum ContextKind {
     /// Inside `[ … ]`: flag names.
     Flags,
+    /// Inside `[ key=… ]`: the value of the flag named in
+    /// [`CursorContext::qualifier`] - `cascade` for `onDelete`.
+    FlagValue,
     /// A `key = value;` body - `Meta`, `Project`, `Lint`, `Database`, `Field`.
     SettingKey,
     /// After a field's name: its type comes next.
@@ -38,7 +41,8 @@ pub struct CursorContext {
     /// `None` at the top level of a file.
     pub block_keyword: Option<String>,
     /// For [`ContextKind::MemberOf`]: the table or namespace whose members
-    /// are being asked for.
+    /// are being asked for. For [`ContextKind::FlagValue`]: the flag whose
+    /// value is being typed.
     pub qualifier: Option<String>,
 }
 
@@ -120,14 +124,6 @@ pub fn cursor_context(source: &str, offset: u32) -> CursorContext {
 
     let block_keyword = blocks.last().filter(|b| !b.is_empty()).cloned();
 
-    if bracket_depth > 0 {
-        return CursorContext {
-            kind: ContextKind::Flags,
-            block_keyword,
-            qualifier: None,
-        };
-    }
-
     // Only the tokens the caret is actually touching matter from here on: a
     // half-typed word is its own token and must not count as "already named".
     let touching_word = statement
@@ -138,6 +134,28 @@ pub fn cursor_context(source: &str, offset: u32) -> CursorContext {
     } else {
         &statement[..]
     };
+
+    if bracket_depth > 0 {
+        // `[onDelete=|]`: the flag settled just before the `=` decides which
+        // values make sense - `cascade` for `onDelete`, nothing for `pk`.
+        if let Some(&(Class::Punctuation, "=", _)) = settled.last() {
+            let flag = settled
+                .len()
+                .checked_sub(2)
+                .and_then(|i| settled.get(i))
+                .map(|&(_, text, _)| text.to_owned());
+            return CursorContext {
+                kind: ContextKind::FlagValue,
+                block_keyword,
+                qualifier: flag,
+            };
+        }
+        return CursorContext {
+            kind: ContextKind::Flags,
+            block_keyword,
+            qualifier: None,
+        };
+    }
 
     let kind = match settled.last() {
         Some(&(Class::Punctuation, ".", _)) => {
@@ -183,6 +201,26 @@ mod tests {
         let ctx = context_at("Table T { id int [p| ] }");
         assert_eq!(ctx.kind, ContextKind::Flags);
         assert_eq!(ctx.block_keyword.as_deref(), Some("Table"));
+    }
+
+    #[test]
+    fn a_flag_value_reports_the_flag_name() {
+        let ctx = context_at("Table O { c >B.id [onDelete=|] }");
+        assert_eq!(ctx.kind, ContextKind::FlagValue);
+        assert_eq!(ctx.qualifier.as_deref(), Some("onDelete"));
+    }
+
+    #[test]
+    fn a_half_typed_flag_value_still_reports_the_flag_name() {
+        let ctx = context_at("Table O { c >B.id [onDelete=casc|] }");
+        assert_eq!(ctx.kind, ContextKind::FlagValue);
+        assert_eq!(ctx.qualifier.as_deref(), Some("onDelete"));
+    }
+
+    #[test]
+    fn after_a_flag_value_and_a_comma_a_flag_name_comes_next() {
+        let ctx = context_at("Table O { c >B.id [onDelete=cascade, |] }");
+        assert_eq!(ctx.kind, ContextKind::Flags);
     }
 
     #[test]

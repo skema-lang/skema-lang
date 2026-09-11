@@ -41,6 +41,7 @@ pub mod location;
 pub mod meta;
 pub mod position;
 pub mod project;
+pub mod reference;
 pub mod style;
 
 use serde::Serialize;
@@ -63,6 +64,7 @@ pub use meta::{
 };
 pub use position::{DeclKind, POSITION_KEY, TextEdit, position_edit, read_position};
 pub use project::{ProjectFile, ProjectFileStatus, ProjectInput, ProjectResult, analyze_project};
+pub use reference::{block_reference_markdown, flag_reference};
 pub use style::{StyleBlock, StyleBlocks, StyleScope, style_blocks};
 
 pub const DEFAULT_FILENAME: &str = "input.skema";
@@ -115,6 +117,7 @@ pub fn builtins() -> Builtins {
         flag_keys: owned(catalog::FLAG_KEYS),
         index_flag_keys: owned(catalog::INDEX_FLAG_KEYS),
         builtin_types: owned(catalog::BUILTIN_TYPES),
+        relation_action_values: owned(catalog::RELATION_ACTION_VALUES),
         block_keywords: block_keywords(),
     }
 }
@@ -140,6 +143,8 @@ pub struct Builtins {
     pub flag_keys: Vec<String>,
     pub index_flag_keys: Vec<String>,
     pub builtin_types: Vec<String>,
+    /// Values accepted by `onDelete`/`onUpdate` - `cascade`, `restrict`, …
+    pub relation_action_values: Vec<String>,
     /// Every block keyword the parser recognizes, from `BlockKind` — the
     /// list that decides whether a word opens a block at all.
     pub block_keywords: Vec<String>,

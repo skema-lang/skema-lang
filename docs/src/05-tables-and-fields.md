@@ -117,16 +117,23 @@ There is no project-wide setting that flips this default — the same line means
 sum float [required] {
   note          = "The full sum";
   exampleValue  = "19.99";
+  label         = "Sum";
   "x-customkey" = "Foobar";
 }
 ```
 
-A flat set of key/value pairs, nothing else.
+A flat set of key/value pairs, nothing else. Flags are optional too, so a
+field with only a body needs no `[]` at all:
+
+```skema
+sum float { label = "Sum"; }
+```
 
 | Key | Meaning |
 |---|---|
 | `note` | description — becomes hover text, DDL comment, documentation |
 | `exampleValue` | sample value for test data and documentation |
+| `label` | text for humans — dropdowns, generated forms, diagrams |
 
 Custom keys follow the `x-` rule from [01 — Custom keys](01-language-basics.md#custom-keys).
 

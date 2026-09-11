@@ -154,6 +154,7 @@ custom ones carry `x-` (see `01`, section 1.11).
 |---|---|
 | `note` | description; becomes hover text, DDL comment, documentation |
 | `exampleValue` | sample value for test data and documentation |
+| `label` | text for humans — dropdowns, generated forms, diagrams |
 
 ### `regex` doesn't belong here
 

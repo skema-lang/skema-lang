@@ -18,11 +18,17 @@ pub const PROJECT_KEYS: &[&str] = &["mode", "dialect"];
 pub const FIELD_BLOCK_KEYS: &[&str] = &["type", "default", "regex", "note"];
 pub const PARAM_BODY_KEYS: &[&str] = &["note", "default"];
 pub const ENTRY_BODY_KEYS: &[&str] = &["label", "value"];
-pub const COLUMN_BODY_KEYS: &[&str] = &["note", "exampleValue"];
+pub const COLUMN_BODY_KEYS: &[&str] = &["note", "exampleValue", "label"];
 pub const FLAG_KEYS: &[&str] = &[
     "pk", "unique", "required", "optional", "default", "column", "onDelete", "onUpdate",
 ];
 pub const INDEX_FLAG_KEYS: &[&str] = &["unique"];
+
+/// Values accepted by `onDelete`/`onUpdate` (`docs/13`, "Flag reference").
+/// Not yet enforced by a rule - `rules::resolve` stores whatever text is
+/// written - so today this exists for completion only, not validation.
+pub const RELATION_ACTION_VALUES: &[&str] =
+    &["cascade", "restrict", "setNull", "setDefault", "noAction"];
 
 /// The built-in, dialect-independent types (`docs/02`, `docs/06`).
 ///

@@ -14,8 +14,10 @@
 
 use std::path::Path;
 
-use lsp_types::{CompletionItem, CompletionItemKind};
-use skema_api::{Builtins, ContextKind, CursorContext, cursor_context};
+use lsp_types::{CompletionItem, CompletionItemKind, Documentation, MarkupContent, MarkupKind};
+use skema_api::{
+    Builtins, ContextKind, CursorContext, block_reference_markdown, cursor_context, flag_reference,
+};
 use skema_syntax::ast::BlockKind;
 
 use crate::analysis::Analysis;
@@ -35,8 +37,9 @@ pub fn completion(analysis: &Analysis, path: &Path, offset: u32) -> Vec<Completi
             } else {
                 &catalog.flag_keys
             };
-            words(keys, CompletionItemKind::KEYWORD, None)
+            with_flag_docs(words(keys, CompletionItemKind::KEYWORD, None))
         }
+        ContextKind::FlagValue => flag_values(&context, &catalog),
         ContextKind::RelationTarget => table_names(analysis),
         ContextKind::MemberOf => match context.qualifier.as_deref() {
             Some(qualifier) => members_of(analysis, qualifier),
@@ -45,7 +48,10 @@ pub fn completion(analysis: &Analysis, path: &Path, offset: u32) -> Vec<Completi
         ContextKind::TypePosition => type_names(analysis, &catalog),
         ContextKind::SettingKey => setting_keys(&context, &catalog),
         ContextKind::StatementStart => {
-            let mut items = words(&catalog.block_keywords, CompletionItemKind::KEYWORD, None);
+            let mut items = with_block_docs(
+                words(&catalog.block_keywords, CompletionItemKind::KEYWORD, None),
+                &catalog,
+            );
             items.extend(words(
                 &["use".to_owned(), "import".to_owned(), "spec".to_owned()],
                 CompletionItemKind::KEYWORD,
@@ -57,6 +63,48 @@ pub fn completion(analysis: &Analysis, path: &Path, offset: u32) -> Vec<Completi
             items
         }
     }
+}
+
+/// `[onDelete=|]`: the fixed set of actions - nothing for a flag with no
+/// documented value set (`default`, `column`, a plain boolean flag).
+fn flag_values(context: &CursorContext, catalog: &Builtins) -> Vec<CompletionItem> {
+    match context.qualifier.as_deref() {
+        Some("onDelete" | "onUpdate") => words(
+            &catalog.relation_action_values,
+            CompletionItemKind::ENUM_MEMBER,
+            None,
+        ),
+        _ => Vec::new(),
+    }
+}
+
+/// Attaches the language reference's one-liner to a flag suggestion, where
+/// one is documented - `docs/13`, "Flag reference".
+fn with_flag_docs(mut items: Vec<CompletionItem>) -> Vec<CompletionItem> {
+    for item in &mut items {
+        if let Some(doc) = flag_reference(&item.label) {
+            item.documentation = Some(markdown_doc(doc));
+        }
+    }
+    items
+}
+
+/// Attaches the block quick reference to a block-keyword suggestion, so the
+/// list is self-explanatory without a separate hover.
+fn with_block_docs(mut items: Vec<CompletionItem>, catalog: &Builtins) -> Vec<CompletionItem> {
+    for item in &mut items {
+        if let Some(kind) = BlockKind::from_keyword(&item.label) {
+            item.documentation = Some(markdown_doc(block_reference_markdown(kind, catalog)));
+        }
+    }
+    items
+}
+
+fn markdown_doc(value: impl Into<String>) -> Documentation {
+    Documentation::MarkupContent(MarkupContent {
+        kind: MarkupKind::Markdown,
+        value: value.into(),
+    })
 }
 
 fn setting_keys(context: &CursorContext, catalog: &Builtins) -> Vec<CompletionItem> {

@@ -296,6 +296,7 @@ fn resolve_field<'a>(
     };
 
     let note = string_setting(&f.items, "note");
+    let label = string_setting(&f.items, "label");
 
     model::Field {
         file: owner,
@@ -304,6 +305,7 @@ fn resolve_field<'a>(
         flags,
         relation,
         note,
+        label,
         span,
     }
 }
