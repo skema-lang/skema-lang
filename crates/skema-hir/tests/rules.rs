@@ -658,3 +658,70 @@ fn a_use_inlined_partials_fields_are_visible_to_an_example_row() {
     let (_, diags) = analyze_src(&src);
     assert!(diags.is_empty(), "{diags:#?}");
 }
+
+#[test]
+fn example_values_are_checked_against_their_field_type_per_builtin() {
+    // (skema type, a literal it accepts, one it doesn't)
+    let cases: &[(&str, &str, &str)] = &[
+        ("string", r#""hi""#, "42"),
+        ("int", "42", r#""hi""#),
+        ("float", "4.2", r#""hi""#),
+        ("bool", "true", "42"),
+        ("varchar(20)", r#""hi""#, "42"),
+        ("text", r#""hi""#, "42"),
+        ("uuid", r#""11111111-1111-1111-1111-111111111111""#, "42"),
+        ("date", r#""2024-01-01""#, "42"),
+        ("timestamp", r#""2024-01-01T00:00:00Z""#, "42"),
+    ];
+    for &(ty, valid, invalid) in cases {
+        let accepted = format!(
+            "{HEADER}\nTable T {{ id int [pk]; x {ty}; Example {{ Record {{ id = 1; x = {valid}; }} }} }}\n"
+        );
+        let (_, diags) = analyze_src(&accepted);
+        assert!(diags.is_empty(), "`{ty}` accepting `{valid}`: {diags:#?}");
+
+        let rejected = format!(
+            "{HEADER}\nTable T {{ id int [pk]; x {ty}; Example {{ Record {{ id = 1; x = {invalid}; }} }} }}\n"
+        );
+        let (_, diags) = analyze_src(&rejected);
+        assert!(
+            messages(&diags).iter().any(|m| m.contains(&format!(
+                "`x` should be `{}`",
+                ty.split('(').next().unwrap()
+            ))),
+            "`{ty}` rejecting `{invalid}`: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn example_value_for_a_datatype_typed_field_is_checked_against_its_underlying_type() {
+    let src = format!(
+        "{HEADER}\nDatatype Email {{ Field {{ type = string; }} }}\nTable T {{ id int [pk]; email Email; Example {{ Record {{ id = 1; email = 42; }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`email` should be `string`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn example_value_for_a_datatype_typed_field_accepts_a_matching_value() {
+    let src = format!(
+        "{HEADER}\nDatatype Email {{ Field {{ type = string; }} }}\nTable T {{ id int [pk]; email Email; Example {{ Record {{ id = 1; email = \"a@b.com\"; }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn a_raw_expression_is_accepted_for_any_example_value() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; created timestamp; Example {{ Record {{ id = 1; created = `now()`; }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}

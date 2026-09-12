@@ -71,7 +71,7 @@ pub(crate) fn run<'a>(
                 .map(|&(owner, span, f)| resolve_field(&env, owner, span, f, &flattened, diags))
                 .collect();
             let indexes = build_indexes(flat, diags);
-            let examples = build_examples(flat, diags);
+            let examples = build_examples(&env, flat, diags);
             let document_database = file
                 .document
                 .and_then(|(_, _, b)| b.child(BlockKind::Database));
@@ -263,11 +263,26 @@ fn build_indexes(flat: &Flattened<'_>, diags: &mut Vec<Diagnostic>) -> Vec<model
 // Example rows
 // ===========================================================================
 
-/// Structural validation for `Table`'s `Example` block (`docs/05`): unknown
-/// field names, missing `required`/`pk` fields, and `pk`/`unique` value
-/// collisions across a table's own rows. Value-*type* compatibility is a
-/// separate, not-yet-built check (task 12).
-fn build_examples(flat: &Flattened<'_>, diags: &mut Vec<Diagnostic>) -> Vec<model::ExampleRow> {
+/// Structural and value-type validation for `Table`'s `Example` block
+/// (`docs/05`): unknown field names, missing `required`/`pk` fields,
+/// `pk`/`unique` value collisions across a table's own rows, and (task 12)
+/// each value's literal kind against its field's resolved type.
+fn build_examples(
+    env: &Env<'_, '_>,
+    flat: &Flattened<'_>,
+    diags: &mut Vec<Diagnostic>,
+) -> Vec<model::ExampleRow> {
+    let field_types: Vec<(&str, Option<&str>)> = flat
+        .fields
+        .iter()
+        .map(|&(owner, _, f)| {
+            (
+                f.name.text.as_str(),
+                example_field_terminal_type(env, owner, f),
+            )
+        })
+        .collect();
+
     let rows: Vec<model::ExampleRow> = flat
         .examples
         .iter()
@@ -292,6 +307,26 @@ fn build_examples(flat: &Flattened<'_>, diags: &mut Vec<Diagnostic>) -> Vec<mode
                         format!(
                             "`Example` row assigns unknown field `{}` (docs/05)",
                             attr.key.text
+                        ),
+                    ));
+                    continue;
+                }
+                let Some(value) = &attr.value else { continue };
+                let Some(expected_ty) = field_types
+                    .iter()
+                    .find(|(name, _)| *name == attr.key.text)
+                    .and_then(|&(_, ty)| ty)
+                else {
+                    continue;
+                };
+                if !example_value_matches_type(value, expected_ty) {
+                    diags.push(Diagnostic::error(
+                        owner,
+                        value.span,
+                        format!(
+                            "`Example` row's `{}` should be `{expected_ty}`, got `{}`",
+                            attr.key.text,
+                            value.to_text()
                         ),
                     ));
                 }
@@ -364,6 +399,78 @@ fn build_examples(flat: &Flattened<'_>, diags: &mut Vec<Diagnostic>) -> Vec<mode
     }
 
     rows
+}
+
+/// The built-in type name an `Example` value should be checked against, or
+/// `None` if this field's type doesn't resolve to one – a relationship
+/// field, an `Enum` (task 12 covers built-ins and `Datatype`s only), or a
+/// name this rule can't resolve. Left unchecked rather than risking a false
+/// positive (`docs/13` "Not enforced yet" already covers the gap this
+/// leaves).
+///
+/// A `Datatype`-typed field resolves one level through to that `Datatype`'s
+/// own `Field.type` (`docs/06`); a `Datatype` naming another custom type
+/// there is not followed further – out of scope for this task.
+fn example_field_terminal_type<'a>(
+    env: &Env<'_, 'a>,
+    owner: FileId,
+    field: &'a ast::Field,
+) -> Option<&'a str> {
+    let ty = field.ty.as_ref()?;
+    let ast::FieldTypeKind::Named { path, .. } = &ty.kind else {
+        return None;
+    };
+    if let Some(bare) = path.as_ident() {
+        if BUILTIN_TYPES.contains(&bare.text.as_str()) {
+            return Some(bare.text.as_str());
+        }
+    }
+    let (decl_owner, name, _, rest) = env.ctx.resolve_decl_path(owner, path)?;
+    if !rest.is_empty() {
+        return None;
+    }
+    let decl = env.ctx.lookup_decl(decl_owner, name)?;
+    if decl.kind != BlockKind::Datatype {
+        return None;
+    }
+    datatype_field_type(decl.block).filter(|word| BUILTIN_TYPES.contains(word))
+}
+
+/// Reads `Field { type = …; }` inside a `Datatype` declaration – the same
+/// shape `resolve_enum` reads for `Enum { Field { type = …; } }`, but
+/// without validating the word (an `Enum`'s storage is closed to
+/// `string`/`int`; a `Datatype`'s is any type name, checked elsewhere).
+fn datatype_field_type(datatype: &ast::Block) -> Option<&str> {
+    let field_block = datatype.child(BlockKind::Field)?;
+    field_block.items.iter().find_map(|item| match &item.kind {
+        ast::ItemKind::Setting(a) if a.key.text == "type" => match &a.value.as_ref()?.kind {
+            ValueKind::Path(p) => p.as_ident().map(|i| i.text.as_str()),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+/// Whether an `Example` value's literal kind is compatible with
+/// `expected_ty`, a resolved built-in name from [`BUILTIN_TYPES`] (task 12).
+///
+/// A raw expression (`` `…` ``) is accepted unconditionally for any type –
+/// opaque SQL passed through untouched by design (`docs/01`), the same call
+/// `check_arg_type` already makes for a `Datatype`/built-in argument.
+fn example_value_matches_type(value: &ast::Value, expected_ty: &str) -> bool {
+    match (&value.kind, expected_ty) {
+        (ValueKind::Raw(_), _) => true,
+        (ValueKind::Int(_), "int") => true,
+        (ValueKind::Int(_) | ValueKind::Float(_), "float") => true,
+        (ValueKind::Str(_), "string" | "varchar" | "text" | "uuid" | "date" | "timestamp") => true,
+        (ValueKind::Path(p), "bool") => {
+            matches!(
+                p.as_ident().map(|i| i.text.as_str()),
+                Some("true" | "false")
+            )
+        }
+        _ => false,
+    }
 }
 
 // ===========================================================================
