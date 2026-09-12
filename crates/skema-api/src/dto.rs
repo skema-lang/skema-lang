@@ -251,6 +251,7 @@ pub struct ExportedTable {
     pub physical: ExportedPhysical,
     pub fields: Vec<ExportedField>,
     pub indexes: Vec<ExportedIndex>,
+    pub examples: Vec<ExportedExampleRow>,
     pub span: Span,
     pub location: Option<Location>,
 }
@@ -315,6 +316,21 @@ pub struct ExportedIndex {
     pub name: Option<String>,
     pub columns: Vec<String>,
     pub flags: Vec<ExportedFlag>,
+    pub span: Span,
+    pub location: Option<Location>,
+}
+
+/// One `Record` inside a `Table`'s `Example` block (`docs/05`) – sample
+/// data, descriptive only. Unnamed by design: identified only by position
+/// in [`ExportedTable::examples`] (see `brain/decisions.md`).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedExampleRow {
+    /// Same "not necessarily the owning table's file" caveat as
+    /// [`ExportedField::file`].
+    pub file: String,
+    pub values: Vec<ExportedFlag>,
     pub span: Span,
     pub location: Option<Location>,
 }
@@ -439,6 +455,15 @@ fn index(i: &model::Index, ctx: &LocateCtx<'_>) -> ExportedIndex {
     }
 }
 
+fn example_row(e: &model::ExampleRow, ctx: &LocateCtx<'_>) -> ExportedExampleRow {
+    ExportedExampleRow {
+        file: ctx.path(e.file),
+        values: flags(&e.values),
+        span: e.span.into(),
+        location: ctx.locate(e.file, e.span),
+    }
+}
+
 fn table(t: &model::Table, ctx: &LocateCtx<'_>) -> ExportedTable {
     ExportedTable {
         file: ctx.path(t.file),
@@ -447,6 +472,7 @@ fn table(t: &model::Table, ctx: &LocateCtx<'_>) -> ExportedTable {
         physical: physical(&t.physical),
         fields: t.fields.iter().map(|f| field(f, ctx)).collect(),
         indexes: t.indexes.iter().map(|i| index(i, ctx)).collect(),
+        examples: t.examples.iter().map(|e| example_row(e, ctx)).collect(),
         span: t.span.into(),
         location: ctx.locate(t.file, t.span),
     }
@@ -527,5 +553,56 @@ pub fn export_model(model: &model::Model, ctx: &LocateCtx<'_>) -> ExportedModel 
         tables: model.tables.iter().map(|t| table(t, ctx)).collect(),
         enums: model.enums.iter().map(|e| enum_(e, ctx)).collect(),
         groups: model.groups.iter().map(|g| group(g, ctx)).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    const SRC: &str = r#"
+spec 1;
+Document shop { }
+Project { mode = draft; dialect = generic; }
+
+Table Post {
+  id    int [pk];
+  title varchar(200) [required];
+
+  Index { (title) [unique]; }
+
+  Example {
+    Record { id = 1; title = "Hello World"; }
+    Record { id = 2; title = "Second post"; }
+  }
+}
+"#;
+
+    #[test]
+    fn a_tables_example_rows_round_trip_through_export() {
+        let result = crate::export_model(SRC, None, false);
+        assert!(result.ok, "{:#?}", result.diagnostics);
+
+        let post = result
+            .model
+            .tables
+            .iter()
+            .find(|t| t.name == "Post")
+            .expect("Table Post");
+        assert_eq!(post.examples.len(), 2);
+
+        let first = &post.examples[0];
+        let title = first
+            .values
+            .iter()
+            .find(|f| f.name == "title")
+            .expect("first row has a title");
+        assert!(matches!(&title.value, crate::FlagValue::Text(t) if t == "Hello World"));
+    }
+
+    #[test]
+    fn a_table_without_an_example_block_exports_an_empty_list() {
+        let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nTable T { id int [pk]; }\n";
+        let result = crate::export_model(src, None, false);
+        assert!(result.ok, "{:#?}", result.diagnostics);
+        assert!(result.model.tables[0].examples.is_empty());
     }
 }
