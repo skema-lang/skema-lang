@@ -5,22 +5,23 @@
 The `Index` block collects a table's indexes.
 
 ```skema
-Table Customer {
-  email      varchar;
+Table Order {
+  order_no   varchar;
   customer   int;
   order_date date;
 
   Index {
-    (email) [unique];                                  # unnamed
-    ix_customer_order_date (customer, order_date) [unique];  # named
+    (order_no) [unique];                             # unnamed
+    ix_customer_order_date (customer, order_date);   # named
   }
 }
 ```
 
 ## Entry shape
 
-```
-[name] (column, …) [flags];
+```skema
+(column, …) [flags];            # unnamed
+name (column, …) [flags];       # named
 ```
 
 The name is **optional** and comes first, like every named thing in the language.

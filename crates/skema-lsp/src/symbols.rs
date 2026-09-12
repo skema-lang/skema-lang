@@ -85,9 +85,9 @@ fn decl_of(item: &Item) -> Option<Decl> {
             let name = entry.name.as_ref();
             Some(Decl {
                 kind: DeclKind::Index,
-                // An unnamed index gets its generated name from the checking
-                // phase, not from here (`docs/10`); the columns are what a
-                // reader recognizes it by anyway.
+                // An unnamed index has no name to show: the naming scheme is
+                // an open language question (`docs/13`), so the checker
+                // leaves it empty. The columns identify it well enough.
                 name: name.map_or_else(|| format!("({})", column_list(entry)), |i| i.text.clone()),
                 name_span: name.map_or(item.span, |i| i.span),
                 span: item.span,

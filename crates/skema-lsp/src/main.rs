@@ -203,13 +203,9 @@ impl Server {
         }
         self.of_file.insert(path.to_owned(), election.root.clone());
         self.publish(&analysis)?;
-        let root_uri = convert::url_of(&election.root);
         self.analyses.insert(election.root, analysis);
 
-        self.notify(
-            protocol::MODEL_CHANGED_NOTIFICATION,
-            protocol::ModelChangedParams { root_uri },
-        )
+        self.notify(protocol::MODEL_CHANGED_NOTIFICATION, ())
     }
 
     /// The analysis covering `path`, running one if none is current.

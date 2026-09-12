@@ -5,6 +5,7 @@ use skema_syntax::Span;
 use skema_syntax::ast::{self, BlockKind, ValueKind};
 
 use super::{Dialect, Mode, ProjectSettings};
+use crate::catalog::DIALECT_ENGINES;
 use crate::symbols::FileFacts;
 use crate::{Diagnostic, FileId};
 
@@ -61,7 +62,8 @@ pub(crate) fn check<'a>(
                 owner,
                 span,
                 format!(
-                    "unknown `dialect` value `{other}` – allowed: generic, postgres, mysql, oracledb"
+                    "unknown `dialect` value `{other}` – allowed: generic, {}",
+                    DIALECT_ENGINES.join(", ")
                 ),
             ));
             None

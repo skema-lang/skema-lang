@@ -25,10 +25,14 @@ pub const FLAG_KEYS: &[&str] = &[
 pub const INDEX_FLAG_KEYS: &[&str] = &["unique"];
 
 /// Values accepted by `onDelete`/`onUpdate` (`docs/13`, "Flag reference").
-/// Not yet enforced by a rule - `rules::resolve` stores whatever text is
-/// written - so today this exists for completion only, not validation.
+/// Enforced in `rules::resolve::check_relation_action`.
 pub const RELATION_ACTION_VALUES: &[&str] =
     &["cascade", "restrict", "setNull", "setDefault", "noAction"];
+
+/// Known `Dialect @engine` names (`docs/06`, "Dialect @engine blocks";
+/// `docs/11`, "Engine-specific settings"). Also the set `Project.dialect`
+/// accepts, minus `generic` – that value selects no engine at all.
+pub const DIALECT_ENGINES: &[&str] = &["postgres", "mysql", "oracledb"];
 
 /// The built-in, dialect-independent types (`docs/02`, `docs/06`).
 ///
@@ -49,3 +53,8 @@ pub const BUILTIN_TYPES: &[&str] = &[
     "date",
     "timestamp",
 ];
+
+/// Parameter shape of every parameterized built-in in [`BUILTIN_TYPES`]
+/// (`docs/06`, "Built-in types"): `varchar(n)` takes one length. Anything in
+/// `BUILTIN_TYPES` not listed here takes no arguments at all.
+pub const BUILTIN_TYPE_PARAMS: &[(&str, &[&str])] = &[("varchar", &["int"])];

@@ -7,7 +7,7 @@ use skema_syntax::Span;
 use skema_syntax::ast::{self, BlockKind, RelationOp, ValueKind};
 
 use super::{Ctx, Dialect, ProjectSettings};
-use crate::catalog::BUILTIN_TYPES;
+use crate::catalog::{BUILTIN_TYPE_PARAMS, BUILTIN_TYPES, RELATION_ACTION_VALUES};
 use crate::model;
 use crate::{Diagnostic, FileId};
 
@@ -28,6 +28,10 @@ struct Env<'c, 'a> {
 struct Flattened<'a> {
     fields: Vec<(FileId, Span, &'a ast::Field)>,
     indexes: Vec<(FileId, Span, &'a ast::IndexEntry)>,
+    /// One entry per `Record` block directly inside the table's own
+    /// `Example` block – `Example` is `Table`-only (`docs/05`), so unlike
+    /// `fields`/`indexes` this never comes from an inlined `use` `Partial`.
+    examples: Vec<(FileId, Span, &'a ast::Block)>,
 }
 
 pub(crate) fn run<'a>(
@@ -67,6 +71,7 @@ pub(crate) fn run<'a>(
                 .map(|&(owner, span, f)| resolve_field(&env, owner, span, f, &flattened, diags))
                 .collect();
             let indexes = build_indexes(flat, diags);
+            let examples = build_examples(flat, diags);
             let document_database = file
                 .document
                 .and_then(|(_, _, b)| b.child(BlockKind::Database));
@@ -82,6 +87,7 @@ pub(crate) fn run<'a>(
                 physical,
                 fields,
                 indexes,
+                examples,
                 span: decl.item_span,
             });
         }
@@ -186,6 +192,15 @@ fn flatten_items<'a>(
                     }
                 }
             }
+            ast::ItemKind::Block(b) if b.kind == BlockKind::Example => {
+                for sub in &b.items {
+                    if let ast::ItemKind::Block(record) = &sub.kind {
+                        if record.kind == BlockKind::Record {
+                            out.examples.push((owner, sub.span, record));
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -242,6 +257,113 @@ fn build_indexes(flat: &Flattened<'_>, diags: &mut Vec<Diagnostic>) -> Vec<model
             }
         })
         .collect()
+}
+
+// ===========================================================================
+// Example rows
+// ===========================================================================
+
+/// Structural validation for `Table`'s `Example` block (`docs/05`): unknown
+/// field names, missing `required`/`pk` fields, and `pk`/`unique` value
+/// collisions across a table's own rows. Value-*type* compatibility is a
+/// separate, not-yet-built check (task 12).
+fn build_examples(flat: &Flattened<'_>, diags: &mut Vec<Diagnostic>) -> Vec<model::ExampleRow> {
+    let rows: Vec<model::ExampleRow> = flat
+        .examples
+        .iter()
+        .map(|&(owner, span, record)| {
+            let attrs: Vec<ast::Attr> = record
+                .items
+                .iter()
+                .filter_map(|item| match &item.kind {
+                    ast::ItemKind::Setting(a) => Some(a.clone()),
+                    _ => None,
+                })
+                .collect();
+            for attr in &attrs {
+                if !flat
+                    .fields
+                    .iter()
+                    .any(|(_, _, f)| f.name.text == attr.key.text)
+                {
+                    diags.push(Diagnostic::error(
+                        owner,
+                        attr.key.span,
+                        format!(
+                            "`Example` row assigns unknown field `{}` (docs/05)",
+                            attr.key.text
+                        ),
+                    ));
+                }
+            }
+            model::ExampleRow {
+                file: owner,
+                values: build_flags(&attrs),
+                span,
+            }
+        })
+        .collect();
+
+    let required: Vec<&str> = flat
+        .fields
+        .iter()
+        .filter(|(_, _, f)| {
+            f.flags
+                .iter()
+                .any(|a| matches!(a.key.text.as_str(), "required" | "pk"))
+        })
+        .map(|(_, _, f)| f.name.text.as_str())
+        .collect();
+    for (i, row) in rows.iter().enumerate() {
+        let (owner, span, _) = flat.examples[i];
+        for &name in &required {
+            if !row.values.contains_key(name) {
+                diags.push(Diagnostic::error(
+                    owner,
+                    span,
+                    format!(
+                        "record {} in `Example` is missing required field `{name}`",
+                        i + 1
+                    ),
+                ));
+            }
+        }
+    }
+
+    let collision_checked: Vec<&str> = flat
+        .fields
+        .iter()
+        .filter(|(_, _, f)| {
+            f.flags
+                .iter()
+                .any(|a| matches!(a.key.text.as_str(), "pk" | "unique"))
+        })
+        .map(|(_, _, f)| f.name.text.as_str())
+        .collect();
+    for &name in &collision_checked {
+        let mut seen: Vec<(usize, &model::FlagValue)> = Vec::new();
+        for (i, row) in rows.iter().enumerate() {
+            let Some(value) = row.values.get(name) else {
+                continue;
+            };
+            if let Some(&(first, _)) = seen.iter().find(|&&(_, v)| v == value) {
+                let (owner, span, _) = flat.examples[i];
+                diags.push(Diagnostic::error(
+                    owner,
+                    span,
+                    format!(
+                        "record {} in `Example` repeats record {}'s value for `{name}` – `pk`/`unique` fields must be distinct across a table's example rows",
+                        i + 1,
+                        first + 1
+                    ),
+                ));
+            } else {
+                seen.push((i, value));
+            }
+        }
+    }
+
+    rows
 }
 
 // ===========================================================================
@@ -402,8 +524,12 @@ fn resolve_relation<'a>(
                     ),
                 ));
             }
-            "onDelete" => on_delete = attr.value.as_ref().map(ast::Value::to_text),
-            "onUpdate" => on_update = attr.value.as_ref().map(ast::Value::to_text),
+            "onDelete" => {
+                on_delete = check_relation_action(owner, &attr.key.text, attr.value.as_ref(), diags)
+            }
+            "onUpdate" => {
+                on_update = check_relation_action(owner, &attr.key.text, attr.value.as_ref(), diags)
+            }
             _ => {}
         }
     }
@@ -427,6 +553,29 @@ fn resolve_relation<'a>(
     })
 }
 
+/// Checks an `onDelete`/`onUpdate` value against `RELATION_ACTION_VALUES`
+/// (`docs/07`, "Flags"). Stored as written either way – errors are data.
+fn check_relation_action(
+    owner: FileId,
+    key: &str,
+    value: Option<&ast::Value>,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    let value = value?;
+    let text = value.to_text();
+    if !RELATION_ACTION_VALUES.contains(&text.as_str()) {
+        diags.push(Diagnostic::error(
+            owner,
+            value.span,
+            format!(
+                "unknown `{key}` value `{text}` – allowed: {}",
+                RELATION_ACTION_VALUES.join(", ")
+            ),
+        ));
+    }
+    Some(text)
+}
+
 fn resolve_named_type(
     env: &Env<'_, '_>,
     owner: FileId,
@@ -440,6 +589,7 @@ fn resolve_named_type(
 
     if let Some(bare) = path.as_ident().map(|i| i.text.as_str()) {
         if BUILTIN_TYPES.contains(&bare) {
+            check_builtin_args(owner, bare, args, span, diags);
             return model::TypeRef {
                 name: bare.to_owned(),
                 args: str_args,
@@ -522,9 +672,8 @@ fn resolve_named_type(
 }
 
 /// `decimal("abc", 2)` is a type error at the model level (`docs/06`) –
-/// only the **number** of arguments is checked here, not their type. A full
-/// per-argument type check is a sensible next step, but not (yet) part of
-/// this analysis.
+/// checked here: argument count, then each supplied argument against its
+/// parameter's declared type.
 fn check_datatype_args(
     owner: FileId,
     datatype: &ast::Block,
@@ -550,6 +699,11 @@ fn check_datatype_args(
         ));
         return;
     }
+    for (arg, param) in args.iter().zip(params) {
+        if let Some(ty) = param.ty.as_ref().and_then(ast::Path::as_ident) {
+            check_arg_type(owner, arg, &ty.text, &param.name.text, diags);
+        }
+    }
     for param in &params[args.len()..] {
         if !param_has_default(datatype, &param.name.text) {
             diags.push(Diagnostic::error(
@@ -561,6 +715,75 @@ fn check_datatype_args(
                 ),
             ));
         }
+    }
+}
+
+/// Argument-count check for a parameterized built-in (`docs/06`, "Built-in
+/// types") – a name not in [`BUILTIN_TYPE_PARAMS`] takes no arguments.
+fn check_builtin_args(
+    owner: FileId,
+    name: &str,
+    args: &[ast::Value],
+    span: Span,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let expected: &[&str] = BUILTIN_TYPE_PARAMS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map_or(&[], |(_, params)| *params);
+    if args.len() != expected.len() {
+        diags.push(Diagnostic::error(
+            owner,
+            span,
+            format!(
+                "`{name}` expects {} argument(s), got: {}",
+                expected.len(),
+                args.len()
+            ),
+        ));
+        return;
+    }
+    for (arg, ty) in args.iter().zip(expected) {
+        check_arg_type(owner, arg, ty, name, diags);
+    }
+}
+
+/// Compares an argument's [`ast::Value`] against a parameter's declared type
+/// name. A raw expression (`` `…` ``) is accepted for any type – it passes
+/// through to the target database unvalidated by design (`docs/01`). A type
+/// name this doesn't recognize (a custom `Enum`/`Datatype` used as a
+/// parameter type) is left unchecked – only the four simple types have a
+/// decided shape to check argument values against.
+fn check_arg_type(
+    owner: FileId,
+    arg: &ast::Value,
+    expected_ty: &str,
+    param_name: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let matches = match (&arg.kind, expected_ty) {
+        (ValueKind::Raw(_), _) => true,
+        (ValueKind::Int(_), "int") => true,
+        (ValueKind::Int(_) | ValueKind::Float(_), "float") => true,
+        (ValueKind::Str(_), "string") => true,
+        (ValueKind::Path(p), "bool") => {
+            matches!(
+                p.as_ident().map(|i| i.text.as_str()),
+                Some("true" | "false")
+            )
+        }
+        (_, "int" | "float" | "string" | "bool") => false,
+        _ => return,
+    };
+    if !matches {
+        diags.push(Diagnostic::error(
+            owner,
+            arg.span,
+            format!(
+                "argument for parameter `{param_name}` should be `{expected_ty}`, got `{}`",
+                arg.to_text()
+            ),
+        ));
     }
 }
 

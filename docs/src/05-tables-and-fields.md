@@ -16,7 +16,7 @@ Table Post {
 ## The field: three zones, three questions
 
 ```skema
-username  regexstring(`^[a-z0-9_]{3,20}$`)  [required]  { note = "Login name"; }
+username  regexstring("^[a-z0-9_]{3,20}$")  [required]  { note = "Login name"; }
           └──────────── Type ─────────────┘  └─ Flags ─┘  └────── Body ──────┘
 ```
 
@@ -41,10 +41,10 @@ Precision, length, and shape are **arguments of the type**, not flags:
 ```skema
 gross_sum decimal(10, 2);
 name      varchar(80);
-username  regexstring(`^[a-z0-9_]{3,20}$`);
+username  regexstring("^[a-z0-9_]{3,20}$");
 ```
 
-`decimal(10,2)` and `decimal(19,4)` are different types, not the same type with different flags. See [06 — Data Types](06-data-types.md) for the full built-in and custom type system.
+`decimal(10, 2)` and `decimal(19, 4)` are different types, not the same type with different flags. `decimal` itself is a project's own `Datatype` rather than a built-in — see [06 — Data Types](06-data-types.md) for both halves of the type system.
 
 ### Regexes are strings, not raw expressions
 
@@ -100,9 +100,9 @@ A flag without a value means "true": `[pk]` is shorthand for `[pk=true]`. The co
 Optionality is **always a flag**, never a type suffix. The default follows SQL: **without an annotation, a field allows `NULL`.**
 
 ```skema
-name  varchar(80) [required];   # NOT NULL
-notiz varchar;                  # NULL allowed
-notiz varchar [optional];       # same, written explicitly
+name    varchar(80) [required];   # NOT NULL
+comment varchar;                  # NULL allowed
+comment varchar [optional];       # same, written explicitly
 ```
 
 There is no project-wide setting that flips this default — the same line means the same thing in every project, regardless of `mode`. Nullability is never controlled through `Lint`: a lint switch governs warnings, not the meaning of a field.
@@ -162,7 +162,7 @@ Table Order {
   Database { table = "order"; }
 
   Meta {
-    note         = "";
+    note         = "One customer order, with its positions in OrderPosition";
     styleClasses = [highlight];
   }
 }

@@ -38,7 +38,7 @@ enum Command {
     Export {
         file: PathBuf,
         /// Currently the only format – accepted as a flag so that
-        /// `skema export --json main.skema` matches `docs/02` exactly.
+        /// `skema export --json project.skema` matches `docs/02` exactly.
         #[arg(long)]
         json: bool,
         /// Add a `location` (file, line, column) to every entity in the

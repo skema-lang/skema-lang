@@ -1,5 +1,6 @@
 //! Orchestrates the individual checks and builds the [`crate::model::Model`] from them.
 
+mod dialect;
 mod group;
 mod keys;
 mod lint;
@@ -84,6 +85,7 @@ pub(crate) fn run(files: &[InputFile<'_>]) -> (Model, Vec<Diagnostic>) {
     for file in &facts {
         placement::check(file.id, file.ast, &mut diags);
         keys::check(file.id, file.ast, &mut diags);
+        dialect::check(file.id, file.ast, &mut diags);
     }
 
     let project = project::check(&facts, &mut diags);

@@ -36,7 +36,7 @@ Custom keys follow the `x-` rule from [01 — Custom keys](01-language-basics.md
 
 ### Where Meta is allowed
 
-Inside any named declaration: `Project`, `Document`, `Table`, `Partial`, `Enum`, `Group`, `Datatype`.
+Inside any top-level declaration: `Project`, `Document`, `Table`, `Partial`, `Enum`, `Group`, `Datatype`. A field describes itself in its own body instead — see [05 — Zone 3: Body](05-tables-and-fields.md#zone-3-body).
 
 ## Style — two forms, marked by @
 
@@ -106,7 +106,7 @@ A standardized core set is validated and autocompleted; `x-` covers everything e
 ```skema
 Style @table {
   headerBackgroundColor = "#cc0000";   # known, validated
-  "x-mermaidClass"      = "wichtig";   # custom, passed through
+  "x-mermaidClass"      = "important"; # custom, passed through
 }
 ```
 
@@ -129,16 +129,16 @@ Project {
   Style @relation { lineColor = "#888888"; }
 
   # Classes carry no @ — they are assigned via Meta.styleClasses
-  Style kern       { borderColor = "#1f4e79"; borderWidth = "3px"; }
-  Style historisch { backgroundColor = "#f0f0f0"; }
+  Style core       { borderColor = "#1f4e79"; borderWidth = "3px"; }
+  Style historical { backgroundColor = "#f0f0f0"; }
 }
 
 Table Author {
-  Meta { styleClasses = [kern]; }
+  Meta { styleClasses = [core]; }
 }
 
 Table LoanArchive {
-  Meta { styleClasses = [historisch]; }
+  Meta { styleClasses = [historical]; }
 }
 ```
 

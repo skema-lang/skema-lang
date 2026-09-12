@@ -42,7 +42,7 @@ Table Order {
 }
 
 Table Position {
-  Database { schema = "archiv"; }    # -> shopsystem.archiv.Position
+  Database { schema = "archive"; }   # -> shopsystem.archive.Position
 }
 
 Table Note { }                       # -> shopsystem.sales.Note
@@ -73,20 +73,20 @@ Same rule as everywhere else in the language: `[]` changes generated DDL, so the
 
 ## Engine-specific settings
 
-Some settings apply to one engine only: `TABLESPACE` in Postgres, `ENGINE`/`CHARSET` in MySQL. They go in a `Dialect` block — the same general shape as the [`Dialect @engine` blocks in `Datatype`](06-data-types.md#dialect-engine-blocks):
+Some settings apply to one engine only: `TABLESPACE` in Postgres, `ENGINE`/`CHARSET` in MySQL. They go in a `Dialect` block — the same shape as the [`Dialect @engine` blocks in `Datatype`](06-data-types.md#dialect-engine-blocks), `@` included:
 
 ```skema
 Table Order {
   Database {
     table = "orders";
 
-    Dialect postgres { tablespace = "fast_ssd"; }
-    Dialect mysql    { engine = "InnoDB"; charset = "utf8mb4"; }
+    Dialect @postgres { tablespace = "fast_ssd"; }
+    Dialect @mysql    { engine = "InnoDB"; charset = "utf8mb4"; }
   }
 }
 ```
 
-Whether the engine name here takes the `@` prefix used inside `Datatype` (`Dialect @postgres`) is not finalized yet — see [Reference → Known limitations](13-reference.md#known-limitations).
+The engine name carries `@` here for the same reason it does inside `Datatype`: it is [a name belonging to the language](01-language-basics.md#the-at-sign-convention), not one the project chose. There is one spelling in both places.
 
 ## What not to use
 

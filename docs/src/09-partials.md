@@ -40,7 +40,7 @@ Field order matters — it is visible in the generated table and the diagram. Mu
 ## Across files
 
 ```skema
-use base.timestamps;
+use types.Timestamps;
 ```
 
 A `Partial` from an imported file is referenced with its prefix, exactly like any other declaration (see [02 — Referencing within vs. across files](02-project-and-documents.md#referencing-within-vs-across-files)).
@@ -65,7 +65,7 @@ There is no silent overwrite. To deviate, use a different `Partial` or drop the 
 | Fields | ✓ | the normal case |
 | Relationships | ✓ | creates a relationship in every table that uses it |
 | `Index` | ✓ | a `Partial` with `created_at` can bring its index along |
-| `Meta` | ✓ | describes the `Partial` itself; is **not** inherited by the user |
+| `Meta` | ✓ | describes the `Partial` itself; the tables that `use` it do **not** inherit it |
 | `use` | ✓ | `Partial` inside `Partial`, cycle-checked |
 | `Database` | — | a `Partial` has no physical location of its own |
 

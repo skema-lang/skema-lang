@@ -1,10 +1,11 @@
-//! The three messages LSP has no word for.
+//! The two messages LSP has no word for.
 //!
 //! Everything an editor already asks about a language - diagnostics, hover,
 //! completion, definition, symbols - goes over standard LSP. A live ER
-//! diagram does not: it needs the *resolved model*, the `Meta` offsets that
-//! carry each table's stored position, and a way to write a dragged position
-//! back. Those are three custom messages, namespaced `skema/`.
+//! diagram does not: it needs the *resolved model* with the `Meta` and
+//! `Style` blocks around it, and to be told when that model changed. Those
+//! are two custom messages, namespaced `skema/`. Where a dragged position
+//! lands is not among them - a layout file is the client's business.
 //!
 //! They deliberately carry `skema-api`'s own types, serialized by the same
 //! serde derives that produce the browser's JSON. A client can therefore
@@ -16,10 +17,9 @@ use skema_api::{Diagnostic, EnumMeta, ExportedModel, GroupMeta, StyleBlock, Tabl
 
 /// Request: the whole project around one file, as a diagram needs it.
 pub const MODEL_REQUEST: &str = "skema/model";
-/// Request: the smallest edit that stores a dragged position.
-/// Notification: this project was re-analyzed. Carries no payload beyond
-/// the root, so a client with no diagram open pays nothing; one with a
-/// diagram open answers by asking for the model.
+/// Notification: this project was re-analyzed. Carries no payload, so a
+/// client with no diagram open pays nothing; one with a diagram open
+/// answers by asking for the model.
 pub const MODEL_CHANGED_NOTIFICATION: &str = "skema/modelChanged";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -71,10 +71,4 @@ pub struct FileMetas {
 pub struct FileStyles {
     pub path: String,
     pub blocks: Vec<StyleBlock>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelChangedParams {
-    pub root_uri: Option<lsp_types::Url>,
 }

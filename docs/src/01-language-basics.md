@@ -14,12 +14,13 @@ import "./common.skema" as base; # imports — any number, any order
 
 Project { }                      # project-wide settings — exactly one per project
 Document shop { }                # this file's namespace — exactly one per file
-                                  # declarations follow, in any order:
+
+# declarations follow, in any order:
 Partial  common_base { }
-Enum     OrderStatus  { }
-Table    Customer     { }
-Group    Shop          { }
-Datatype Money         { }
+Enum     OrderStatus { }
+Table    Customer    { }
+Group    Shop        { }
+Datatype Money       { }
 ```
 
 `Project` and `Document` are covered in [02 — Project & Documents](02-project-and-documents.md).
@@ -39,7 +40,7 @@ That's the entire grammar surface. Any part of a declaration may be omitted; the
 ## The one declaration shape
 
 ```skema
-username  regexstring(`^[a-z0-9_]{3,20}$`)  [required]  { note = "Login name"; }
+username  regexstring("^[a-z0-9_]{3,20}$")  [required]  { note = "Login name"; }
           └──────────── Type ─────────────┘  └─ Flags ─┘  └────── Body ──────┘
 ```
 
@@ -70,7 +71,7 @@ Rule of thumb: **square brackets generate DDL, curly braces generate documentati
 ## Statement termination
 
 - A statement that ends in a **value** ends with `;`: `mode = draft;` · `gross_sum decimal(10, 2);` · `cancelled;`
-- A statement that ends in a **block** `}` does **not** take a trailing `;`: `sum float [required] { … }` · `draft { label = "Draft" }`
+- A statement that ends in a **block** `}` does **not** take a trailing `;`: `sum float [required] { … }` · `draft { label = "Draft"; }`
 
 ## Assignment operator
 
@@ -144,7 +145,7 @@ Field, table, and enum names belong to the project — the language itself impos
 
 ## Case conventions and keywords
 
-Two keyword classes, distinguished by casing:
+Three keyword classes, distinguished by casing:
 
 | Class | Casing | Examples |
 |---|---|---|

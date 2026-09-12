@@ -11,6 +11,10 @@ Model files use the **`.skema`** extension. The language definition lives in
 > `docs/` is the finished language reference (English). This README covers
 > the implementation on top of it — crates, tools, build status.
 
+> Architecture, open tasks and decisions spanning all four `skema-language`
+> repos live in the shared [brain](../brain/README.md) — read it before
+> starting non-trivial work here, and update it before you finish.
+
 ## Getting started
 
 ```bash
@@ -70,13 +74,13 @@ candidate reaches is analyzed as its own root and the client is told so; it
 then lacks `mode` and `dialect`, which is a property of the language, not a
 limitation of the server.
 
-An ER diagram needs three things LSP has no word for, served as custom
+An ER diagram needs two things LSP has no word for, served as custom
 `skema/` messages ([`protocol.rs`](crates/skema-lsp/src/protocol.rs)):
-`skema/model` (the resolved model plus `Meta` offsets and `Style` blocks),
-`skema/positionEdit` (the smallest edit that stores a dragged position) and
-a `skema/modelChanged` notification. They carry `skema-api`'s own types, so
-a client types them with the `.d.ts` `skema-wasm` generates instead of a
-second, hand-written schema.
+`skema/model` (the resolved model plus `Meta` offsets and `Style` blocks) and
+a `skema/modelChanged` notification. Where a dragged position is stored is
+not one of them — that is a layout file beside the model, and the client's
+business. They carry `skema-api`'s own types, so a client types them with the
+`.d.ts` `skema-wasm` generates instead of a second, hand-written schema.
 
 ### Python bindings – `skema`
 
@@ -180,25 +184,6 @@ Its `typescript` feature (off by default) adds the `tsify`/`wasm-bindgen`
 derives only the WASM boundary needs, so `skema-lsp` links the same types
 without either dependency.
 
-## Roadmap
-
-| # | Step | Status |
-|---|---------|--------|
-| 1 | Toolchain, workspace, spans, diagnostics | ✅ |
-| 2 | **Lexer** – `&str` → `Vec<Token>`, lossless, panic-free | ✅ |
-| 3 | **Parser** – recursive descent with error recovery → AST + diagnostics | ✅ |
-| 4 | **Rule checking** – name resolution, `docs/02`–`docs/13` | ✅ |
-| 5 | **CLI** `skema check` / `skema export --json` | ✅ |
-| 6 | **LSP scaffolding** – document management, live diagnostics | ✅ |
-| 7 | **Python bindings** – `check()` / `export()` | ✅ |
-| 8 | **JSON export** – serde serialization of the model | ✅ |
-| 9 | **Imports** – module graph, cycle detection | ✅ |
-| 10 | **LSP features** – hover, go-to-definition, completion, semantic tokens, outline | ✅ |
-| 11 | **Workspace-wide root file detection** in the LSP (instead of "open file = root") | ✅ |
-| 12 | **VSCode extension** – TS client + bundled binary | ✅ ([skema-vscode](https://gitlab.com/skema-language/skema-vscode)) |
-| 13 | **WASM** – parser in the browser | ✅ |
-| 14 | **Formatter** – requires a lossless syntax tree (`rowan`) | ⬜ |
-
 ## Releasing
 
 A release is a chain. Only a green default branch starts it:
@@ -207,9 +192,10 @@ A release is a chain. Only a green default branch starts it:
    since the last tag, writes it into `Cargo.toml`/`Cargo.lock`, and pushes
    `vX.Y.Z`. It builds nothing.
 2. The tag pipeline publishes: binaries and the Python wheel to the Package
-   Registry, the library crates to the Cargo registry, the container image,
-   and — for the two downstream repos — the per-platform `skema-lsp` binaries
-   and the browser WASM bundle.
+   Registry, the container image, the `@skema/model` and `@skema/wasm` npm
+   packages, and — for the two downstream repos — the per-platform
+   `skema-lsp` binaries and the browser WASM bundle. The library crates are
+   *not* published; see **No Cargo registry** below.
 3. It then triggers [skema-vscode](https://gitlab.com/skema-language/skema-vscode)
    and [skema-editor](https://gitlab.com/skema-language/skema-editor), which
    fetch *that tag's* artifacts, commit them, and tag themselves. Both are
@@ -232,8 +218,10 @@ scripts/release-test.sh          # the bump logic's own tests
 Override the derivation by running the pipeline manually with `BUMP` set to
 `major`/`minor`/`patch`, or `RELEASE_VERSION=1.0.0` to name one outright.
 
-**What CI needs**, in each of the three projects — no personal or project
-access token anywhere:
+**What CI needs**, in each of the three projects the chain runs through today
+— this one, skema-vscode and skema-editor; skema-lib is not in it yet
+([brain/tasks/07](../brain/tasks/07-close-the-release-chain.md)) — no personal
+or project access token anywhere:
 
 - Settings → CI/CD → Job token permissions → **Allow Git push requests to the
   repository**. Off by default; GA in GitLab 18.4, every tier. `CI_JOB_TOKEN`
@@ -257,43 +245,12 @@ rolled out on GitLab.com and `cargo publish` is still open on
 generic package registry instead, which is what the downstream repos
 consume. See `.gitlab-ci.yml` for what to restore when it ships.
 
-## Technical decisions
+## Project state
 
-| Decision | Why |
-|---|---|
-| Hand-written lexer + recursive-descent parser | Full control over spans and error recovery. Generators like `pest` cannot meaningfully recover from syntax errors — the normal case in an IDE. |
-| Byte offsets (`u32`), no line/column | Halves the footprint per node. Exactly one place converts, `skema-api::location`, and it counts UTF-16 code units — what JavaScript and LSP both measure in. `skema-lsp` subtracts 1 for its 0-based positions instead of recounting. |
-| Only `spec`/`import`/`as`/`use` reserved | Block keywords (`Table`, `Group`, `Field`, …) are contextual, so `Table Group { … }` stays writable — in an ERP model those are normal table names. |
-| Permissive parser, strict checking phase | The parser accepts any nesting and always produces a tree. "`Lint` belongs in `Project`" is then a clear message from `skema-hir`, not a syntax error that drags down the file. |
-| `(Ast, Vec<Diagnostic>)` instead of `Result` | An IDE needs *all* errors and *still* a tree. `skema-hir::analyze` follows through: always a model, always a diagnostic list. |
-| `skema-loader` as its own crate | The CLI and Python read only from disk, `skema-lsp` prefers the unsaved editor buffer. One swappable read function (`load_with`) instead of three copies of the import-graph walk, and one `analyze` instead of three copies of "run the checker, then map every `FileId` back to a path". |
-| `lsp-server` instead of `tower-lsp` | Synchronous, no `tokio`. Fewer concepts at once, and it is the library behind rust-analyzer. |
-| `pyo3` with `abi3-py39` | One built extension runs on Python 3.9 and up, with no recompile per version. |
-| devenv instead of rustup | On NixOS, `nix profile` provides no `clippy`/`rustfmt`/`rust-analyzer`; devenv pins the whole toolchain per project in `devenv.lock`. |
-
-## Known gaps
-
-**Language design** – open questions are listed in
-[`docs/13`, "Known limitations"](docs/src/13-reference.md#known-limitations):
-composite primary keys, naming scheme for unnamed indexes, index name
-collisions across shared `Partial`s, the full `Style`/`Dialect` property
-catalog, per-rule `Lint` severity overrides. `skema-hir` checks only the
-settled part, so it never enforces a rule the language has not decided.
-
-**Implementation** – what goes beyond the current state:
-
-- For `Datatype` arguments, `skema-hir` checks the **count** only, not each
-  argument's type (`decimal("abc", 2)` is not caught).
-- The built-in type catalog for `dialect = postgres/mysql/oracledb` is not
-  maintained (`docs/13`). An unknown type name under those dialects is a
-  warning, not an error.
-- `skema-lsp`'s go-to-definition resolves a name from the file's `Document`
-  name and `import … as` aliases, not through `skema-hir`'s name
-  resolution. A wrong guess costs a jump that does not happen, never a wrong
-  diagnostic — but it is a second answer to a question the checker already
-  answers properly.
-- The root election re-elects on save, not per keystroke: an `import` typed
-  but unsaved does not move a file into a project.
-- No lossless syntax tree. A comment-preserving formatter will need `rowan`
-  instead of the current AST.
+Roadmap, technical decisions and known gaps now live in the shared
+[brain](../brain/README.md) — see
+[brain/features.md](../brain/features.md) for what's built and planned,
+[brain/decisions.md](../brain/decisions.md) for the "why" behind this crate
+layout, and [brain/architecture.md](../brain/architecture.md) for open
+problems, kept current across all four repos rather than in one README each.
 

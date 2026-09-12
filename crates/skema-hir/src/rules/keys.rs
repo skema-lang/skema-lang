@@ -7,9 +7,10 @@
 //! bodies, `[]` flags, `Index` flags. What counts as "known" depends on the
 //! surrounding block, hence a table rather than one constant.
 //!
-//! `Style` and `Dialect` are absent on purpose — `docs/13` lists both word
-//! lists as unfinalized. For them only the context-independent half is
-//! checked: a quoted key without `x-` is wrong either way.
+//! `Style` and `Dialect` are absent on purpose — `docs/13`, "Known
+//! limitations", lists both property sets as unfinalized. For them only the
+//! context-independent half is checked: a quoted key without `x-` is wrong
+//! either way.
 
 use skema_syntax::ast::{self, BlockKind};
 

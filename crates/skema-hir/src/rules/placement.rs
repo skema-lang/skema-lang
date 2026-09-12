@@ -47,6 +47,8 @@ fn allowed_parents(kind: BlockKind) -> Option<&'static [Parent]> {
         Dialect => &[Parent::Block(Datatype), Parent::Block(Database)],
         // The `Field` description of a type (`docs/06`, `docs/08`).
         Field => &[Parent::Block(Datatype), Parent::Block(Enum)],
+        Example => &[Parent::Block(Table)],
+        Record => &[Parent::Block(Example)],
         Other => return None,
     })
 }

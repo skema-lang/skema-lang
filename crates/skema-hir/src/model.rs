@@ -33,6 +33,7 @@ pub struct Table {
     pub physical: Physical,
     pub fields: Vec<Field>,
     pub indexes: Vec<Index>,
+    pub examples: Vec<ExampleRow>,
     pub span: Span,
 }
 
@@ -109,6 +110,17 @@ pub struct Index {
     pub name: Option<String>,
     pub columns: Vec<String>,
     pub flags: Flags,
+    pub span: Span,
+}
+
+/// One `Record` inside a `Table`'s `Example` block (`docs/05`) – sample
+/// data, descriptive only, never affecting generated DDL/DML. Unnamed by
+/// design: rows are identified only by their position in `Table::examples`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExampleRow {
+    /// Same "not necessarily the owning Table's file" caveat as [`Field::file`].
+    pub file: FileId,
+    pub values: Flags,
     pub span: Span,
 }
 

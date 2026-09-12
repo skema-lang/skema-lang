@@ -5,6 +5,16 @@
 # wasm-pack build output
 crates/skema-wasm/pkg/
 
+# The npm packages, generated from that output by scripts/build-*-package.mjs
+# and rebuilt in CI before every publish. npm/model/package.json stays as a
+# template - the generator stamps its version from Cargo.toml.
+npm/model/index.d.ts
+npm/wasm/
+npm/*.tgz
+
+# mdBook output
+docs/book/
+
 # Devenv
 .devenv*
 devenv.local.nix

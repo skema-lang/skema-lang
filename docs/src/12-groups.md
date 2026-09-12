@@ -29,9 +29,9 @@ A `Group` catches two mistakes instead of one: a wrong name and a wrong kind. Th
 Grouping happens **from the group**, not from the element:
 
 ```skema
-Group Abrechnung {
+Group Billing {
   Table Invoice;
-  Table billing.Payment;
+  Table payments.Payment;
 }
 ```
 
@@ -44,8 +44,8 @@ Within the same file, the namespace prefix is optional (see [02 — Referencing 
 Groups do not overlap and do not nest:
 
 ```skema
-Group Stammdaten { Table Customer; }
-Group Abrechnung { Table Customer; }   # ERROR: already in Stammdaten
+Group MasterData { Table Customer; }
+Group Billing    { Table Customer; }   # ERROR: already in MasterData
 ```
 
 A table may also belong to **no** group — groups are a tool for large models, not a mandatory step.

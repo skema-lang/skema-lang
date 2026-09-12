@@ -209,11 +209,11 @@ impl TokenKind {
 ///
 /// # Why only four words
 ///
-/// The language has two keyword classes (`docs/01`, "Case conventions and
-/// keywords"): lowercase directives (`spec`, `import`, `as`, `use`) and
-/// PascalCase block names (`Table`, `Meta`, `Group`, …). Only the
-/// directives are reserved; block names stay [`TokenKind::Ident`] and are
-/// recognized by *position* — contextual keywords.
+/// Of the keyword classes in `docs/01`, "Case conventions and keywords",
+/// only the lowercase directives (`spec`, `import`, `as`, `use`) are
+/// reserved. PascalCase block names (`Table`, `Meta`, `Group`, …) stay
+/// [`TokenKind::Ident`] and are recognized by *position* — contextual
+/// keywords — and camelCase keys and flags are plain identifiers.
 ///
 /// In an ERP model `Group`, `Index` and `Document` are ordinary table
 /// names, so `Table Group { … }` has to stay writable. The price is one

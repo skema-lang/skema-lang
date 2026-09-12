@@ -121,14 +121,14 @@ Import graph of [`examples/generic/`](../../examples/generic/). `project.skema` 
 Exactly one file in a project carries the `Project` block. That file is the **root file**: it imports — directly or through intermediate files — everything that belongs to the project, and it's what gets passed to tooling:
 
 ```bash
-skema check main.skema
-skema export --json main.skema
+skema check project.skema
+skema export --json project.skema
 ```
 
 Consequences:
 
 1. **Project membership is reachability-defined.** A `.skema` file not reachable from the root file is not part of the project, even if it sits in the same directory. The import graph *is* the project definition.
-2. **The import graph is a tree with one root.** A second `Project` declaration anywhere in the graph is an error.
+2. **The import graph has exactly one root.** It is a graph, not a tree — cycles are fine (see [Import cycles are allowed](#import-cycles-are-allowed)) — but a second `Project` declaration anywhere in it is an error.
 3. **A single file cannot be fully checked in isolation.** `mode` and `dialect` live in the root file; without them, it is not decidable whether a given type is allowed.
 
 ## The Project block
@@ -148,6 +148,8 @@ Project {
 
 `mode` is more than a type-strictness setting — it decides whether the project is checked against rules at all.
 
+Both `mode` and `dialect` are **mandatory and closed**: a `Project` block without `mode` is an error, and so is any value other than `draft` or `strict`. A project is never implicitly in one mode or the other — someone wrote which one down.
+
 | | `mode = draft` | `mode = strict` |
 |---|---|---|
 | Lint rules | ignored | enforced |
@@ -155,6 +157,8 @@ Project {
 | Intended for | sketching, first pass | a model meant for code generation |
 
 Switching from `draft` to `strict` turns every previously-ignored inconsistency into a visible diagnostic — the switch costs one word.
+
+> Not enforced yet: only the `Lint` row holds today. Every known type is accepted under either mode, so `draft` rejects nothing for being too precise and `strict` demands nothing for being too vague. The example project is `mode = draft` and uses `uuid` and `timestamp` for that reason. See [Reference → Not enforced yet](13-reference.md#not-enforced-yet).
 
 `Lint` has no effect while `mode = draft`. It remains valid to write it there — it documents what *will* apply once the project switches.
 
@@ -167,7 +171,7 @@ Switching from `draft` to `strict` turns every previously-ignored inconsistency 
 | `mode` | `dialect` | Allowed types |
 |---|---|---|
 | `draft` | `generic` | `string`, `int`, `float`, `bool` |
-| `strict` | `generic` | precise but portable — `varchar(80)`, `decimal(10,2)`, `timestamp`, `uuid` |
+| `strict` | `generic` | precise but portable — `varchar(80)`, `timestamp`, `uuid`, plus the project's own `Datatype`s (`decimal(10, 2)`, `Email`) |
 | `strict` | `postgres` / `mysql` / `oracledb` | plus engine-specific types — `jsonb`, `tsvector`, `citext`, … |
 
 The middle tier — precise but still portable — is the target state for a maintained model; the third tier deliberately trades portability for engine-specific power.

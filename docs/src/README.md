@@ -54,5 +54,5 @@ Start with `examples/generic/`: `project.skema` is the root file, `types.skema` 
 
 ## Conventions used in this documentation
 
-- Code blocks without a language tag other than `skema` are `.skema` source.
+- Code blocks tagged `skema` are `.skema` source; `bash` blocks are shell commands, `mermaid` blocks are diagrams.
 - A note marked "Not yet specified" points at a rule the language design has not finalized — see [Reference → Known limitations](13-reference.md#known-limitations).

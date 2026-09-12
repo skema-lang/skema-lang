@@ -100,8 +100,8 @@ fn block_reference(
     &'static [&'static str],
 ) {
     use BlockKind::{
-        Database, Datatype, Dialect, Document, Enum, Field, Group, Index, Lint, Meta, Partial,
-        Project, Style, Table,
+        Database, Datatype, Dialect, Document, Enum, Example, Field, Group, Index, Lint, Meta,
+        Partial, Project, Record, Style, Table,
     };
     match kind {
         Project => (
@@ -115,9 +115,9 @@ fn block_reference(
             &["Meta", "Style"],
         ),
         Table => (
-            "A table declaration: fields plus optional `Meta`, `Database`, `Index`.",
+            "A table declaration: fields plus optional `Meta`, `Database`, `Index`, `Example`.",
             &[],
-            &["Meta", "Database", "Index"],
+            &["Meta", "Database", "Index", "Example"],
         ),
         Partial => (
             "A reusable group of fields, inserted elsewhere with `use`. Never becomes a table of its own.",
@@ -176,6 +176,16 @@ fn block_reference(
             &["Project"],
             &[],
         ),
+        Example => (
+            "A table's sample-data container: any number of `Record` blocks. Descriptive only - never affects generated DDL/DML.",
+            &["Table"],
+            &["Record"],
+        ),
+        Record => (
+            "One sample row inside `Example`: `field = value;` assignments, checked against the table's own field names.",
+            &["Example"],
+            &[],
+        ),
         // Callers are expected to guard against `Other` themselves - see
         // `skema-lsp`'s `keyword_at`, which never returns it as a hit - but
         // the match still has to be exhaustive.
@@ -226,6 +236,8 @@ mod tests {
             BlockKind::Field,
             BlockKind::Dialect,
             BlockKind::Lint,
+            BlockKind::Example,
+            BlockKind::Record,
         ] {
             assert!(!block_reference_markdown(kind, &crate::builtins()).is_empty());
         }

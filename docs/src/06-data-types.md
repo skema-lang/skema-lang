@@ -8,6 +8,8 @@ Under `mode = draft`, four simple types are available: `string`, `int`, `float`,
 
 Under `mode = strict`, more precise, portable types are expected. The example corpus uses `varchar(n)`, `text`, `uuid`, `date`, and `timestamp` alongside `Datatype`-based types for anything domain-specific. The exact catalog of built-in precise types is not fully finalized — see [Reference → Known limitations](13-reference.md#known-limitations).
 
+Neither list is enforced per mode today: every known type is accepted under both (see [02 — The mode switch](02-project-and-documents.md#the-mode-switch)).
+
 ## Datatype — defining your own types
 
 `Datatype` is where a project defines its own types. It covers three needs:
@@ -52,7 +54,7 @@ Parameters are declared like fields — name, then type:
 Datatype decimal(precision int, scale int) { … }
 ```
 
-`decimal("abc", 2)` is a type error at the model level, not a surprise discovered in the generated SQL.
+Parameters are what makes `decimal` a type of the project, not of the language: `decimal` is nowhere in the built-in list above — a model has it because a `Datatype` block declares it, as [`examples/generic/types.skema`](../../examples/generic/types.skema) does. Its parameters are then part of its contract, so `decimal("abc", 2)` is a type error at the model level rather than a surprise discovered in the generated SQL.
 
 Each parameter may carry its own body:
 
@@ -70,11 +72,11 @@ A `default` makes an argument optional: with the definition above, `decimal(10)`
 
 ## The Field block
 
-Describes the type **at the model level** — what a field of this type is before any database is involved. This is what applies under `mode = draft`. The same block appears in `Enum` — see [08 — Enums](08-enums.md#the-field-block).
+Describes the type **at the model level** — what a field of this type is before any database is involved, and what a target without its own `Dialect` block falls back to. The same block appears in `Enum` — see [08 — Enums](08-enums.md#the-field-block).
 
 | Key | Meaning |
 |---|---|
-| `type` | base type: `string`, `int`, `float`, `bool` |
+| `type` | what this type is built on: a built-in type, or another `Datatype` — see [Layering types](#layering-types) |
 | `default` | default value for fields of this type |
 | `regex` | value-range constraint, descriptive — see [05](05-tables-and-fields.md#regexes-are-strings-not-raw-expressions) |
 | `note` | description of the type |
@@ -109,6 +111,8 @@ If `dialect = oracledb` is set and no `Dialect @oracledb` block exists:
 |---|---|
 | `draft` | falls back to `Field.type`, with a hint |
 | `strict` | error — the type is not defined for this target |
+
+> Not enforced yet: no rule looks at a `Datatype`'s `Dialect` coverage, so a missing block is silent under both modes. See [Reference → Not enforced yet](13-reference.md#not-enforced-yet).
 
 ## Parameter substitution
 

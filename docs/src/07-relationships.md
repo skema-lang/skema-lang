@@ -20,11 +20,11 @@ The field's data type is **not written out** — it is derived from the target f
 
 > **The arrow points to the side where there is exactly one.**
 
-| Notation | Meaning | Foreign key column created in |
+| Notation | Meaning | Foreign key column created by this line |
 |---|---|---|
-| `a >B.b` | many `A` belong to one `B` | `A` |
-| `a <B.b` | one `A` has many `B` | `B` |
-| `a -B.b` | one to one | `A` |
+| `a >B.b` | many `A` belong to one `B` | in `A` |
+| `a <B.b` | one `A` has many `B` | none — the column belongs to `B`'s own `>` line |
+| `a -B.b` | one to one | in `A`, plus `UNIQUE` |
 
 ```skema
 Table Order {
@@ -70,8 +70,8 @@ A `<` field is a **backreference**: it names the reverse direction for diagrams,
 `-` is written symmetrically, but the schema isn't: one side gets the column plus `UNIQUE` — whichever side the field is written on, same rule as `>`.
 
 ```skema
-Table Profil {
-  user -User.id;      # column Profil.user, UNIQUE
+Table Profile {
+  user -User.id;      # column Profile.user, UNIQUE
 }
 ```
 
@@ -90,7 +90,7 @@ erDiagram
     }
     ORDER {
         int id PK
-        int customer_id FK
+        int customer FK
         float sum
     }
 ```

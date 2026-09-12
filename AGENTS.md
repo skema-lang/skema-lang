@@ -1,7 +1,11 @@
-# Agent guide — skema-lang
+# Agent guide — skema (the language repo)
 
 Rust workspace implementing the `.skema` DSL. Read [README.md](README.md)
 for the full picture; this file is the short list of rules to work by.
+
+Cross-repo architecture, open tasks and decisions live in the shared
+[brain](../brain/README.md) — read it before non-trivial work, update it
+before you finish.
 
 ## Commands
 
@@ -56,12 +60,13 @@ wasm-test    # skema-wasm's tests under wasm32, in Node
   language questions. Treat it as stable; do not change language rules there
   as a side effect of an implementation change.
 - Cite it by **heading**, not section number: `` `docs/01`, "Custom keys" ``.
-  The numbered sections (`1.11`) belong to the superseded `aidocs/` draft.
+  A `1.11`-style citation in an older comment predates `docs/src/`.
 - Open language questions live in `docs/src/13-reference.md`, "Known
   limitations". `skema-hir` deliberately does not enforce anything listed
   there.
-- `aidocs/` is the earlier design draft. It is not authoritative; where it
-  and `docs/src/` disagree, `docs/src/` wins.
+- Rules the language *has* decided but `skema-hir` does not yet check belong
+  in the same file under "Not enforced yet". Closing one means moving a row
+  out of that table, not quietly leaving it.
 
 ## Comments
 

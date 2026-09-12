@@ -696,6 +696,52 @@ mod tests {
         );
     }
 
+    /// `docs/05`: `Example`/`Record` need no new AST node – a `Record` body
+    /// is the same flat `key = value;` shape `Meta`/`Database` already
+    /// parse, so this only checks the nesting, not a new node kind.
+    #[test]
+    fn example_block_holds_record_blocks() {
+        let table = block(
+            r#"
+            Table Post {
+              id int [pk];
+              Example {
+                Record { id = 1; title = "Hello World"; }
+                Record { id = 2; title = "Second post"; }
+              }
+            }
+        "#,
+        );
+        let example = table
+            .items
+            .iter()
+            .find_map(|i| match &i.kind {
+                ItemKind::Block(b) if b.kind == BlockKind::Example => Some(b),
+                _ => None,
+            })
+            .expect("Table has an Example block");
+
+        let records: Vec<_> = example
+            .items
+            .iter()
+            .filter_map(|i| match &i.kind {
+                ItemKind::Block(b) if b.kind == BlockKind::Record => Some(b),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(records.len(), 2);
+
+        let keys: Vec<_> = records[0]
+            .items
+            .iter()
+            .filter_map(|i| match &i.kind {
+                ItemKind::Setting(a) => Some(a.key.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys, ["id", "title"]);
+    }
+
     /// The reason for contextual keywords: in an ERP model, `Group`,
     /// `File`, and `Document` are ordinary table names.
     #[test]

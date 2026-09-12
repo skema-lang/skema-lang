@@ -102,11 +102,24 @@ The items below are demonstrated in examples or proposed in the design docs, but
 | Partial / expression indexes | `WHERE …` conditions and `(lower(email))`-style expressions | [10](10-indexes.md#not-yet-specified) |
 | Automatically generated index names | Naming scheme for an unnamed index | [10](10-indexes.md#not-yet-specified) |
 | Index names from `Partial`s | Same name repeated across every consuming table | [09](09-partials.md#what-a-partial-may-contain), [10](10-indexes.md#indexes-inside-a-partial) |
-| `Dialect` naming inside `Database` | Whether the engine name takes `@` there, as it does inside `Datatype` | [11](11-physical-mapping.md#engine-specific-settings) |
 | Built-in type catalog | Full list of portable "strict + generic" types beyond `string`/`int`/`float`/`bool` | [06](06-data-types.md#built-in-types) |
 | `Style` core property set | Full list of standardized, validated style properties | [03](03-meta-and-style.md#style-properties) |
+| `Dialect` property set | `sql` is defined inside `Datatype`; which engine settings are known inside `Database` (`tablespace`, `engine`, `charset`, …) is not | [06](06-data-types.md#dialect-engine-blocks), [11](11-physical-mapping.md#engine-specific-settings) |
 | `@field` selector | Styling individual field rows | [03](03-meta-and-style.md#selectors) |
 | Lint severities | Per-rule severity override syntax (for example, `fieldNaming = snake_case [error];`) | [04](04-linting.md#other-rules) |
+
+## Not enforced yet
+
+Rules this documentation states that the checker does not yet verify. They are
+implementation gaps, not open questions — the language has decided, `skema-hir`
+has not caught up. A model may therefore pass `skema check` and still break one
+of them.
+
+| Rule | Stated in | What the checker does today |
+|---|---|---|
+| Type strictness per `mode` | [02](02-project-and-documents.md#the-mode-switch) | accepts every known type under both modes |
+| A `Datatype` missing the project's `Dialect` | [06](06-data-types.md#missing-dialect) | silent under both modes |
+| The type catalog under a non-`generic` dialect | [06](06-data-types.md#built-in-types) | unknown type names are a warning, not an error |
 
 ## See also
 

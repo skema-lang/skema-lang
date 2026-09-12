@@ -202,6 +202,108 @@ fn on_delete_on_the_wrong_side_is_rejected() {
 }
 
 #[test]
+fn unknown_on_delete_value_is_rejected() {
+    let src = format!(
+        "{HEADER}\nTable B {{ id int [pk]; }}\nTable A {{ id int [pk]; b >B.id [onDelete=cascadee]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown `onDelete` value `cascadee`") && m.contains("cascade")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn unknown_on_update_value_is_rejected() {
+    let src = format!(
+        "{HEADER}\nTable B {{ id int [pk]; }}\nTable A {{ id int [pk]; b >B.id [onUpdate=nope]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown `onUpdate` value `nope`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn known_relation_action_values_are_accepted() {
+    let src = format!(
+        "{HEADER}\nTable B {{ id int [pk]; }}\nTable A {{ id int [pk]; b >B.id [onDelete=cascade, onUpdate=setNull]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn dialect_in_datatype_without_at_sign_is_rejected() {
+    let src = format!(
+        "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; }} Dialect postgres {{ }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("needs an engine name")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn dialect_in_datatype_with_unknown_engine_is_rejected() {
+    let src = format!(
+        "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; }} Dialect @oracle {{ }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown dialect engine `oracle`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn dialect_in_database_without_at_sign_is_rejected() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; Database {{ table = \"t\"; Dialect mysql {{ }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("needs an engine name")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn dialect_in_database_with_unknown_engine_is_rejected() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; Database {{ table = \"t\"; Dialect @sqlite {{ }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown dialect engine `sqlite`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn known_dialect_engines_are_accepted() {
+    let src = format!(
+        "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; }} Dialect @postgres {{ }} }}\nTable T {{ id int [pk]; Database {{ table = \"t\"; Dialect @mysql {{ }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
 fn unknown_type_under_generic_is_an_error() {
     let src = format!("{HEADER}\nTable T {{ x nonexistenttype; }}\n");
     let (_, diags) = analyze_src(&src);
@@ -263,6 +365,72 @@ fn missing_datatype_argument_without_default_is_rejected() {
             .any(|m| m.contains("argument for parameter `b` is missing")),
         "{diags:#?}"
     );
+}
+
+#[test]
+fn wrongly_typed_datatype_argument_is_rejected() {
+    let src = format!(
+        "{HEADER}\nDatatype D(precision int, scale int) {{ Field {{ type = float; }} }}\nTable T {{ x D(\"abc\", 2); }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("argument for parameter `precision` should be `int`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_raw_expression_is_accepted_for_any_datatype_parameter_type() {
+    let src = format!(
+        "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; }} }}\nTable T {{ x D(`current_setting('x')`); }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn varchar_with_a_non_int_length_is_rejected() {
+    let src = format!("{HEADER}\nTable T {{ x varchar(\"eighty\"); }}\n");
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("argument for parameter `varchar` should be `int`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn varchar_with_too_many_arguments_is_rejected() {
+    let src = format!("{HEADER}\nTable T {{ x varchar(80, 3); }}\n");
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`varchar` expects 1 argument(s), got: 2")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn uuid_with_an_argument_is_rejected() {
+    let src = format!("{HEADER}\nTable T {{ x uuid(7); }}\n");
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`uuid` expects 0 argument(s), got: 1")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn varchar_with_a_valid_length_is_accepted() {
+    let src = format!("{HEADER}\nTable T {{ x varchar(80); }}\n");
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
 }
 
 #[test]
@@ -382,4 +550,111 @@ Table T { CamelCaseName int; }
             .any(|m| m.contains("`CamelCaseName` does not follow the configured `fieldNaming`")),
         "{diags:#?}"
     );
+}
+
+#[test]
+fn a_valid_multi_row_example_is_accepted() {
+    let src = format!(
+        "{HEADER}\nTable Post {{\n  id int [pk];\n  title varchar(200) [required];\n  body text;\n\n  Example {{\n    Record {{ id = 1; title = \"Hello World\"; body = \"My first post\"; }}\n    Record {{ id = 2; title = \"Second post\"; }}\n  }}\n}}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let post = model.tables.iter().find(|t| t.name == "Post").unwrap();
+    assert_eq!(post.examples.len(), 2);
+    assert_eq!(
+        post.examples[0]
+            .values
+            .get("title")
+            .map(|v| format!("{v:?}")),
+        Some(r#"Text("Hello World")"#.to_owned())
+    );
+}
+
+#[test]
+fn example_row_with_unknown_field_is_rejected() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; Example {{ Record {{ id = 1; nickname = \"x\"; }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown field `nickname`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn example_row_missing_a_required_field_is_rejected() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; name string [required]; Example {{ Record {{ id = 1; }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("record 1 in `Example` is missing required field `name`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn example_rows_with_a_duplicate_pk_value_are_rejected() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; Example {{ Record {{ id = 1; }} Record {{ id = 1; }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("record 2 in `Example` repeats record 1's value for `id`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn example_rows_with_a_duplicate_unique_value_are_rejected() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; slug string [unique]; Example {{ Record {{ id = 1; slug = \"a\"; }} Record {{ id = 2; slug = \"a\"; }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("record 2 in `Example` repeats record 1's value for `slug`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn record_outside_example_is_rejected() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; Record {{ id = 1; }} }}\n");
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`Record` is not allowed here")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn example_outside_table_is_rejected() {
+    let src = format!("{HEADER}\nExample {{ Record {{ id = 1; }} }}\nTable T {{ id int [pk]; }}\n");
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`Example` is not allowed here")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_use_inlined_partials_fields_are_visible_to_an_example_row() {
+    let src = format!(
+        "{HEADER}\nPartial P {{ name string; }}\nTable T {{ use P; id int [pk]; Example {{ Record {{ id = 1; name = \"a\"; }} }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
 }

@@ -224,7 +224,7 @@ block_kinds!(
     // `Field` here is the settings block that says how a field of a type
     // behaves, in `Datatype` (`docs/06`) and `Enum` (`docs/08`). It is not
     // the [`Field`] AST node below — the language reuses the word.
-    Meta, Style, Index, Database, Field, Dialect, Lint,
+    Meta, Style, Index, Database, Field, Dialect, Lint, Example, Record,
 );
 
 impl BlockKind {
