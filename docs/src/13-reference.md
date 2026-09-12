@@ -20,6 +20,8 @@
 | `Database` | The block for physical names: `database`, `schema`, `table`. |
 | `Dialect` | Engine-specific block, named `@postgres` / `@mysql` / etc., used inside `Datatype` and `Database`. |
 | `Index` | A table's or partial's list of indexes. |
+| `Example` | A table's sample-data container: any number of `Record` blocks. Descriptive only. |
+| `Record` | One sample row inside `Example`: `field = value;` assignments, unnamed, identified by position. |
 | Field (declaration) | A named entry in a `Table`, `Partial`, or `Enum` body — see the [three-zone shape](05-tables-and-fields.md). |
 | `Field` (sub-block) | Inside `Datatype`/`Enum`: describes how a field of that type behaves at the model level. |
 | root file | The one file in a project that carries the `Project` block and, transitively, imports everything else. |
@@ -30,7 +32,7 @@
 | Class | Casing | Examples |
 |---|---|---|
 | Directive | lowercase | `spec`, `import`, `as`, `use` |
-| Block keyword | PascalCase | `Project`, `Document`, `Table`, `Enum`, `Partial`, `Group`, `Datatype`, `Meta`, `Style`, `Index`, `Database`, `Dialect`, `Lint` |
+| Block keyword | PascalCase | `Project`, `Document`, `Table`, `Enum`, `Partial`, `Group`, `Datatype`, `Meta`, `Style`, `Index`, `Database`, `Dialect`, `Lint`, `Example`, `Record` |
 | Setting key / flag | camelCase | `styleClasses`, `onDelete`, `exampleValue` |
 
 Full explanation: [01 — Case conventions and keywords](01-language-basics.md#case-conventions-and-keywords).
@@ -75,7 +77,7 @@ No operator exists for many-to-many — write the junction table. Full explanati
 |---|---|---|---|---|
 | `Project` | yes | no | — | `Meta`, `Style`, `Lint`, `Database` |
 | `Document` | yes | yes | — | `Meta`, `Style` |
-| `Table` | yes | yes | — | fields, `Meta`, `Database`, `Index` |
+| `Table` | yes | yes | — | fields, `Meta`, `Database`, `Index`, `Example` |
 | `Partial` | yes | yes | — | fields, `Meta`, `Index`, `use` |
 | `Enum` | yes | yes | — | `Field`, entries, `Meta` |
 | `Group` | yes | yes | — | `Table`/`Enum` references, `Meta` |
@@ -86,6 +88,8 @@ No operator exists for many-to-many — write the junction table. Full explanati
 | `Database` | no | no | `Project`, `Document`, `Table` | key/value pairs, `Dialect` |
 | `Dialect` | no | yes (`@engine`) | `Database`, `Datatype` | key/value pairs |
 | `Index` | no | no | `Table`, `Partial` | index entries |
+| `Example` | no | no | `Table` | `Record` |
+| `Record` | no | no (position only) | `Example` | key/value pairs |
 
 ## Known limitations
 
@@ -120,6 +124,7 @@ of them.
 | Type strictness per `mode` | [02](02-project-and-documents.md#the-mode-switch) | accepts every known type under both modes |
 | A `Datatype` missing the project's `Dialect` | [06](06-data-types.md#missing-dialect) | silent under both modes |
 | The type catalog under a non-`generic` dialect | [06](06-data-types.md#built-in-types) | unknown type names are a warning, not an error |
+| `Example` row values for an `Enum`-typed field, or a `Datatype` field whose own `Field.type` names another custom type | [05](05-tables-and-fields.md#example-rows) | not checked — only a built-in or a one-level-resolved `Datatype` is |
 
 ## See also
 

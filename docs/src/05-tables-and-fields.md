@@ -137,6 +137,46 @@ sum float { label = "Sum"; }
 
 Custom keys follow the `x-` rule from [01 — Custom keys](01-language-basics.md#custom-keys).
 
+## Example rows
+
+`exampleValue` illustrates one field in isolation. To illustrate a whole row — a sample dataset for documentation and tooling — a `Table` takes an `Example` block holding any number of `Record` blocks, each a flat set of `field = value;` assignments:
+
+```skema
+Table Post {
+  id    int          [pk];
+  title varchar(200) [required];
+  body  text;
+
+  Example {
+    Record {
+      id    = 1;
+      title = "Hello World";
+      body  = "My first post";
+    }
+
+    Record {
+      id    = 2;
+      title = "Second post";
+    }
+  }
+}
+```
+
+Both mechanisms stay: `exampleValue` for a hover-text placeholder on a single field, `Example`/`Record` for a row that shows several fields together.
+
+Rows are **unnamed** — a `Record` is identified only by its position inside `Example` ("the 2nd `Record`"), the same way an unnamed `Index` entry is. There is no per-row naming or cross-referencing: a relationship field (`customer >Customer.id`) gets a literal example value in its row like any other field, never a pointer to another table's row.
+
+**Descriptive only** — same status as `exampleValue` and a field's `regex`: `Example` never affects generated DDL/DML, and there is no seed-data/INSERT generation from it.
+
+### What is checked
+
+- Every key in a `Record` must be a real field name on that table (including one pulled in via `use`) — an unknown key is a diagnostic.
+- Every field flagged `required` or `pk` must have a value in every row.
+- No two rows may assign the same value to a `pk`- or `unique`-flagged field.
+- Each value's literal kind must match its field's type: every built-in from [06 — Built-in types](06-data-types.md#built-in-types), or — one level deep — a `Datatype`-typed field's own `Field.type`. A raw expression (`` `…` ``) is accepted for any type, the same as everywhere else in the language (`regex` and `default` included) — it passes through to the target database unvalidated.
+
+A relationship field's value, and a value assigned to an `Enum`-typed field, are not type-checked — see [Reference → Not enforced yet](13-reference.md#not-enforced-yet).
+
 ## Worked example
 
 ```skema
