@@ -127,6 +127,20 @@ pub(crate) enum Dialect {
     Oracledb,
 }
 
+impl Dialect {
+    /// The `Dialect @engine` selector this dialect expects a `Datatype` to
+    /// cover, or `None` for `Generic` – it selects no engine, so there is
+    /// nothing to be missing.
+    pub(crate) const fn engine_name(self) -> Option<&'static str> {
+        match self {
+            Self::Generic => None,
+            Self::Postgres => Some("postgres"),
+            Self::Mysql => Some("mysql"),
+            Self::Oracledb => Some("oracledb"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProjectSettings<'a> {
     /// The file in which the one canonical `Project` block lives.

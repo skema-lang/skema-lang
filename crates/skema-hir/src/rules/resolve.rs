@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use skema_syntax::Span;
 use skema_syntax::ast::{self, BlockKind, RelationOp, ValueKind};
 
-use super::{Ctx, Dialect, ProjectSettings};
+use super::{Ctx, Dialect, Mode, ProjectSettings};
 use crate::catalog::{BUILTIN_TYPE_PARAMS, BUILTIN_TYPES, RELATION_ACTION_VALUES};
 use crate::model;
 use crate::{Diagnostic, FileId};
@@ -16,6 +16,7 @@ use crate::{Diagnostic, FileId};
 struct Env<'c, 'a> {
     ctx: &'c Ctx<'a>,
     dialect: Dialect,
+    mode: Mode,
 }
 
 /// The fields and indexes of a `Table` or a `Partial`, after every `use`
@@ -42,6 +43,7 @@ pub(crate) fn run<'a>(
     let env = Env {
         ctx,
         dialect: project.map_or(Dialect::Generic, |p| p.dialect),
+        mode: project.map_or(Mode::Draft, |p| p.mode),
     };
     let project_database = project.and_then(|p| p.database);
 
@@ -729,6 +731,7 @@ fn resolve_named_type(
         },
         Some(decl) if decl.kind == BlockKind::Datatype => {
             check_datatype_args(owner, decl.block, args, span, diags);
+            check_datatype_dialect_coverage(env, owner, &dotted, decl.block, span, diags);
             model::TypeRef {
                 name: dotted,
                 args: str_args,
@@ -822,6 +825,40 @@ fn check_datatype_args(
                 ),
             ));
         }
+    }
+}
+
+/// A `Datatype` used under a non-`generic` dialect with no matching
+/// `Dialect @<engine>` block (`docs/06`, "Missing dialect"): a hint under
+/// `draft` (a `Warning`-severity diagnostic – the same severity
+/// `resolve_named_type`'s own `None` arm already uses for "not finalized
+/// yet" cases), an error under `strict`.
+fn check_datatype_dialect_coverage(
+    env: &Env<'_, '_>,
+    owner: FileId,
+    datatype_name: &str,
+    datatype: &ast::Block,
+    span: Span,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Some(engine) = env.dialect.engine_name() else {
+        return;
+    };
+    let covered = datatype.items.iter().any(|item| match &item.kind {
+        ast::ItemKind::Block(b) if b.kind == BlockKind::Dialect => {
+            b.selector.as_ref().is_some_and(|s| s.text == engine)
+        }
+        _ => false,
+    });
+    if covered {
+        return;
+    }
+    let message = format!(
+        "`{datatype_name}` has no `Dialect @{engine}` block – the type is not defined for this target (docs/06, \"Missing dialect\")"
+    );
+    match env.mode {
+        Mode::Draft => diags.push(Diagnostic::warning(owner, span, message)),
+        Mode::Strict => diags.push(Diagnostic::error(owner, span, message)),
     }
 }
 

@@ -112,8 +112,6 @@ If `dialect = oracledb` is set and no `Dialect @oracledb` block exists:
 | `draft` | falls back to `Field.type`, with a hint |
 | `strict` | error — the type is not defined for this target |
 
-> Not enforced yet: no rule looks at a `Datatype`'s `Dialect` coverage, so a missing block is silent under both modes. See [Reference → Not enforced yet](13-reference.md#not-enforced-yet).
-
 ## Parameter substitution
 
 `{name}` is replaced by the argument **only if `name` is a declared parameter of this `Datatype`.** Anything else is left untouched:

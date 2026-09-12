@@ -304,6 +304,44 @@ fn known_dialect_engines_are_accepted() {
 }
 
 #[test]
+fn a_datatype_covering_the_active_dialect_is_silent() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nDatatype D { Field { type = int; } Dialect @postgres { sql = \"int\"; } }\nTable T { x D; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn a_datatype_missing_the_active_dialect_is_a_hint_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = mysql; }\nDatatype D { Field { type = int; } Dialect @postgres { sql = \"int\"; } }\nTable T { x D; }\n";
+    let (_, diags) = analyze_src(src);
+    let missing: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("no `Dialect @mysql` block"))
+        .collect();
+    assert_eq!(missing.len(), 1, "{diags:#?}");
+    assert_eq!(missing[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn a_datatype_missing_the_active_dialect_is_an_error_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = mysql; }\nDatatype D { Field { type = int; } Dialect @postgres { sql = \"int\"; } }\nTable T { x D; }\n";
+    let (_, diags) = analyze_src(src);
+    let missing: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("no `Dialect @mysql` block"))
+        .collect();
+    assert_eq!(missing.len(), 1, "{diags:#?}");
+    assert_eq!(missing[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn a_datatype_used_under_generic_dialect_needs_no_dialect_coverage() {
+    let src = format!("{HEADER}\nDatatype D {{ Field {{ type = int; }} }}\nTable T {{ x D; }}\n");
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
 fn unknown_type_under_generic_is_an_error() {
     let src = format!("{HEADER}\nTable T {{ x nonexistenttype; }}\n");
     let (_, diags) = analyze_src(&src);

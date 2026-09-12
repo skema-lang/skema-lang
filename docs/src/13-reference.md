@@ -122,7 +122,6 @@ of them.
 | Rule | Stated in | What the checker does today |
 |---|---|---|
 | Type strictness per `mode` | [02](02-project-and-documents.md#the-mode-switch) | accepts every known type under both modes |
-| A `Datatype` missing the project's `Dialect` | [06](06-data-types.md#missing-dialect) | silent under both modes |
 | The type catalog under a non-`generic` dialect | [06](06-data-types.md#built-in-types) | unknown type names are a warning, not an error |
 | `Example` row values for an `Enum`-typed field, or a `Datatype` field whose own `Field.type` names another custom type | [05](05-tables-and-fields.md#example-rows) | not checked — only a built-in or a one-level-resolved `Datatype` is |
 
