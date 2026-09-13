@@ -1,49 +1,23 @@
 ## skema — GitLab CI/CD
 ##
 ## Every job runs through the project's own devenv.nix instead of a
-## hand-rolled image + apt-get/rustup/pip setup. That's the single source of
-## truth for the toolchain (Rust via rust-overlay, Python, maturin, mdbook,
-## cargo-llvm-cov, cargo-audit — see devenv.nix) shared with local
-## development: `devenv test` in CI is the exact same command contributors
-## run locally as `check`.
+## hand-rolled image + apt-get/rustup/pip setup — the same toolchain
+## `devenv test` runs locally as `check`.
 ##
-## Pipeline sources: merge requests, the default branch, and tags.
-## - MRs / default branch : devenv test (fmt+clippy+test), audit, coverage,
-##                           build (fast feedback loop)
-## - default branch only   : (re-)publish the documentation to GitLab Pages,
-##                           then work out the next version and push its tag
-## - tags (vX.Y.Z)         : additionally publish binaries + the Python wheel
-##                           to the Package Registry, publish the library
-##                           crates to the Cargo registry, push a container
-##                           image, and trigger skema-lib
-##
-## The release is therefore a chain, not a button: a green default branch
-## tags itself (`release`), the tag builds and publishes everything, and
-## skema-lib is handed that tag. It publishes the npm packages built from it
-## and hands their exact versions on to both apps, which pin them and release
-## under their own version numbers. Pushing a tag by hand does exactly the
-## same thing from the second step on — the automation adds a trigger, not a
-## parallel release path.
+## See CLAUDE.md, "Releasing — the chain", for the cross-repo release design.
 ##
 ## Prerequisites in the GitLab project settings:
-##   - Container Registry enabled (for the `docker-build` job)
+##   - Container Registry enabled (for the `docker-build` job).
 ##   - Settings → CI/CD → Job token permissions → **Allow Git push requests to
-##     the repository**. Off by default; GA in GitLab 18.4 and available on
-##     every tier. This is what lets `release` push the bump and the tag with
-##     nothing but `CI_JOB_TOKEN` — no personal or project access token.
+##     the repository**. Off by default; GA in GitLab 18.4. Lets `release`
+##     push the version bump and the tag with nothing but `CI_JOB_TOKEN`.
 ##   - A `RELEASE_TRIGGER_TOKEN` CI variable, masked and protected: a pipeline
-##     trigger token (Settings → CI/CD → Pipeline trigger tokens).
-##     A job-token push deliberately starts no pipeline — that is what keeps
-##     `release` from re-triggering itself — so the tag pipeline, the one that
-##     actually publishes, has to be asked for explicitly. A trigger token can
-##     do nothing except start a pipeline, which makes it a far smaller thing
-##     to leak than a token carrying write access to the repository.
-##   - skema-lib must allow this one to trigger it: Settings → CI/CD → Job
-##     token permissions → add `skema-language/skema` to its allowlist.
+##     trigger token (Settings → CI/CD → Pipeline trigger tokens). A job-token
+##     push starts no pipeline, so `scripts/release.sh` asks for the tag
+##     pipeline explicitly with this after pushing the tag.
+##   - skema-lib must allow this project to trigger it: Settings → CI/CD →
+##     Job token permissions → add `skema-language/skema` to its allowlist.
 ##     Without it `trigger-lib` gets a 404.
-##     (Multi-project triggering itself is Free — it moved out of Premium in
-##     12.8. Only the *pipeline graph* that visualises it is Premium, which
-##     costs nothing here.)
 
 workflow:
   rules:
@@ -68,40 +42,15 @@ variables:
     experimental-features = nix-command flakes
     sandbox = false
 
-# The classic Nix installer's single-user mode refuses to run as root
-# ("installing Nix as root is not supported by this script"), which is
-# exactly what every GitLab CI job container does. The Determinate Systems
-# installer's `--init none` mode is built for precisely this case (root, no
-# systemd) and still sets up a working nix-daemon without one. Verified
-# end-to-end in a plain, unprivileged `debian:bookworm-slim` container.
-# `sandbox = false` (set via NIX_CONFIG above) because Nix's build sandbox
-# needs user namespaces that an unprivileged Docker-executor container
-# usually can't create — moot here in practice since every package used in
-# this project resolves from a binary cache instead of building from source,
-# but set defensively in case that ever changes.
+# Root-mode install (`--init none`) - GitLab job containers run as root, and
+# Nix's single-user installer refuses that. `sandbox = false` (NIX_CONFIG
+# above) because those containers also can't create the user namespaces
+# Nix's build sandbox needs - moot today since every package resolves from a
+# binary cache, kept defensively.
 #
-# This reruns on every job (fresh container each time), fetching the
-# toolchain from cache.nixos.org / devenv.cachix.org / static.rust-lang.org
-# rather than compiling from source, so it's a download, not a build. If
-# pipeline latency becomes a problem, the next step is a custom runner image
-# with Nix preinstalled and a persistent /nix.
-#
-# devenv itself is installed from the revision this project already pins,
-# read out of devenv.lock. `nix profile install nixpkgs#devenv` — what this
-# used to be — resolves through the flake registry to whatever nixpkgs-
-# unstable happens to ship that day, which quietly made CI the one part of
-# the setup that was not pinned, in a project whose entire premise is that
-# devenv.lock pins the toolchain for everyone. A devenv release that changes
-# how `devenv test` behaves would land in CI unannounced and turn the
-# pipeline red against an unchanged commit. Deriving the revision from the
-# lock instead of hardcoding it keeps `devenv update` in charge of both.
-#
-# The revision to read is the lock's **`devenv`** node — the same tree the
-# `devenv.nix` modules are evaluated from. Reading `nodes.nixpkgs` instead
-# looks equivalent and is not: that pins the package *set*, and CI then
-# gets whichever devenv release that nixpkgs snapshot happens to package,
-# which is a different program from the one the lock's modules belong to.
-# That skew is exactly what this block exists to prevent.
+# devenv itself comes from devenv.lock's **`devenv`** node, not
+# `nodes.nixpkgs` - the latter pins the package *set*, not the devenv
+# program the lock's own modules are evaluated against.
 .devenv_setup: &devenv_setup
   - apt-get update -qq
   - apt-get install -y --no-install-recommends curl xz-utils ca-certificates git >/dev/null
@@ -209,25 +158,10 @@ build:
     expire_in: 1 week
 
 # The language server, per platform, for the VSCode extension to bundle.
-#
-# Cross-compiled from the same Linux runner as everything else, with the
-# targets and cross linkers pinned in devenv.nix's `cross` profile — the one
-# job here that passes `--profile cross`, because it is the only one that
-# cross-compiles. Every other devenv job builds for the host and would
-# otherwise pay for two foreign stdenvs it never invokes:
-#
-#   * **linux** is built against **musl and linked statically**, so one
-#     binary runs on every distribution regardless of its glibc. A
-#     glibc-linked binary built here would refuse to start on anything older
-#     than this runner's Debian.
-#   * **windows** uses the **GNU** ABI, because that is what cross-compiles
-#     from Linux. An MSVC build would need a Windows runner and buys nothing.
-#
-# **macOS is missing, and cannot be added from here**: cross-compiling for
-# Darwin needs the Apple SDK, which is not redistributable. It needs a macOS
-# runner (GitLab's SaaS macOS runners, or a self-hosted one), and until there
-# is one, macOS users of the extension run a `cargo install`ed server via
-# `skema.serverPath` - the extension is built for exactly that fallback.
+# Cross-compiled via devenv.nix's `cross` profile: musl-static for linux (one
+# binary regardless of glibc version), the GNU ABI for windows (what
+# cross-compiles from Linux). No macOS runner exists yet - those users fall
+# back to `skema.serverPath` with a locally built server.
 build-release-binaries:
   stage: build
   cache: *rust_cache
@@ -275,18 +209,10 @@ build-python-wheel:
     expire_in: 1 week
 
 # The browser build: wasm-bindgen's raw output, tarred up as a build
-# artifact. Nothing here turns it into the `@skema/model`/`@skema/wasm` npm
-# packages — that is JS by nature and belongs in skema-lib
-# (`wasm-packaging/`, brain/tasks/10), not in this Rust-only repo. This job's
-# only job is producing the one generated `.d.ts` (plus the runtime files
-# beside it) that both packages are each a half of, for skema-lib's
-# `fetch-artifact.mjs` to download from this tag's generic package registry
-# entry — see `publish-generic-package` below.
-#
-# The tarball is also the old delivery route — skemaeditor used to vendor
-# those four files into `src/wasm/generated/` and commit them. It is kept
-# until that repo has moved to the `@skema/wasm` dependency, so a release can
-# still be rolled back to the vendoring path.
+# artifact for skema-lib's `wasm-packaging/` to turn into `@skema/model`/
+# `@skema/wasm` (CLAUDE.md, "The generated boundary") - not done here, this
+# repo stays Rust-only. Also the rollback path if `@skema/wasm` itself ever
+# needs to be: skemaeditor used to vendor these four files directly.
 build-wasm-package:
   stage: build
   cache: *rust_cache
@@ -348,8 +274,8 @@ publish-generic-package:
   script:
     # `target/release/*` are this runner's own (glibc) build, kept as the
     # plain `skema`/`skema-lsp` names they have always had. The
-    # `dist/skema-lsp-<triple>` ones are what the VSCode extension fetches,
-    # and `dist/skema-wasm.tar.gz` is what skemaeditor vendors.
+    # `dist/skema-lsp-<triple>` ones are what the VSCode extension fetches;
+    # `dist/skema-wasm.tar.gz` is `build-wasm-package`'s rollback artifact.
     - |
       for f in target/release/skema target/release/skema-lsp dist/skema-lsp-* dist/*.whl dist/skema-wasm.tar.gz; do
         [ -e "$f" ] || continue
@@ -358,39 +284,10 @@ publish-generic-package:
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/skema/${CI_COMMIT_TAG}/${name}"
       done
 
-# The Cargo registry job that used to live here is gone, not disabled: on
-# GitLab.com it cannot work yet, and a job that always fails teaches the team
-# to ignore red pipelines.
-#
-# It failed with `failed to update registry 'gitlab': config.json not found`.
-# Three separate things were wrong, and only the first is a typo:
-#
-#   1. The index URL ended in `/packages/cargo/config.json/`. A sparse index
-#      is a *base* URL — cargo appends `config.json` itself, so it was asking
-#      for `.../cargo/config.json/config.json`. The base is `/packages/cargo/`.
-#   2. GitLab has not shipped the Cargo registry. The feature flag is not
-#      rolled out on GitLab.com and the end-to-end `cargo publish` flow is
-#      still unchecked on the tracking issue (gitlab-org/gitlab#33060).
-#      `/packages/cargo/config.json` 404s on this project while the pypi and
-#      npm endpoints next to it answer fine. Nothing to do with the tier.
-#   3. Even once it ships, publishing would still fail: with `version` but no
-#      `registry`, cargo records the internal path dependencies as *crates.io*
-#      dependencies. `cargo package -p skema-hir` says so —
-#      "no matching package named `skema-syntax` found, location searched:
-#      crates.io index" — and it says it even with `--registry gitlab`. The
-#      workspace dependencies in Cargo.toml would each need
-#      `registry = "gitlab"` added, which then makes every consumer of the
-#      crates configure that registry to build at all.
-#
-# The library crates are not lost in the meantime: `publish-generic-package`
-# above uploads the binaries and the wheel, and the two downstream repos
-# consume this project through those artifacts, not through a crate index.
-# Nothing in the release chain depends on the Cargo registry.
-#
-# To bring it back once GitLab enables the feature: restore the job with
-# `index = "sparse+${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/cargo/"`,
-# add `registry = "gitlab"` to the four workspace dependencies, and publish in
-# dependency order (skema-syntax, skema-hir, skema-loader) with --no-verify.
+# The Cargo registry job that used to live here is gone, not disabled - a job
+# that always fails teaches the team to ignore red pipelines. Why it can't
+# work on GitLab.com yet, and how to bring it back: brain/decisions.md,
+# "Cargo registry publish (rejected, keep off)".
 
 # --------------------------------------------------------------------------
 # pages (default branch only)
@@ -465,15 +362,11 @@ release:
 # downstream (tags only)
 # --------------------------------------------------------------------------
 
-# Hands the freshly published tag to skema-lib, this repo's only downstream: it
-# builds @skema/model/@skema/wasm from the WASM bundle and hands exact versions
-# of those and of skema-lsp on to both apps. `strategy: depend` keeps this
-# pipeline red while anything downstream is — a release that only half-shipped
-# should not look green here.
-#
-# It sits in a stage after `package`: skema-lib fetches the published bundle of
-# this exact tag, and triggering before the upload finished would send it
-# shopping for something that is not on the shelf yet.
+# Hands the freshly published tag to skema-lib, this repo's only downstream
+# (CLAUDE.md, "Releasing — the chain"). `strategy: depend` keeps this
+# pipeline red while anything downstream is. It sits in a stage after
+# `package`: skema-lib fetches this tag's published bundle, and triggering
+# before the upload finished would send it shopping for nothing on the shelf.
 trigger-lib:
   stage: downstream
   rules:
