@@ -17,6 +17,12 @@ pub struct Model {
     pub tables: Vec<Table>,
     pub enums: Vec<Enum>,
     pub groups: Vec<Group>,
+    /// The project's `dialect` engine name (`docs/02`) – `None` for
+    /// `generic`, or when no `Project` block was found. `rules::ProjectSettings`
+    /// stays private to this crate; this is the one fact from it a consumer
+    /// needs to offer dialect-specific completion (`skema_api::builtins`,
+    /// brain task 24).
+    pub dialect: Option<String>,
 }
 
 /// One written reference and the declaration it resolves to – recorded as a

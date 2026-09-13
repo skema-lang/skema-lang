@@ -107,6 +107,10 @@ pub(crate) fn run(
             tables,
             enums,
             groups,
+            dialect: project
+                .as_ref()
+                .and_then(|p| p.dialect.engine_name())
+                .map(str::to_owned),
         },
         links,
         diags,

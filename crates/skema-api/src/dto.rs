@@ -216,6 +216,9 @@ pub struct ExportedModel {
     pub tables: Vec<ExportedTable>,
     pub enums: Vec<ExportedEnum>,
     pub groups: Vec<ExportedGroup>,
+    /// The project's `dialect` engine name (`docs/02`) – `None` for
+    /// `generic`, or when no `Project` block was found.
+    pub dialect: Option<String>,
 }
 
 /// One `[]`-flag as written: `[pk]` carries `true`, `[default=0]` its
@@ -569,6 +572,7 @@ pub fn empty_model() -> ExportedModel {
         tables: Vec::new(),
         enums: Vec::new(),
         groups: Vec::new(),
+        dialect: None,
     }
 }
 
@@ -577,6 +581,7 @@ pub fn export_model(model: &model::Model, ctx: &LocateCtx<'_>) -> ExportedModel 
         tables: model.tables.iter().map(|t| table(t, ctx)).collect(),
         enums: model.enums.iter().map(|e| enum_(e, ctx)).collect(),
         groups: model.groups.iter().map(|g| group(g, ctx)).collect(),
+        dialect: model.dialect.clone(),
     }
 }
 
@@ -628,5 +633,20 @@ Table Post {
         let result = crate::export_model(src, None, false);
         assert!(result.ok, "{:#?}", result.diagnostics);
         assert!(result.model.tables[0].examples.is_empty());
+    }
+
+    #[test]
+    fn a_generic_project_exports_no_dialect() {
+        let result = crate::export_model(SRC, None, false);
+        assert!(result.ok, "{:#?}", result.diagnostics);
+        assert_eq!(result.model.dialect, None);
+    }
+
+    #[test]
+    fn a_postgres_project_exports_its_engine_name_as_the_dialect() {
+        let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = postgres; }\nTable T { id int [pk]; data jsonb; }\n";
+        let result = crate::export_model(src, None, false);
+        assert!(result.ok, "{:#?}", result.diagnostics);
+        assert_eq!(result.model.dialect.as_deref(), Some("postgres"));
     }
 }

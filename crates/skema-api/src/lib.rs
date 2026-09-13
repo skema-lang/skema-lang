@@ -43,6 +43,8 @@ pub mod project;
 pub mod reference;
 pub mod style;
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 use skema_hir::{FileId, InputFile, catalog, model};
 #[cfg(feature = "typescript")]
@@ -115,6 +117,7 @@ pub fn builtins() -> Builtins {
         flag_keys: owned(catalog::FLAG_KEYS),
         index_flag_keys: owned(catalog::INDEX_FLAG_KEYS),
         builtin_types: owned(catalog::BUILTIN_TYPES),
+        dialect_types: dialect_types(),
         relation_action_values: owned(catalog::RELATION_ACTION_VALUES),
         block_keywords: block_keywords(),
     }
@@ -141,6 +144,13 @@ pub struct Builtins {
     pub flag_keys: Vec<String>,
     pub index_flag_keys: Vec<String>,
     pub builtin_types: Vec<String>,
+    /// Per-dialect built-in types beyond [`Self::builtin_types`]
+    /// (`docs/06`, task 17's catalog), keyed by engine name
+    /// (`skema_hir::catalog::DIALECT_ENGINES`). A caller offering
+    /// completion for a project on one dialect merges in only that
+    /// engine's entry; the whole small catalog is sent so a client never
+    /// needs a second round trip to ask about a different one.
+    pub dialect_types: BTreeMap<String, Vec<String>>,
     /// Values accepted by `onDelete`/`onUpdate` - `cascade`, `restrict`, …
     pub relation_action_values: Vec<String>,
     /// Every block keyword the parser recognizes, from `BlockKind` — the
@@ -150,6 +160,23 @@ pub struct Builtins {
 
 fn owned(words: &[&str]) -> Vec<String> {
     words.iter().map(|w| (*w).to_owned()).collect()
+}
+
+/// Every [`catalog::DIALECT_ENGINES`] engine's catalog, both a type's own
+/// name and its alias where it has one – both are accepted spellings
+/// (`DialectType::alias`), so both belong in completion.
+fn dialect_types() -> BTreeMap<String, Vec<String>> {
+    catalog::DIALECT_ENGINES
+        .iter()
+        .map(|&engine| {
+            let names = catalog::dialect_types(engine)
+                .iter()
+                .flat_map(|t| std::iter::once(t.name).chain(t.alias))
+                .map(str::to_owned)
+                .collect();
+            (engine.to_owned(), names)
+        })
+        .collect()
 }
 
 /// Derived from `BlockKind`, so a new block keyword reaches completion
@@ -195,4 +222,29 @@ fn run_analysis(source: &str, filename: &str) -> (model::Model, Vec<Diagnostic>)
 
 pub fn is_ok(diagnostics: &[Diagnostic]) -> bool {
     !diagnostics.iter().any(|d| d.severity == Severity::Error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dialect_types_covers_every_dialect_engine_with_no_empty_catalog() {
+        let catalog = builtins();
+        for &engine in catalog::DIALECT_ENGINES {
+            let types = catalog
+                .dialect_types
+                .get(engine)
+                .unwrap_or_else(|| panic!("no entry for {engine}"));
+            assert!(!types.is_empty(), "{engine}'s catalog is empty");
+        }
+    }
+
+    #[test]
+    fn dialect_types_includes_both_a_type_and_its_alias() {
+        let catalog = builtins();
+        let postgres = &catalog.dialect_types["postgres"];
+        assert!(postgres.contains(&"bigint".to_owned()));
+        assert!(postgres.contains(&"int8".to_owned()));
+    }
 }

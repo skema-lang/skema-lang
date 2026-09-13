@@ -128,6 +128,18 @@ fn type_names(analysis: &Analysis, catalog: &Builtins) -> Vec<CompletionItem> {
         Some("built-in"),
     );
 
+    // `None` covers both `generic` and "no elected `Project`" - neither has
+    // a dialect-specific catalog beyond the dialect-independent one above.
+    if let Some(engine) = analysis.model.dialect.as_deref() {
+        if let Some(dialect_types) = catalog.dialect_types.get(engine) {
+            items.extend(words(
+                dialect_types,
+                CompletionItemKind::TYPE_PARAMETER,
+                Some(engine),
+            ));
+        }
+    }
+
     items.extend(analysis.model.enums.iter().map(|e| CompletionItem {
         label: qualified(&e.namespace, &e.name),
         kind: Some(CompletionItemKind::ENUM),
@@ -222,5 +234,68 @@ fn qualified(namespace: &str, name: &str) -> String {
         name.to_owned()
     } else {
         format!("{namespace}.{name}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        for (name, contents) in files {
+            fs::write(dir.path().join(name), contents).expect("write fixture");
+        }
+        let root = dir.path().join(files[0].0);
+        (dir, root)
+    }
+
+    fn build(root: &Path) -> Analysis {
+        Analysis::build(root, false, |p| fs::read_to_string(p)).expect("analysis")
+    }
+
+    #[test]
+    fn a_postgres_project_offers_its_dialect_types_alongside_the_built_ins() {
+        let field = "data ";
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = draft; dialect = postgres; }}\nTable T {{ id int [pk]; {field}}}\n"
+        );
+        let (_dir, root) = workspace(&[("main.skema", &src)]);
+        let analysis = build(&root);
+        let offset = src.find(field).expect("field in source") as u32 + field.len() as u32;
+
+        let items = completion(&analysis, &root, offset);
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+
+        assert!(labels.contains(&"jsonb"), "{labels:?}");
+        assert!(
+            labels.contains(&"int8"),
+            "postgres' alias for bigint: {labels:?}"
+        );
+        // Still offered alongside the dialect-independent catalog - this is
+        // additive, not a replacement.
+        assert!(labels.contains(&"int"), "{labels:?}");
+        // A different dialect's types stay absent.
+        assert!(!labels.contains(&"tinytext"), "mysql-only: {labels:?}");
+    }
+
+    #[test]
+    fn a_generic_project_offers_only_the_dialect_independent_catalog() {
+        let field = "data ";
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = draft; dialect = generic; }}\nTable T {{ id int [pk]; {field}}}\n"
+        );
+        let (_dir, root) = workspace(&[("main.skema", &src)]);
+        let analysis = build(&root);
+        let offset = src.find(field).expect("field in source") as u32 + field.len() as u32;
+
+        let items = completion(&analysis, &root, offset);
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+
+        assert!(labels.contains(&"int"), "{labels:?}");
+        assert!(!labels.contains(&"jsonb"), "postgres-only: {labels:?}");
     }
 }

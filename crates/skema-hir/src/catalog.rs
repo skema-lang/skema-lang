@@ -270,18 +270,21 @@ pub const ORACLEDB_TYPES: &[DialectType] = &[
     ty("long"),
 ];
 
-/// Looks up one type name (or alias) in the catalog for `engine`
-/// (`"postgres"`/`"mysql"`/`"oracledb"`, matching [`DIALECT_ENGINES`]) –
-/// `None` for an unknown engine or a name absent from that engine's
-/// catalog.
-pub fn dialect_type(engine: &str, name: &str) -> Option<&'static DialectType> {
-    let types: &[DialectType] = match engine {
+/// The full catalog for `engine` (`"postgres"`/`"mysql"`/`"oracledb"`,
+/// matching [`DIALECT_ENGINES`]) – empty for an unknown engine.
+pub fn dialect_types(engine: &str) -> &'static [DialectType] {
+    match engine {
         "postgres" => POSTGRES_TYPES,
         "mysql" => MYSQL_TYPES,
         "oracledb" => ORACLEDB_TYPES,
-        _ => return None,
-    };
-    types
+        _ => &[],
+    }
+}
+
+/// Looks up one type name (or alias) in the catalog for `engine` – `None`
+/// for an unknown engine or a name absent from that engine's catalog.
+pub fn dialect_type(engine: &str, name: &str) -> Option<&'static DialectType> {
+    dialect_types(engine)
         .iter()
         .find(|t| t.name == name || t.alias == Some(name))
 }
