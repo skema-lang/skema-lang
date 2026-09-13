@@ -6,7 +6,92 @@
 
 Four simple types — `string`, `int`, `float`, `bool` — are all `mode = draft` requires (see [02 — The mode switch](02-project-and-documents.md#the-mode-switch)). `draft` never rejects anything more specific, so all of the below are equally fine to write under `draft` too.
 
-`mode = strict` requires a more precise, portable type instead: any other built-in, a custom `Enum`, or a `Datatype`. The example corpus uses `varchar(n)`, `text`, `uuid`, `date`, and `timestamp` alongside `Datatype`-based types for anything domain-specific. The exact catalog of built-in precise types is still growing — see [Reference → Known limitations](13-reference.md#known-limitations) — so a project needing a precise `int`/`float`/`bool` today reaches for a `Datatype` (`Field { type = int; }` plus whatever constraint makes it precise) rather than a built-in that doesn't exist yet.
+`mode = strict` requires a more precise, portable type instead: any other built-in, a custom `Enum`, or a `Datatype`. The dialect-independent precise catalog is exactly `varchar(n)`, `text`, `uuid`, `date`, and `timestamp` — a project needing a precise `int`/`float`/`bool` reaches for a `Datatype` (`Field { type = int; }` plus whatever constraint makes it precise) rather than a built-in that doesn't exist.
+
+With `dialect = postgres`/`mysql`/`oracledb`, a project also gets that engine's own built-in type catalog — see [Per-dialect type catalog](#per-dialect-type-catalog) below. A type name outside the dialect-independent catalog and (when set) the active dialect's own catalog is always an error, the same as an unknown type under `dialect = generic`.
+
+## Per-dialect type catalog
+
+Each table below is the complete set of engine-native type names `dialect = <engine>` accepts, on top of the dialect-independent catalog above. Sourced from each engine's own current reference documentation (PostgreSQL's "Data Types" chapter, the MySQL 8.4 Reference Manual, the Oracle Database 23 SQL Language Reference). Engine mechanisms for defining new types — PostgreSQL's `CREATE TYPE` enums/composites/domains/custom ranges, `type[]` array syntax on any type — are deliberately excluded: `Enum` and `Datatype` already cover that need in Skema. Built-in *fixed* range types (`int4range` and friends) are catalog names, not a mechanism, so they are included.
+
+A name marked † has no short native alias, so Skema gives it its own camelCase identifier (`doublePrecision` for `double precision`, and so on); a future DDL exporter maps it back to the real SQL keywords. Where the parenthesized alternate spelling is itself the engine's usual short form (`bigint`/`int8`, `timestampWithTimeZone`/`timestamptz`, …), both spellings are accepted.
+
+### `postgres`
+
+| Type name | Parameters | Native SQL | Notes |
+|---|---|---|---|
+| `bigint` (`int8`) | — | `bigint` | |
+| `smallint` (`int2`) | — | `smallint` | |
+| `bigserial` (`serial8`) | — | `bigserial` | auto-increment |
+| `serial` (`serial4`) | — | `serial` | auto-increment |
+| `smallserial` (`serial2`) | — | `smallserial` | auto-increment |
+| `numeric` (`decimal`) | `(precision, scale)`, scale optional | `numeric(p,s)` | |
+| `real` (`float4`) | — | `real` | |
+| `doublePrecision`† (`float8`) | — | `double precision` | |
+| `money` | — | `money` | |
+| `char` (`character`) | `(n)` | `character(n)` | fixed-length |
+| `bytea` | — | `bytea` | |
+| `time` | `(p)` optional | `time(p)` | no time zone |
+| `timeWithTimeZone`† (`timetz`) | `(p)` optional | `time(p) with time zone` | |
+| `timestampWithTimeZone`† (`timestamptz`) | `(p)` optional | `timestamp(p) with time zone` | |
+| `interval` | — | `interval` | field restriction (`year`, `day to second`, …) is a modifier, not a separate type name |
+| `point`, `line`, `lseg`, `box`, `path`, `polygon`, `circle` | — | same | geometric |
+| `inet`, `cidr`, `macaddr`, `macaddr8` | — | same | network address |
+| `bit` | `(n)` | `bit(n)` | |
+| `bitVarying`† (`varbit`) | `(n)` | `bit varying(n)` | |
+| `tsvector`, `tsquery` | — | same | text search |
+| `xml` | — | `xml` | |
+| `jsonb`, `jsonpath` | — | same | (`json` is not built in; use `jsonb`) |
+| `int4range`, `int8range`, `numrange`, `tsrange`, `tstzrange`, `daterange` | — | same | built-in range types only |
+| `oid` | — | `oid` | object identifier |
+| `pg_lsn` | — | `pg_lsn` | log sequence number |
+| `pg_snapshot` | — | `pg_snapshot` | |
+
+### `mysql`
+
+| Type name | Parameters | Native SQL | Notes |
+|---|---|---|---|
+| `tinyint`, `smallint`, `mediumint`, `bigint` | `(M)` optional display width | same | (`int` is dialect-independent) |
+| `decimal` (`numeric`) | `(precision, scale)`, scale optional | `decimal(M,D)` | |
+| `double` | `(precision, scale)` optional | `double(M,D)` | distinct from the dialect-independent `float`, which maps to MySQL's own `float(M,D)` |
+| `bit` | `(n)` | `bit(M)` | |
+| `time` | `(fsp)` optional | `time(fsp)` | |
+| `datetime` | `(fsp)` optional | `datetime(fsp)` | |
+| `year` | — | `year` | |
+| `char` | `(n)` | `char(M)` | fixed-length |
+| `binary` | `(n)` | `binary(M)` | |
+| `varbinary` | `(n)` | `varbinary(M)` | |
+| `tinyblob`, `blob`, `mediumblob`, `longblob` | — | same | |
+| `tinytext`, `mediumtext`, `longtext` | — | same | (`text` is dialect-independent) |
+| `enum` | `(...)`, one or more string values | `enum(...)` | |
+| `set` | `(...)`, one or more string values | `set(...)` | |
+| `geometry`, `point`, `linestring`, `polygon`, `multipoint`, `multilinestring`, `multipolygon`, `multicurve`, `multisurface`, `geometrycollection` | — | same | spatial/GIS |
+| `json` | — | `json` | |
+
+### `oracledb`
+
+| Type name | Parameters | Native SQL | Notes |
+|---|---|---|---|
+| `char` | `(size)` | `char(size)` | fixed-length |
+| `nchar` | `(size)` optional | `nchar(size)` | Unicode |
+| `varchar2` | `(size)` | `varchar2(size)` | |
+| `nvarchar2` | `(size)` | `nvarchar2(size)` | Unicode |
+| `number` | `(precision, scale)` optional | `number(p,s)` | |
+| `float` | `(precision)` optional | `float(p)` | subtype of `number` |
+| `binary_float`, `binary_double` | — | same | |
+| `timestamp` | `(fsp)` optional | `timestamp(fsp)` | overrides the dialect-independent `timestamp` with this optional argument |
+| `timestampWithTimeZone`† | `(fsp)` optional | `timestamp(fsp) with time zone` | |
+| `timestampWithLocalTimeZone`† | `(fsp)` optional | `timestamp(fsp) with local time zone` | |
+| `intervalYearToMonth`† | `(yearPrecision)` optional | `interval year(p) to month` | |
+| `intervalDayToSecond`† | `(dayPrecision, fractionalSecondsPrecision)` optional | `interval day(p) to second(p)` | |
+| `raw` | `(size)` | `raw(size)` | |
+| `longRaw`† | — | `long raw` | deprecated by Oracle itself; included since documented |
+| `rowid` | — | `rowid` | |
+| `urowid` | `(size)` optional | `urowid(size)` | |
+| `clob`, `nclob`, `blob`, `bfile` | — | same | large objects |
+| `json` | — | `json` | |
+| `vector` | `(dimension, format)` both optional | `vector(dim, fmt)` | Oracle 23ai+; `format` is one of `int8`/`float32`/`float64`/`binary` |
+| `long` | — | `long` | deprecated by Oracle itself; included since documented |
 
 ## Datatype — defining your own types
 

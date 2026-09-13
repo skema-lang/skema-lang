@@ -405,15 +405,101 @@ fn an_enum_typed_field_is_accepted_under_strict() {
 }
 
 #[test]
-fn unknown_type_under_postgres_is_only_a_warning() {
-    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable T { x jsonb; }\n";
+fn unknown_type_under_postgres_is_an_error() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable T { x vachar; }\n";
     let (_, diags) = analyze_src(src);
-    let jsonb: Vec<_> = diags
+    let unknown: Vec<_> = diags
         .iter()
-        .filter(|d| d.message.contains("jsonb"))
+        .filter(|d| d.message.contains("vachar"))
         .collect();
-    assert_eq!(jsonb.len(), 1, "{diags:#?}");
-    assert_eq!(jsonb[0].severity, skema_hir::Severity::Warning);
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn unknown_type_under_mysql_is_an_error() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = mysql; }\nTable T { x tinytxt; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("tinytxt") && m.contains("unknown type")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn unknown_type_under_oracledb_is_an_error() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = oracledb; }\nTable T { x varchar3; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("varchar3") && m.contains("unknown type")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn engine_specific_types_are_accepted_per_dialect() {
+    let cases = [
+        ("postgres", "jsonb"),
+        ("postgres", "int8"),
+        ("postgres", "doublePrecision"),
+        ("mysql", "tinytext"),
+        ("mysql", "mediumint"),
+        ("oracledb", "varchar2(255)"),
+        ("oracledb", "clob"),
+    ];
+    for (dialect, ty) in cases {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable T {{ x {ty}; }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(diags.is_empty(), "`{ty}` under `{dialect}`: {diags:#?}");
+    }
+}
+
+#[test]
+fn a_type_from_the_wrong_dialects_catalog_is_rejected() {
+    // `tinytext` is MySQL-only; used under `postgres` it must still be an
+    // error, not silently accepted because some engine somewhere has it.
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable T { x tinytext; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("tinytext") && m.contains("unknown type")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn dialect_type_argument_shapes_are_checked() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = mysql; }\nTable T { x enum(); }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("one or more string arguments")),
+        "{diags:#?}"
+    );
+
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = oracledb; }\nTable T { x vector(3, \"nope\"); }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("should be one of")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn oracledb_timestamp_accepts_its_own_optional_precision() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = oracledb; }\nTable T { x timestamp(6); }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
 }
 
 #[test]
@@ -498,7 +584,7 @@ fn varchar_with_too_many_arguments_is_rejected() {
     assert!(
         messages(&diags)
             .iter()
-            .any(|m| m.contains("`varchar` expects 1 argument(s), got: 2")),
+            .any(|m| m.contains("`varchar` expects at most 1 argument(s), got: 2")),
         "{diags:#?}"
     );
 }

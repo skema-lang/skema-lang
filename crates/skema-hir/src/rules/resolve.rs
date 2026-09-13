@@ -7,7 +7,10 @@ use skema_syntax::Span;
 use skema_syntax::ast::{self, BlockKind, RelationOp, ValueKind};
 
 use super::{Ctx, Dialect, Mode, ProjectSettings};
-use crate::catalog::{BUILTIN_TYPE_PARAMS, BUILTIN_TYPES, DRAFT_TYPES, RELATION_ACTION_VALUES};
+use crate::catalog::{
+    self, BUILTIN_TYPE_PARAMS, BUILTIN_TYPES, DRAFT_TYPES, RELATION_ACTION_VALUES, TypeParamSlot,
+    TypeParams,
+};
 use crate::model;
 use crate::{Diagnostic, FileId};
 
@@ -726,8 +729,13 @@ fn resolve_named_type(
     let str_args: Vec<String> = args.iter().map(ast::Value::to_text).collect();
 
     if let Some(bare) = path.as_ident().map(|i| i.text.as_str()) {
-        if BUILTIN_TYPES.contains(&bare) {
-            check_builtin_args(owner, bare, args, span, diags);
+        let dialect_entry = env
+            .dialect
+            .engine_name()
+            .and_then(|engine| catalog::dialect_type(engine, bare));
+        if BUILTIN_TYPES.contains(&bare) || dialect_entry.is_some() {
+            let params = dialect_entry.map_or_else(|| builtin_type_params(bare), |e| e.params);
+            check_type_args(owner, bare, &params, args, span, diags);
             if env.mode == Mode::Strict && DRAFT_TYPES.contains(&bare) {
                 diags.push(Diagnostic::error(
                     owner,
@@ -813,14 +821,13 @@ fn resolve_named_type(
             }
         }
         None => {
-            // Under postgres/mysql/oracledb, the type catalog is "not fully
-            // finalized" per docs/13 – only a warning instead of an error.
-            diags.push(Diagnostic::warning(
+            let engine = env.dialect.engine_name().unwrap_or("this dialect");
+            diags.push(Diagnostic::error(
                 owner,
                 span,
                 format!(
-                    "unknown type `{dotted}` – the built-in type catalog for this `dialect` is not \
-                     yet fully finalized per docs/13; carried over unchanged"
+                    "unknown type `{dotted}` – allowed are the built-in types, `{engine}`'s own \
+                     type catalog (docs/06), a custom `Enum`/`Datatype`"
                 ),
             ));
             model::TypeRef {
@@ -912,33 +919,127 @@ fn check_datatype_dialect_coverage(
     }
 }
 
-/// Argument-count check for a parameterized built-in (`docs/06`, "Built-in
-/// types") – a name not in [`BUILTIN_TYPE_PARAMS`] takes no arguments.
-fn check_builtin_args(
+/// The dialect-independent argument shape of a [`BUILTIN_TYPES`] name – a
+/// name not in [`BUILTIN_TYPE_PARAMS`] takes no arguments.
+fn builtin_type_params(name: &str) -> TypeParams {
+    BUILTIN_TYPE_PARAMS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map_or(TypeParams::None, |(_, params)| *params)
+}
+
+/// Argument check for a built-in type against its catalog shape (`docs/06`,
+/// "Built-in types"): a fixed/optional run of typed slots, a variadic
+/// string-literal list, or no arguments at all.
+fn check_type_args(
     owner: FileId,
     name: &str,
+    params: &TypeParams,
     args: &[ast::Value],
     span: Span,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let expected: &[&str] = BUILTIN_TYPE_PARAMS
-        .iter()
-        .find(|(n, _)| *n == name)
-        .map_or(&[], |(_, params)| *params);
-    if args.len() != expected.len() {
+    match params {
+        TypeParams::None => {
+            if !args.is_empty() {
+                diags.push(Diagnostic::error(
+                    owner,
+                    span,
+                    format!("`{name}` expects 0 argument(s), got: {}", args.len()),
+                ));
+            }
+        }
+        TypeParams::StringList => {
+            if args.is_empty() {
+                diags.push(Diagnostic::error(
+                    owner,
+                    span,
+                    format!("`{name}` expects one or more string arguments"),
+                ));
+                return;
+            }
+            for arg in args {
+                if !matches!(arg.kind, ValueKind::Str(_) | ValueKind::Raw(_)) {
+                    diags.push(Diagnostic::error(
+                        owner,
+                        arg.span,
+                        format!(
+                            "`{name}`'s arguments must be string literals, got `{}`",
+                            arg.to_text()
+                        ),
+                    ));
+                }
+            }
+        }
+        TypeParams::Slots(slots) => {
+            if args.len() > slots.len() {
+                diags.push(Diagnostic::error(
+                    owner,
+                    span,
+                    format!(
+                        "`{name}` expects at most {} argument(s), got: {}",
+                        slots.len(),
+                        args.len()
+                    ),
+                ));
+                return;
+            }
+            let required = slots
+                .iter()
+                .take_while(|s| matches!(s, TypeParamSlot::Int))
+                .count();
+            if args.len() < required {
+                diags.push(Diagnostic::error(
+                    owner,
+                    span,
+                    format!(
+                        "`{name}` expects at least {required} argument(s), got: {}",
+                        args.len()
+                    ),
+                ));
+                return;
+            }
+            for (arg, slot) in args.iter().zip(*slots) {
+                match slot {
+                    TypeParamSlot::Int | TypeParamSlot::OptInt => {
+                        check_arg_type(owner, arg, "int", name, diags);
+                    }
+                    TypeParamSlot::OptOneOf(words) => {
+                        check_one_of_arg(owner, arg, words, name, diags);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Checks a bare-word argument against a closed set (`vector`'s `format`) –
+/// a raw expression (`` `…` ``) is accepted unconditionally, the same
+/// convention [`check_arg_type`] follows.
+fn check_one_of_arg(
+    owner: FileId,
+    arg: &ast::Value,
+    words: &[&str],
+    name: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let ok = match &arg.kind {
+        ValueKind::Raw(_) => true,
+        ValueKind::Path(p) => p
+            .as_ident()
+            .is_some_and(|i| words.contains(&i.text.as_str())),
+        _ => false,
+    };
+    if !ok {
         diags.push(Diagnostic::error(
             owner,
-            span,
+            arg.span,
             format!(
-                "`{name}` expects {} argument(s), got: {}",
-                expected.len(),
-                args.len()
+                "`{name}`'s argument should be one of {}, got `{}`",
+                words.join(", "),
+                arg.to_text()
             ),
         ));
-        return;
-    }
-    for (arg, ty) in args.iter().zip(expected) {
-        check_arg_type(owner, arg, ty, name, diags);
     }
 }
 
