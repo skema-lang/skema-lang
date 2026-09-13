@@ -354,6 +354,56 @@ fn unknown_type_under_generic_is_an_error() {
 }
 
 #[test]
+fn draft_native_types_are_accepted_under_draft() {
+    for ty in ["string", "int", "float", "bool"] {
+        let src = format!("{HEADER}\nTable T {{ x {ty}; }}\n");
+        let (_, diags) = analyze_src(&src);
+        assert!(diags.is_empty(), "`{ty}` under draft: {diags:#?}");
+    }
+}
+
+#[test]
+fn draft_native_types_are_rejected_under_strict() {
+    for ty in ["string", "int", "float", "bool"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; }}\nTable T {{ x {ty}; }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags).iter().any(|m| m.contains(&format!(
+                "`{ty}` is not precise enough under `mode = strict`"
+            ))),
+            "`{ty}` under strict: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn precise_builtin_types_are_accepted_under_strict() {
+    for ty in ["varchar(80)", "text", "uuid", "date", "timestamp"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; }}\nTable T {{ x {ty}; }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(diags.is_empty(), "`{ty}` under strict: {diags:#?}");
+    }
+}
+
+#[test]
+fn a_datatype_typed_field_is_accepted_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; }\nDatatype Email { Field { type = string; } }\nTable T { x Email; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn an_enum_typed_field_is_accepted_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; }\nEnum Status { Field { type = string; } draft; }\nTable T { x Status; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
 fn unknown_type_under_postgres_is_only_a_warning() {
     let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable T { x jsonb; }\n";
     let (_, diags) = analyze_src(src);

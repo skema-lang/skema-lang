@@ -7,7 +7,7 @@ use skema_syntax::Span;
 use skema_syntax::ast::{self, BlockKind, RelationOp, ValueKind};
 
 use super::{Ctx, Dialect, Mode, ProjectSettings};
-use crate::catalog::{BUILTIN_TYPE_PARAMS, BUILTIN_TYPES, RELATION_ACTION_VALUES};
+use crate::catalog::{BUILTIN_TYPE_PARAMS, BUILTIN_TYPES, DRAFT_TYPES, RELATION_ACTION_VALUES};
 use crate::model;
 use crate::{Diagnostic, FileId};
 
@@ -699,6 +699,15 @@ fn resolve_named_type(
     if let Some(bare) = path.as_ident().map(|i| i.text.as_str()) {
         if BUILTIN_TYPES.contains(&bare) {
             check_builtin_args(owner, bare, args, span, diags);
+            if env.mode == Mode::Strict && DRAFT_TYPES.contains(&bare) {
+                diags.push(Diagnostic::error(
+                    owner,
+                    span,
+                    format!(
+                        "`{bare}` is not precise enough under `mode = strict` – use a more precise built-in, an `Enum`, or a `Datatype` instead (docs/02, \"The mode switch\")"
+                    ),
+                ));
+            }
             return model::TypeRef {
                 name: bare.to_owned(),
                 args: str_args,

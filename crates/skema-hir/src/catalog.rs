@@ -36,12 +36,10 @@ pub const DIALECT_ENGINES: &[&str] = &["postgres", "mysql", "oracledb"];
 
 /// The built-in, dialect-independent types (`docs/02`, `docs/06`).
 ///
-/// `docs/02` says `mode = draft` gets by on `string`/`int`/`float`/`bool`,
-/// but the reference project `examples/generic/` is `mode = draft` and uses
-/// `uuid`, `timestamp`, `varchar(n)`, `text` and `date` throughout. Read
-/// here as "suffices, but forbids nothing more specific": `mode` does not
-/// decide the type catalog. The full catalog is an open language question
-/// (`docs/13`, "Built-in type catalog").
+/// Includes both [`DRAFT_TYPES`] and the precise types beyond it. The full
+/// precise catalog is still growing – an open language question
+/// (`docs/13`, "Known limitations") – but the draft/precise split itself is
+/// decided (`docs/02`, "The mode switch").
 pub const BUILTIN_TYPES: &[&str] = &[
     "string",
     "int",
@@ -53,6 +51,13 @@ pub const BUILTIN_TYPES: &[&str] = &[
     "date",
     "timestamp",
 ];
+
+/// The four types `mode = draft` gets by on (`docs/02`, "The mode switch") –
+/// a subset of [`BUILTIN_TYPES`]. `draft` merely doesn't *require* more than
+/// these; it still accepts every other built-in, an `Enum`, or a
+/// `Datatype`. `strict` requires one of those more precise alternatives –
+/// enforced in `rules::resolve::resolve_named_type`.
+pub const DRAFT_TYPES: &[&str] = &["string", "int", "float", "bool"];
 
 /// Parameter shape of every parameterized built-in in [`BUILTIN_TYPES`]
 /// (`docs/06`, "Built-in types"): `varchar(n)` takes one length. Anything in

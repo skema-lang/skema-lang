@@ -4,11 +4,9 @@
 
 ## Built-in types
 
-Under `mode = draft`, four simple types are available: `string`, `int`, `float`, `bool` (see [02 — The mode switch](02-project-and-documents.md#the-mode-switch)).
+Four simple types — `string`, `int`, `float`, `bool` — are all `mode = draft` requires (see [02 — The mode switch](02-project-and-documents.md#the-mode-switch)). `draft` never rejects anything more specific, so all of the below are equally fine to write under `draft` too.
 
-Under `mode = strict`, more precise, portable types are expected. The example corpus uses `varchar(n)`, `text`, `uuid`, `date`, and `timestamp` alongside `Datatype`-based types for anything domain-specific. The exact catalog of built-in precise types is not fully finalized — see [Reference → Known limitations](13-reference.md#known-limitations).
-
-Neither list is enforced per mode today: every known type is accepted under both (see [02 — The mode switch](02-project-and-documents.md#the-mode-switch)).
+`mode = strict` requires a more precise, portable type instead: any other built-in, a custom `Enum`, or a `Datatype`. The example corpus uses `varchar(n)`, `text`, `uuid`, `date`, and `timestamp` alongside `Datatype`-based types for anything domain-specific. The exact catalog of built-in precise types is still growing — see [Reference → Known limitations](13-reference.md#known-limitations) — so a project needing a precise `int`/`float`/`bool` today reaches for a `Datatype` (`Field { type = int; }` plus whatever constraint makes it precise) rather than a built-in that doesn't exist yet.
 
 ## Datatype — defining your own types
 

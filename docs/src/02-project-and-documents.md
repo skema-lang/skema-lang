@@ -158,8 +158,6 @@ Both `mode` and `dialect` are **mandatory and closed**: a `Project` block withou
 
 Switching from `draft` to `strict` turns every previously-ignored inconsistency into a visible diagnostic — the switch costs one word.
 
-> Not enforced yet: only the `Lint` row holds today. Every known type is accepted under either mode, so `draft` rejects nothing for being too precise and `strict` demands nothing for being too vague. The example project is `mode = draft` and uses `uuid` and `timestamp` for that reason. See [Reference → Not enforced yet](13-reference.md#not-enforced-yet).
-
 `Lint` has no effect while `mode = draft`. It remains valid to write it there — it documents what *will* apply once the project switches.
 
 ### Dialect selection
