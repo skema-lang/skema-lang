@@ -273,15 +273,19 @@ build-python-wheel:
       - dist/*.whl
     expire_in: 1 week
 
-# The browser build. This is the only job with a Rust toolchain that the npm
-# packages depend on, so it produces both of them: the generated `.d.ts` is
-# the single source they are each a half of, and splitting it in two places
-# would be two chances to disagree.
+# The browser build: wasm-bindgen's raw output, tarred up as a build
+# artifact. Nothing here turns it into the `@skema/model`/`@skema/wasm` npm
+# packages — that is JS by nature and belongs in skema-lib
+# (`wasm-packaging/`, brain/tasks/10), not in this Rust-only repo. This job's
+# only job is producing the one generated `.d.ts` (plus the runtime files
+# beside it) that both packages are each a half of, for skema-lib's
+# `fetch-artifact.mjs` to download from this tag's generic package registry
+# entry — see `publish-generic-package` below.
 #
-# The tarball beside them is the old delivery route — skemaeditor used to
-# vendor those four files into `src/wasm/generated/` and commit them. It is
-# kept until that repo has moved to the `@skema/wasm` dependency, so a release
-# can still be rolled back to the vendoring path.
+# The tarball is also the old delivery route — skemaeditor used to vendor
+# those four files into `src/wasm/generated/` and commit them. It is kept
+# until that repo has moved to the `@skema/wasm` dependency, so a release can
+# still be rolled back to the vendoring path.
 build-wasm-package:
   stage: build
   cache: *rust_cache
@@ -289,10 +293,6 @@ build-wasm-package:
     - if: $CI_COMMIT_TAG
   script:
     - devenv shell -- bash -c "cd crates/skema-wasm && wasm-pack build --target web --release"
-    # Through devenv too: node is declared there, not on the bare image. Order
-    # matters — the wasm package pins the model package's exact version, so the
-    # model package is what defines that number.
-    - devenv shell -- bash -c "node scripts/build-model-package.mjs && node scripts/build-wasm-package.mjs"
     - mkdir -p dist
     - |
       tar czf dist/skema-wasm.tar.gz -C crates/skema-wasm/pkg \
@@ -300,8 +300,6 @@ build-wasm-package:
   artifacts:
     paths:
       - dist/skema-wasm.tar.gz
-      - npm/model
-      - npm/wasm
     expire_in: 1 week
 
 # --------------------------------------------------------------------------
@@ -358,54 +356,6 @@ publish-generic-package:
         curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/skema/${CI_COMMIT_TAG}/${name}"
       done
-
-# The two npm packages, both built in `build-wasm-package` from the one
-# generated `.d.ts` and published here.
-#
-# The consumers used to hand-copy those declarations into their own tree, which
-# is the TypeScript half of the "one catalog" rule: the types are skema-api's
-# own structures and belong to this repo. Unlike the wasm bundle these ship to
-# the npm registry rather than the generic one, because the consumers are
-# ordinary npm projects and a dependency version is what keeps them honest
-# about which language release they are built against.
-.publish-npm: &publish_npm
-  stage: package
-  image: node:22-alpine
-  needs:
-    - job: build-wasm-package
-      artifacts: true
-  rules:
-    - if: $CI_COMMIT_TAG
-  # In $HOME rather than the package directory: npm reads it wherever the
-  # publish is run from, so both jobs share this one definition.
-  before_script:
-    - |
-      cat > "$HOME/.npmrc" <<EOF
-      @skema:registry=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/npm/
-      //${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}
-      EOF
-
-# The types, for skemavscode and @skema/diagram.
-publish-npm-model:
-  <<: *publish_npm
-  script:
-    # The version is stamped from Cargo.toml by the generator, so a tag that
-    # did not go through scripts/release.sh would publish the wrong one.
-    - test "$(node -p "require('./npm/model/package.json').version")" = "${CI_COMMIT_TAG#v}"
-    - cd npm/model && npm publish
-
-# The runtime, for skemaeditor. Its `@skema/model` dependency is pinned to this
-# exact version, so it has to go second: a consumer installing it before the
-# types are on the registry would get an unresolvable tree.
-publish-npm-wasm:
-  <<: *publish_npm
-  needs:
-    - job: build-wasm-package
-      artifacts: true
-    - job: publish-npm-model
-  script:
-    - test "$(node -p "require('./npm/wasm/package.json').version")" = "${CI_COMMIT_TAG#v}"
-    - cd npm/wasm && npm publish
 
 # The Cargo registry job that used to live here is gone, not disabled: on
 # GitLab.com it cannot work yet, and a job that always fails teaches the team

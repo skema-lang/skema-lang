@@ -2,15 +2,12 @@
 /target
 **/*.rs.bk
 
-# wasm-pack build output
+# wasm-pack build output - a CI-only artifact, published to the generic
+# package registry as dist/skema-wasm.tar.gz. Turning it into the
+# @skema/model / @skema/wasm npm packages is skema-lib's job
+# (wasm-packaging/, brain/tasks/10-move-npm-packaging-out-of-skema-lang.md) -
+# this repo stays Rust-only.
 crates/skema-wasm/pkg/
-
-# The npm packages, generated from that output by scripts/build-*-package.mjs
-# and rebuilt in CI before every publish. npm/model/package.json stays as a
-# template - the generator stamps its version from Cargo.toml.
-npm/model/index.d.ts
-npm/wasm/
-npm/*.tgz
 
 # mdBook output
 docs/book/
