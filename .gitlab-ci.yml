@@ -15,13 +15,14 @@
 ## - tags (vX.Y.Z)         : additionally publish binaries + the Python wheel
 ##                           to the Package Registry, publish the library
 ##                           crates to the Cargo registry, push a container
-##                           image, and trigger the editor and VSCode repos
+##                           image, and trigger skema-lib
 ##
 ## The release is therefore a chain, not a button: a green default branch
-## tags itself (`release`), the tag builds and publishes everything, and the
-## two downstream repos are handed that tag so a single merge ends with a new
-## version of all three projects. Pushing a tag by hand does exactly the same
-## thing from the second step on — the automation adds a trigger, not a
+## tags itself (`release`), the tag builds and publishes everything, and
+## skema-lib is handed that tag. It publishes the npm packages built from it
+## and hands their exact versions on to both apps, which pin them and release
+## under their own version numbers. Pushing a tag by hand does exactly the
+## same thing from the second step on — the automation adds a trigger, not a
 ## parallel release path.
 ##
 ## Prerequisites in the GitLab project settings:
@@ -37,9 +38,9 @@
 ##     actually publishes, has to be asked for explicitly. A trigger token can
 ##     do nothing except start a pipeline, which makes it a far smaller thing
 ##     to leak than a token carrying write access to the repository.
-##   - The two downstream projects must allow this one to trigger them:
-##     Settings → CI/CD → Job token permissions → add `skema-language/skema`
-##     to their allowlist. Without it the `trigger-*` jobs get a 404.
+##   - skema-lib must allow this one to trigger it: Settings → CI/CD → Job
+##     token permissions → add `skema-language/skema` to its allowlist.
+##     Without it `trigger-lib` gets a 404.
 ##     (Multi-project triggering itself is Free — it moved out of Premium in
 ##     12.8. Only the *pipeline graph* that visualises it is Premium, which
 ##     costs nothing here.)
@@ -464,33 +465,22 @@ release:
 # downstream (tags only)
 # --------------------------------------------------------------------------
 
-# Hands the freshly published tag to the two repos that consume it. Both are
-# `strategy: depend`, so this pipeline stays red if theirs goes red — a
-# release that only half-shipped should not look green here.
+# Hands the freshly published tag to skema-lib, this repo's only downstream: it
+# builds @skema/model/@skema/wasm from the WASM bundle and hands exact versions
+# of those and of skema-lsp on to both apps. `strategy: depend` keeps this
+# pipeline red while anything downstream is — a release that only half-shipped
+# should not look green here.
 #
-# Note what is *not* here: neither project is rebuilt against an unreleased
-# language. They each fetch a published artifact of this exact tag — the
-# `skema-lsp` binaries for the extension, the WASM bundle for the editor —
-# which is why these jobs sit in a stage after `package` rather than beside
-# it. Triggering before the upload finished would send them shopping for
-# something that is not on the shelf yet.
-.trigger: &trigger
+# It sits in a stage after `package`: skema-lib fetches the published bundle of
+# this exact tag, and triggering before the upload finished would send it
+# shopping for something that is not on the shelf yet.
+trigger-lib:
   stage: downstream
   rules:
     - if: $CI_COMMIT_TAG
   variables:
-    SKEMA_RELEASE: $CI_COMMIT_TAG
-
-trigger-vscode:
-  <<: *trigger
+    SKEMA_LANG_VERSION: $CI_COMMIT_TAG
   trigger:
-    project: skema-language/skema-vscode
-    branch: main
-    strategy: depend
-
-trigger-editor:
-  <<: *trigger
-  trigger:
-    project: skema-language/skema-editor
+    project: skema-language/skema-lib
     branch: main
     strategy: depend
