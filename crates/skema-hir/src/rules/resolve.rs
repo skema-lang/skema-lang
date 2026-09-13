@@ -38,6 +38,7 @@ struct Flattened<'a> {
 pub(crate) fn run<'a>(
     ctx: &Ctx<'a>,
     project: Option<&ProjectSettings<'a>>,
+    links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> (Vec<model::Table>, Vec<model::Enum>) {
     let env = Env {
@@ -52,7 +53,7 @@ pub(crate) fn run<'a>(
         for (&name, decl) in &file.declarations {
             if matches!(decl.kind, BlockKind::Table | BlockKind::Partial) {
                 let mut stack = Vec::new();
-                let flat = flatten_items(ctx, file.id, &decl.block.items, &mut stack, diags);
+                let flat = flatten_items(ctx, file.id, &decl.block.items, &mut stack, links, diags);
                 flattened.insert((file.id, name), flat);
             }
         }
@@ -70,7 +71,9 @@ pub(crate) fn run<'a>(
             let fields = flat
                 .fields
                 .iter()
-                .map(|&(owner, span, f)| resolve_field(&env, owner, span, f, &flattened, diags))
+                .map(|&(owner, span, f)| {
+                    resolve_field(&env, owner, span, f, &flattened, links, diags)
+                })
                 .collect();
             let indexes = build_indexes(flat, diags);
             let examples = build_examples(&env, flat, diags);
@@ -120,6 +123,7 @@ fn flatten_partial<'a>(
     name: &str,
     name_span: Span,
     stack: &mut Vec<(FileId, String)>,
+    links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Flattened<'a> {
     let key = (owner, name.to_owned());
@@ -152,7 +156,7 @@ fn flatten_partial<'a>(
     }
 
     stack.push(key);
-    let result = flatten_items(ctx, owner, &decl.block.items, stack, diags);
+    let result = flatten_items(ctx, owner, &decl.block.items, stack, links, diags);
     stack.pop();
     result
 }
@@ -162,6 +166,7 @@ fn flatten_items<'a>(
     owner: FileId,
     items: &'a [ast::Item],
     stack: &mut Vec<(FileId, String)>,
+    links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Flattened<'a> {
     let mut out = Flattened::default();
@@ -180,7 +185,18 @@ fn flatten_items<'a>(
                         "`use` names only a `Partial`, no further path after it",
                     ));
                 }
-                let inner = flatten_partial(ctx, target_owner, name, name_span, stack, diags);
+                if let Some(decl) = ctx.lookup_decl(target_owner, name) {
+                    if decl.kind == BlockKind::Partial {
+                        links.push(model::ReferenceLink {
+                            from_file: owner,
+                            from_span: name_span,
+                            to_file: target_owner,
+                            to_span: decl.name_span,
+                        });
+                    }
+                }
+                let inner =
+                    flatten_partial(ctx, target_owner, name, name_span, stack, links, diags);
                 for field in inner.fields {
                     push_field(&mut out, field, diags);
                 }
@@ -485,6 +501,7 @@ fn resolve_field<'a>(
     span: Span,
     f: &'a ast::Field,
     flattened: &HashMap<(FileId, &'a str), Flattened<'a>>,
+    links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> model::Field {
     let mut flags = build_flags(&f.flags);
@@ -508,7 +525,7 @@ fn resolve_field<'a>(
                     flags: &f.flags,
                     span: t.span,
                 };
-                let relation = resolve_relation(env, owner, site, flattened, diags);
+                let relation = resolve_relation(env, owner, site, flattened, links, diags);
                 let ty = match &relation {
                     Some(r) => model::TypeRef {
                         name: format!("{}.{}", r.target_table, r.target_field),
@@ -519,7 +536,7 @@ fn resolve_field<'a>(
                 (ty, relation)
             }
             ast::FieldTypeKind::Named { path, args } => (
-                resolve_named_type(env, owner, path, args, t.span, diags),
+                resolve_named_type(env, owner, path, args, t.span, links, diags),
                 None,
             ),
         },
@@ -565,6 +582,7 @@ fn resolve_relation<'a>(
     owner: FileId,
     site: RelationSite<'a>,
     flattened: &HashMap<(FileId, &'a str), Flattened<'a>>,
+    links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Option<model::Relation> {
     let RelationSite {
@@ -603,21 +621,31 @@ fn resolve_relation<'a>(
         ));
         return None;
     }
-    let has_field = flattened
-        .get(&(table_owner, table_name))
-        .is_some_and(|flat| {
-            flat.fields
-                .iter()
-                .any(|(_, _, f)| f.name.text == field_name)
-        });
-    if !has_field {
+    links.push(model::ReferenceLink {
+        from_file: owner,
+        from_span: table_span,
+        to_file: table_owner,
+        to_span: decl.name_span,
+    });
+    let field_decl = flattened.get(&(table_owner, table_name)).and_then(|flat| {
+        flat.fields
+            .iter()
+            .find(|(_, _, f)| f.name.text == field_name)
+    });
+    let Some(&(field_owner, _, field)) = field_decl else {
         diags.push(Diagnostic::error(
             owner,
             rest[0].span,
             format!("`{table_name}` has no field `{field_name}`"),
         ));
         return None;
-    }
+    };
+    links.push(model::ReferenceLink {
+        from_file: owner,
+        from_span: rest[0].span,
+        to_file: field_owner,
+        to_span: field.name.span,
+    });
 
     let mut on_delete = None;
     let mut on_update = None;
@@ -691,6 +719,7 @@ fn resolve_named_type(
     path: &ast::Path,
     args: &[ast::Value],
     span: Span,
+    links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> model::TypeRef {
     let dotted = path.to_dotted();
@@ -733,7 +762,19 @@ fn resolve_named_type(
         };
     }
 
-    match env.ctx.lookup_decl(decl_owner, name) {
+    let decl = env.ctx.lookup_decl(decl_owner, name);
+    if let Some(d) = decl {
+        if matches!(d.kind, BlockKind::Enum | BlockKind::Datatype) {
+            links.push(model::ReferenceLink {
+                from_file: owner,
+                from_span: name_span,
+                to_file: decl_owner,
+                to_span: d.name_span,
+            });
+        }
+    }
+
+    match decl {
         Some(decl) if decl.kind == BlockKind::Enum => model::TypeRef {
             name: dotted,
             args: Vec::new(),

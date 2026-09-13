@@ -65,8 +65,11 @@ impl<'a> Ctx<'a> {
     }
 }
 
-pub(crate) fn run(files: &[InputFile<'_>]) -> (Model, Vec<Diagnostic>) {
+pub(crate) fn run(
+    files: &[InputFile<'_>],
+) -> (Model, Vec<crate::model::ReferenceLink>, Vec<Diagnostic>) {
     let mut diags = Vec::new();
+    let mut links = Vec::new();
 
     let facts: Vec<FileFacts<'_>> = files
         .iter()
@@ -92,8 +95,8 @@ pub(crate) fn run(files: &[InputFile<'_>]) -> (Model, Vec<Diagnostic>) {
 
     let ctx = Ctx { facts, namespaces };
 
-    let groups = group::check(&ctx, &mut diags);
-    let (tables, enums) = resolve::run(&ctx, project.as_ref(), &mut diags);
+    let groups = group::check(&ctx, &mut links, &mut diags);
+    let (tables, enums) = resolve::run(&ctx, project.as_ref(), &mut links, &mut diags);
 
     lint::check(&ctx, project.as_ref(), &mut diags);
 
@@ -105,6 +108,7 @@ pub(crate) fn run(files: &[InputFile<'_>]) -> (Model, Vec<Diagnostic>) {
             enums,
             groups,
         },
+        links,
         diags,
     )
 }

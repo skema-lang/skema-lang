@@ -17,7 +17,8 @@ fn analyze_src(src: &str) -> (Model, Vec<Diagnostic>) {
         ast: &ast,
         import_targets: vec![None; import_count],
     };
-    analyze(&[file])
+    let (model, _references, diags) = analyze(&[file]);
+    (model, diags)
 }
 
 fn messages(diags: &[Diagnostic]) -> Vec<&str> {
@@ -568,7 +569,7 @@ fn namespace_collision_between_two_imports_is_rejected() {
         },
     ];
 
-    let (_, diags) = analyze(&files);
+    let (_, _, diags) = analyze(&files);
     assert!(
         messages(&diags)
             .iter()
@@ -610,7 +611,7 @@ Table T { id int [pk]; }
         },
     ];
 
-    let (_, diags) = analyze(&files);
+    let (_, _, diags) = analyze(&files);
     assert!(
         messages(&diags)
             .iter()

@@ -18,7 +18,7 @@
 //! # Structure
 //!
 //! ```text
-//! Vec<InputFile>  ──[analyze]──►  Model + Vec<Diagnostic>
+//! Vec<InputFile>  ──[analyze]──►  Model + Vec<ReferenceLink> + Vec<Diagnostic>
 //! ```
 //!
 //! | Module | Purpose |
@@ -64,6 +64,8 @@ pub struct InputFile<'a> {
 /// breadth-first walk of the import graph from the root file (`docs/02`,
 /// project membership is reachability-defined). A file missing here is not
 /// part of the project, even if it sits in the same directory.
-pub fn analyze(files: &[InputFile<'_>]) -> (model::Model, Vec<Diagnostic>) {
+pub fn analyze(
+    files: &[InputFile<'_>],
+) -> (model::Model, Vec<model::ReferenceLink>, Vec<Diagnostic>) {
     rules::run(files)
 }

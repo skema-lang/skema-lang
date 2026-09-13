@@ -8,7 +8,11 @@ use super::Ctx;
 use crate::model;
 use crate::{Diagnostic, FileId};
 
-pub(crate) fn check(ctx: &Ctx<'_>, diags: &mut Vec<Diagnostic>) -> Vec<model::Group> {
+pub(crate) fn check(
+    ctx: &Ctx<'_>,
+    links: &mut Vec<model::ReferenceLink>,
+    diags: &mut Vec<Diagnostic>,
+) -> Vec<model::Group> {
     // Every declaration may belong to at most one group – for that we keep
     // track of who claimed it first.
     let mut claimed: HashMap<(FileId, String), String> = HashMap::new();
@@ -56,6 +60,12 @@ pub(crate) fn check(ctx: &Ctx<'_>, diags: &mut Vec<Diagnostic>) -> Vec<model::Gr
                     ));
                     continue;
                 }
+                links.push(model::ReferenceLink {
+                    from_file: file.id,
+                    from_span: name_span,
+                    to_file: owner,
+                    to_span: decl.name_span,
+                });
 
                 let key = (owner, name.to_owned());
                 if let Some(existing_group) = claimed.get(&key) {

@@ -145,6 +145,30 @@ pub fn hir_diagnostic(src: &str, filename: &str, d: &skema_hir::Diagnostic) -> D
     diagnostic(src, filename, d.span, d.severity.into(), &d.message)
 }
 
+/// One written reference and the declaration it resolves to – `skema-hir`'s
+/// [`model::ReferenceLink`], with each [`FileId`] turned into the display
+/// path a caller can actually look a file up by. Raw byte spans, like
+/// [`Diagnostic::span`]: go-to-definition needs to test "does this span
+/// contain the cursor's offset", not a human line/column.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceLink {
+    pub from_file: String,
+    pub from_span: Span,
+    pub to_file: String,
+    pub to_span: Span,
+}
+
+pub fn reference_link(ctx: &LocateCtx<'_>, link: &model::ReferenceLink) -> ReferenceLink {
+    ReferenceLink {
+        from_file: ctx.path(link.from_file),
+        from_span: link.from_span.into(),
+        to_file: ctx.path(link.to_file),
+        to_span: link.to_span.into(),
+    }
+}
+
 /// A diagnostic about a file rather than about a place in one – "this file
 /// could not be read", which has no span because nothing was parsed.
 ///

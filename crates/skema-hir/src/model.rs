@@ -19,6 +19,26 @@ pub struct Model {
     pub groups: Vec<Group>,
 }
 
+/// One written reference and the declaration it resolves to – recorded as a
+/// byproduct of the same `Ctx::resolve_decl_path`/`Ctx::lookup_decl` calls
+/// that build the [`Model`], instead of making `skema-lsp` re-resolve names
+/// on its own for go-to-definition (brain task 09). Kept separate from
+/// `Model` rather than folded into it – a consumer that only wants the
+/// model (`skema check`, `export --json`) has no use for this table.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceLink {
+    pub from_file: FileId,
+    /// Just the name as written at the reference site – e.g. the `Copy` in
+    /// `cat.Copy`, or the `id` in `Customer.id` – so a caret anywhere else
+    /// on the path (a namespace prefix) matches no link.
+    pub from_span: Span,
+    pub to_file: FileId,
+    /// The target declaration's own name span – a jump lands on the name,
+    /// not on the whole declaration.
+    pub to_span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Table {

@@ -49,27 +49,6 @@ pub fn document_name(file: &SourceFile) -> Option<String> {
         .map(|(text, _)| text)
 }
 
-/// Finds a declaration by name anywhere in `decls`, depth-first.
-pub fn find<'a>(decls: &'a [Decl], name: &str) -> Option<&'a Decl> {
-    for decl in decls {
-        if decl.name == name {
-            return Some(decl);
-        }
-        if let Some(found) = find(&decl.children, name) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-/// Finds a top-level declaration of one kind - the lookup go-to-definition
-/// wants, where a field called `Customer` must not shadow the table.
-pub fn find_kind<'a>(decls: &'a [Decl], name: &str, kinds: &[BlockKind]) -> Option<&'a Decl> {
-    decls
-        .iter()
-        .find(|d| d.name == name && matches!(d.kind, DeclKind::Block(k) if kinds.contains(&k)))
-}
-
 fn decl_of(item: &Item) -> Option<Decl> {
     match &item.kind {
         ItemKind::Block(block) => Some(block_decl(block, item.span)),
@@ -248,14 +227,6 @@ mod tests {
     fn the_document_block_names_the_files_namespace() {
         let file = parse("spec 1;\nDocument shop {}\nTable T {}");
         assert_eq!(document_name(&file).as_deref(), Some("shop"));
-    }
-
-    #[test]
-    fn find_kind_does_not_confuse_a_field_with_a_declaration() {
-        let file = parse("Table Customer { Customer int; }");
-        let decls = declarations(&file);
-        let found = find_kind(&decls, "Customer", &[BlockKind::Table]).expect("the table");
-        assert_eq!(found.kind, DeclKind::Block(BlockKind::Table));
     }
 
     #[test]

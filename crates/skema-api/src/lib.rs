@@ -53,7 +53,7 @@ pub use dto::{
     CheckResult, Diagnostic, ExportResult, ExportedEnum, ExportedEnumEntry, ExportedField,
     ExportedFlag, ExportedGroup, ExportedGroupMember, ExportedIndex, ExportedModel,
     ExportedPhysical, ExportedRelation, ExportedTable, ExportedTypeRef, FileEntry, FlagValue,
-    LocateCtx, RelationKind, Severity, Span,
+    LocateCtx, ReferenceLink, RelationKind, Severity, Span,
 };
 pub use highlight::{highlight_class_names, highlight_tokens};
 pub use location::Location;
@@ -177,7 +177,9 @@ fn run_analysis(source: &str, filename: &str) -> (model::Model, Vec<Diagnostic>)
         ast: &ast,
         import_targets,
     };
-    let (model, hir_diagnostics) = skema_hir::analyze(std::slice::from_ref(&input));
+    // `check`/`export_model` analyze one in-memory file with no LSP session
+    // behind it – nothing consumes go-to-definition data here.
+    let (model, _references, hir_diagnostics) = skema_hir::analyze(std::slice::from_ref(&input));
 
     let mut diagnostics: Vec<Diagnostic> = syntax_diagnostics
         .iter()

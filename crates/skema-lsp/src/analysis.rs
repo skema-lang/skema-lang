@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use skema_api::{Diagnostic as ApiDiagnostic, ExportedModel};
+use skema_api::{Diagnostic as ApiDiagnostic, ExportedModel, ReferenceLink};
 use skema_loader::{LoadError, LoadedFile, Project};
 
 /// Re-exported rather than reimplemented: how a file is named in everything
@@ -38,6 +38,10 @@ pub struct Analysis {
     /// In `skema-api`'s shape, for the custom requests - the same diagnostic
     /// list the browser editor's status bar renders.
     pub diagnostics: Vec<ApiDiagnostic>,
+    /// Every reference `skema-hir` resolved while building `model`, paired
+    /// with its target - what `textDocument/definition` looks up instead of
+    /// resolving names itself (`definition.rs`).
+    pub references: Vec<ReferenceLink>,
 }
 
 impl Analysis {
@@ -58,6 +62,7 @@ impl Analysis {
             project,
             model: analysis.model,
             diagnostics: analysis.diagnostics,
+            references: analysis.references,
         })
     }
 

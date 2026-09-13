@@ -93,7 +93,8 @@ fn analyze_project(entry_relative: &str) -> (skema_hir::model::Model, Vec<Diagno
         })
         .collect();
 
-    analyze(&files)
+    let (model, _references, diags) = analyze(&files);
+    (model, diags)
 }
 
 fn errors(diags: &[Diagnostic]) -> Vec<&Diagnostic> {

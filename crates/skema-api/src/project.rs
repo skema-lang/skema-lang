@@ -146,7 +146,10 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
         })
         .collect();
 
-    let (model, hir_diagnostics) = skema_hir::analyze(&inputs);
+    // `analyzeProject` is the browser's in-memory analysis – no LSP session,
+    // so nothing consumes go-to-definition data here (`skema-loader::analyze`
+    // is the path that does, for `skema-lsp`).
+    let (model, _references, hir_diagnostics) = skema_hir::analyze(&inputs);
 
     let entries: Vec<FileEntry<'_>> = parsed
         .iter()

@@ -18,7 +18,7 @@
 //! filesystem, which that crate deliberately has not (its in-memory
 //! counterpart is `skema_api::project`). This crate has both.
 
-use skema_api::{Diagnostic, ExportedModel, FileEntry, LocateCtx, dto};
+use skema_api::{Diagnostic, ExportedModel, FileEntry, LocateCtx, ReferenceLink, dto};
 
 use crate::{LoadError, LoadedFile, Project};
 
@@ -29,6 +29,10 @@ use crate::{LoadError, LoadedFile, Project};
 pub struct ProjectAnalysis {
     pub model: ExportedModel,
     pub diagnostics: Vec<Diagnostic>,
+    /// Every written reference `skema-hir` resolved, paired with what it
+    /// resolves to – `skema-lsp`'s go-to-definition is a lookup against
+    /// this, not a second resolution pass (brain task 09).
+    pub references: Vec<ReferenceLink>,
 }
 
 impl ProjectAnalysis {
@@ -45,7 +49,7 @@ impl ProjectAnalysis {
 /// a message without a position is barely a message.
 pub fn analyze(project: &Project, with_locations: bool) -> ProjectAnalysis {
     let inputs = project.input_files();
-    let (model, hir_diagnostics) = skema_hir::analyze(&inputs);
+    let (model, hir_references, hir_diagnostics) = skema_hir::analyze(&inputs);
 
     let entries: Vec<FileEntry<'_>> = project
         .files
@@ -84,9 +88,15 @@ pub fn analyze(project: &Project, with_locations: bool) -> ProjectAnalysis {
         ))
     });
 
+    let references = hir_references
+        .iter()
+        .map(|r| dto::reference_link(&ctx, r))
+        .collect();
+
     ProjectAnalysis {
         model: dto::export_model(&model, &ctx),
         diagnostics,
+        references,
     }
 }
 
