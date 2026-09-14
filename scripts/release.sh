@@ -35,15 +35,15 @@ if ! command -v git-cliff &> /dev/null; then
   say "Installing git-cliff..."
   CLIFF_VERSION="2.10.1"
   CLIFF_ARCH="x86_64-unknown-linux-musl"
-  CLIFF_URL="https://github.com/orhun/git-cliff/releases/download/v${CLIFF_VERSION}/git-cliff-${CLIFF_VERSION}-${CLIFF_ARCH}.tar.gz"
-  CLIFF_SHA_URL="${CLIFF_URL}.sha512"
+  CLIFF_ASSET="git-cliff-${CLIFF_VERSION}-${CLIFF_ARCH}.tar.gz"
+  CLIFF_URL="https://github.com/orhun/git-cliff/releases/download/v${CLIFF_VERSION}/${CLIFF_ASSET}"
 
   mkdir -p /tmp/git-cliff-install
   cd /tmp/git-cliff-install
-  curl -fL "$CLIFF_URL" -o git-cliff.tar.gz
-  curl -fL "$CLIFF_SHA_URL" -o git-cliff.tar.gz.sha512
-  sha512sum -c git-cliff.tar.gz.sha512 > /dev/null
-  tar -xzf git-cliff.tar.gz
+  curl -fL "$CLIFF_URL" -o "$CLIFF_ASSET"
+  curl -fL "${CLIFF_URL}.sha512" -o "${CLIFF_ASSET}.sha512"
+  sha512sum -c "${CLIFF_ASSET}.sha512" > /dev/null
+  tar -xzf "$CLIFF_ASSET" --strip-components=1
   mkdir -p ~/.local/bin
   mv git-cliff ~/.local/bin/
   export PATH="$HOME/.local/bin:$PATH"
