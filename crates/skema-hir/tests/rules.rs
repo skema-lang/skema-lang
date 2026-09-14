@@ -951,6 +951,7 @@ fn style_unquoted_pascal_case_key_in_class_is_rejected() {
 fn style_unquoted_camel_case_key_in_project_selector_is_allowed() {
     let src = r##"
 spec 1;
+Document shop { }
 Project {
   mode = draft;
   dialect = generic;
@@ -967,6 +968,7 @@ Project {
 fn style_unquoted_camel_case_key_in_class_is_allowed() {
     let src = r##"
 spec 1;
+Document shop { }
 Project {
   mode = draft;
   dialect = generic;
@@ -983,6 +985,7 @@ Project {
 fn style_quoted_x_prefixed_key_is_allowed() {
     let src = r#"
 spec 1;
+Document shop { }
 Project {
   mode = draft;
   dialect = generic;
@@ -997,9 +1000,8 @@ Project {
 
 #[test]
 fn style_quoted_key_without_x_prefix_is_rejected() {
-    let src = format!(
-        "{HEADER}\nProject {{ Style @table {{ \"mermaidClass\" = \"important\"; }} }}\n"
-    );
+    let src =
+        format!("{HEADER}\nProject {{ Style @table {{ \"mermaidClass\" = \"important\"; }} }}\n");
     let (_, diags) = analyze_src(&src);
     assert!(
         messages(&diags)
@@ -1011,9 +1013,7 @@ fn style_quoted_key_without_x_prefix_is_rejected() {
 
 #[test]
 fn style_integer_value_is_rejected() {
-    let src = format!(
-        "{HEADER}\nProject {{ Style @table {{ borderWidth = 3; }} }}\n"
-    );
+    let src = format!("{HEADER}\nProject {{ Style @table {{ borderWidth = 3; }} }}\n");
     let (_, diags) = analyze_src(&src);
     assert!(
         messages(&diags)
@@ -1025,9 +1025,7 @@ fn style_integer_value_is_rejected() {
 
 #[test]
 fn style_float_value_is_rejected() {
-    let src = format!(
-        "{HEADER}\nProject {{ Style @table {{ opacity = 0.5; }} }}\n"
-    );
+    let src = format!("{HEADER}\nProject {{ Style @table {{ opacity = 0.5; }} }}\n");
     let (_, diags) = analyze_src(&src);
     assert!(
         messages(&diags)
@@ -1039,9 +1037,7 @@ fn style_float_value_is_rejected() {
 
 #[test]
 fn style_path_value_is_rejected() {
-    let src = format!(
-        "{HEADER}\nProject {{ Style @table {{ borderColor = someColor; }} }}\n"
-    );
+    let src = format!("{HEADER}\nProject {{ Style @table {{ borderColor = someColor; }} }}\n");
     let (_, diags) = analyze_src(&src);
     assert!(
         messages(&diags)
@@ -1053,9 +1049,8 @@ fn style_path_value_is_rejected() {
 
 #[test]
 fn style_raw_value_is_rejected() {
-    let src = format!(
-        "{HEADER}\nProject {{ Style @table {{ borderColor = `rgb(255, 0, 0)`; }} }}\n"
-    );
+    let src =
+        format!("{HEADER}\nProject {{ Style @table {{ borderColor = `rgb(255, 0, 0)`; }} }}\n");
     let (_, diags) = analyze_src(&src);
     assert!(
         messages(&diags)
@@ -1067,9 +1062,7 @@ fn style_raw_value_is_rejected() {
 
 #[test]
 fn style_list_value_is_rejected() {
-    let src = format!(
-        "{HEADER}\nProject {{ Style @table {{ borderColor = [red, green]; }} }}\n"
-    );
+    let src = format!("{HEADER}\nProject {{ Style @table {{ borderColor = [red, green]; }} }}\n");
     let (_, diags) = analyze_src(&src);
     assert!(
         messages(&diags)
@@ -1081,9 +1074,7 @@ fn style_list_value_is_rejected() {
 
 #[test]
 fn style_type_value_is_rejected() {
-    let src = format!(
-        "{HEADER}\nProject {{ Style @table {{ width = int(5); }} }}\n"
-    );
+    let src = format!("{HEADER}\nProject {{ Style @table {{ width = int(5); }} }}\n");
     let (_, diags) = analyze_src(&src);
     assert!(
         messages(&diags)
@@ -1097,6 +1088,7 @@ fn style_type_value_is_rejected() {
 fn style_string_value_is_allowed() {
     let src = r##"
 spec 1;
+Document shop { }
 Project {
   mode = draft;
   dialect = generic;
@@ -1116,8 +1108,15 @@ fn style_multiple_properties_with_mixed_validity() {
     );
     let (_, diags) = analyze_src(&src);
     let msgs = messages(&diags);
-    assert!(msgs.iter().any(|m| m.contains("is not camelCase")), "{diags:#?}");
-    assert!(msgs.iter().any(|m| m.contains("must be strings, not integer")), "{diags:#?}");
+    assert!(
+        msgs.iter().any(|m| m.contains("is not camelCase")),
+        "{diags:#?}"
+    );
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("must be strings, not integer")),
+        "{diags:#?}"
+    );
 }
 
 #[test]
@@ -1140,9 +1139,8 @@ Project {
 
 #[test]
 fn style_class_with_invalid_key_is_rejected() {
-    let src = format!(
-        "{HEADER}\nProject {{ Style highlight {{ BORDER_COLOR = \"#cc0000\"; }} }}\n"
-    );
+    let src =
+        format!("{HEADER}\nProject {{ Style highlight {{ BORDER_COLOR = \"#cc0000\"; }} }}\n");
     let (_, diags) = analyze_src(&src);
     assert!(
         messages(&diags)
