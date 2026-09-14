@@ -106,7 +106,6 @@ The items below are demonstrated in examples or proposed in the design docs, but
 | Partial / expression indexes | `WHERE …` conditions and `(lower(email))`-style expressions | [10](10-indexes.md#not-yet-specified) |
 | Automatically generated index names | Naming scheme for an unnamed index | [10](10-indexes.md#not-yet-specified) |
 | Index names from `Partial`s | Same name repeated across every consuming table | [09](09-partials.md#what-a-partial-may-contain), [10](10-indexes.md#indexes-inside-a-partial) |
-| `Style` core property set | Full list of standardized, validated style properties | [03](03-meta-and-style.md#style-properties) |
 | `Dialect` property set | `sql` is defined inside `Datatype`; which engine settings are known inside `Database` (`tablespace`, `engine`, `charset`, …) is not | [06](06-data-types.md#dialect-engine-blocks), [11](11-physical-mapping.md#engine-specific-settings) |
 | `@field` selector | Styling individual field rows | [03](03-meta-and-style.md#selectors) |
 | Lint severities | Per-rule severity override syntax (for example, `fieldNaming = snake_case [error];`) | [04](04-linting.md#other-rules) |

@@ -900,3 +900,217 @@ fn a_raw_expression_is_accepted_for_any_example_value() {
     let (_, diags) = analyze_src(&src);
     assert!(diags.is_empty(), "{diags:#?}");
 }
+
+// ===========================================================================
+// Style property format validation
+// ===========================================================================
+
+#[test]
+fn style_unquoted_snake_case_key_in_project_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ header_background_color = \"#cc0000\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("is not camelCase")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_unquoted_screaming_snake_case_key_in_document_is_rejected() {
+    let src = format!(
+        "{HEADER}\nDocument doc {{ Style @table {{ HEADER_BACKGROUND_COLOR = \"#cc0000\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("is not camelCase")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_unquoted_pascal_case_key_in_class_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style MyClass {{ HeaderBackgroundColor = \"#cc0000\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("is not camelCase")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_unquoted_camel_case_key_in_project_selector_is_allowed() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ headerBackgroundColor = \"#cc0000\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn style_unquoted_camel_case_key_in_class_is_allowed() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style highlight {{ borderColor = \"#cc0000\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn style_quoted_x_prefixed_key_is_allowed() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ \"x-mermaidClass\" = \"important\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn style_quoted_key_without_x_prefix_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ \"mermaidClass\" = \"important\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("must start with `x-`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_integer_value_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ borderWidth = 3; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("must be strings, not integer")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_float_value_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ opacity = 0.5; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("must be strings, not float")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_path_value_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ borderColor = someColor; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("must be strings, not identifier")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_raw_value_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ borderColor = `rgb(255, 0, 0)`; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("must be strings, not raw string")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_list_value_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ borderColor = [red, green]; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("must be strings, not list")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_type_value_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ width = int(5); }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("must be strings, not type")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn style_string_value_is_allowed() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ headerBackgroundColor = \"#cc0000\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn style_multiple_properties_with_mixed_validity() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style @table {{ headerBackgroundColor = \"#cc0000\"; header_text_color = 5; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let msgs = messages(&diags);
+    assert!(msgs.iter().any(|m| m.contains("is not camelCase")), "{diags:#?}");
+    assert!(msgs.iter().any(|m| m.contains("must be strings, not integer")), "{diags:#?}");
+}
+
+#[test]
+fn style_in_document_with_valid_properties() {
+    let src = format!(
+        "{HEADER}\nDocument doc {{ Style @table {{ borderColor = \"#123456\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn style_class_with_invalid_key_is_rejected() {
+    let src = format!(
+        "{HEADER}\nProject {{ Style highlight {{ BORDER_COLOR = \"#cc0000\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("is not camelCase")),
+        "{diags:#?}"
+    );
+}

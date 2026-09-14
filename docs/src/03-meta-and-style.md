@@ -101,16 +101,20 @@ flowchart TB
 
 ## Style properties
 
-A standardized core set is validated and autocompleted; `x-` covers everything else:
+Property names are decided by `@skema/diagram`, not the language. The language validates only the *shape* of each entry:
+
+- Unquoted keys must be camelCase — e.g., `headerBackgroundColor`, not `Header_Background_Color` or `HEADERBACKGROUNDCOLOR`.
+- Quoted keys follow the `x-` custom-key rule (must start with `x-`; see [01 — Custom keys](01-language-basics.md#custom-keys)).
+- Values must be strings — `"#cc0000"`, not `5` or `[a, b]`.
 
 ```skema
 Style @table {
-  headerBackgroundColor = "#cc0000";   # known, validated
-  "x-mermaidClass"      = "important"; # custom, passed through
+  headerBackgroundColor = "#cc0000";   # valid — camelCase key, string value
+  "x-mermaidClass"      = "important"; # valid — custom key, string value
 }
 ```
 
-Properties seen across the example corpus:
+Examples of properties used in practice across the example corpus:
 
 | Property | Used on |
 |---|---|

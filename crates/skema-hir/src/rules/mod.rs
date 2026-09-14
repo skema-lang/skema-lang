@@ -7,6 +7,7 @@ mod lint;
 mod placement;
 mod project;
 mod resolve;
+mod style;
 
 use skema_syntax::Span;
 use skema_syntax::ast;
@@ -89,6 +90,7 @@ pub(crate) fn run(
         placement::check(file.id, file.ast, &mut diags);
         keys::check(file.id, file.ast, &mut diags);
         dialect::check(file.id, file.ast, &mut diags);
+        style::check(file.id, file.ast, &mut diags);
     }
 
     let project = project::check(&facts, &mut diags);

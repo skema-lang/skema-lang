@@ -51,7 +51,7 @@ pub(crate) fn check(
 // ===========================================================================
 
 #[derive(Clone, Copy)]
-enum Case {
+pub(crate) enum Case {
     Snake,
     Camel,
     Pascal,
@@ -70,7 +70,7 @@ fn parse_case(word: &str) -> Option<Case> {
     }
 }
 
-fn matches_case(name: &str, case: Case) -> bool {
+pub(crate) fn matches_case(name: &str, case: Case) -> bool {
     let Some(first) = name.chars().next() else {
         return true;
     };
