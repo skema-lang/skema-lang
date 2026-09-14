@@ -949,7 +949,7 @@ fn style_unquoted_pascal_case_key_in_class_is_rejected() {
 
 #[test]
 fn style_unquoted_camel_case_key_in_project_selector_is_allowed() {
-    let src = r#"
+    let src = r##"
 spec 1;
 Project {
   mode = draft;
@@ -958,14 +958,14 @@ Project {
     headerBackgroundColor = "#cc0000";
   }
 }
-"#;
+"##;
     let (_, diags) = analyze_src(src);
     assert!(diags.is_empty(), "{diags:#?}");
 }
 
 #[test]
 fn style_unquoted_camel_case_key_in_class_is_allowed() {
-    let src = r#"
+    let src = r##"
 spec 1;
 Project {
   mode = draft;
@@ -974,7 +974,7 @@ Project {
     borderColor = "#cc0000";
   }
 }
-"#;
+"##;
     let (_, diags) = analyze_src(src);
     assert!(diags.is_empty(), "{diags:#?}");
 }
@@ -1095,7 +1095,7 @@ fn style_type_value_is_rejected() {
 
 #[test]
 fn style_string_value_is_allowed() {
-    let src = r#"
+    let src = r##"
 spec 1;
 Project {
   mode = draft;
@@ -1104,7 +1104,7 @@ Project {
     headerBackgroundColor = "#cc0000";
   }
 }
-"#;
+"##;
     let (_, diags) = analyze_src(src);
     assert!(diags.is_empty(), "{diags:#?}");
 }
@@ -1122,7 +1122,7 @@ fn style_multiple_properties_with_mixed_validity() {
 
 #[test]
 fn style_in_document_with_valid_properties() {
-    let src = r#"
+    let src = r##"
 spec 1;
 Document doc {
   Style @table {
@@ -1133,7 +1133,7 @@ Project {
   mode = draft;
   dialect = generic;
 }
-"#;
+"##;
     let (_, diags) = analyze_src(src);
     assert!(diags.is_empty(), "{diags:#?}");
 }
