@@ -114,15 +114,63 @@ Style @table {
 }
 ```
 
-Examples of properties used in practice across the example corpus:
+### Complete property reference
 
-| Property | Used on |
+The properties below are the complete catalog recognized by `@skema/diagram`. Unrecognized properties are silently dropped.
+
+#### Value grammar
+
+| Type | Format |
 |---|---|
-| `headerBackgroundColor`, `headerTextColor` | `@table` |
-| `backgroundColor` | `@document`, classes |
-| `borderColor`, `borderWidth` | classes |
-| `fontSize` | `@project` |
-| `lineColor` | `@relation` |
+| color | Hex: `#RGB` or `#RRGGBB`; or [CSS named color](https://www.w3.org/wiki/CSS/Properties/color/keywords) |
+| width | Length: `3px`, `0.5em`, `1rem`, `1pt`; or keyword: `thin`, `medium`, `thick` |
+| line style | `solid`, `dashed`, `dotted` |
+| font size | Length: `12px`, `1.1em`, `1rem`, `14pt`, `80%`; or keyword: `small`, `medium`, `large`, `x-large` |
+
+#### @table and @enum
+
+Tables and enums share the same box styling. Note: `bodyBackgroundColor` is the explicit name for the body fill; both it and `backgroundColor` are accepted as aliases, with `bodyBackgroundColor` taking precedence when both are set.
+
+| Property | Type | Meaning |
+|---|---|---|
+| `headerBackgroundColor` | color | Header fill color |
+| `headerTextColor` | color | Header text color |
+| `backgroundColor` (or `bodyBackgroundColor`) | color | Body fill color |
+| `borderColor` | color | Border color |
+| `borderWidth` | width | Border thickness |
+| `borderStyle` | line style | Border line style |
+
+#### @group
+
+| Property | Type | Meaning |
+|---|---|---|
+| `backgroundColor` | color | Group frame fill color |
+| `borderColor` | color | Frame border color |
+| `borderWidth` | width | Border thickness |
+| `borderStyle` | line style | Border line style |
+
+#### @project
+
+| Property | Type | Meaning |
+|---|---|---|
+| `backgroundColor` | color | Diagram background color |
+| `fontSize` | font size | Base font size for element labels |
+
+#### @document
+
+| Property | Type | Meaning |
+|---|---|---|
+| `backgroundColor` | color | Override diagram background for this file's elements |
+
+Note: Detailed inheritance and cascade rules for `@document` styling are under development — see [task 41](../../brain/tasks/41-document-style-cascade-inheritance.md).
+
+#### @relation
+
+| Property | Type | Meaning |
+|---|---|---|
+| `lineColor` | color | Relationship line color |
+| `lineWidth` | width | Line thickness |
+| `lineStyle` | line style | Line style (solid, dashed, dotted) |
 
 ## Full example
 
