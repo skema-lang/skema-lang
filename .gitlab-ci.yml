@@ -3,7 +3,12 @@ spec:
     trigger_downstream:
       type: boolean
       default: true
-      description: "Whether to trigger skema-lib (and transitively the apps) after releasing"
+      description: "Whether to trigger skema-lib after releasing"
+    republish_version:
+      type: string
+      default: ""
+      regex: '^(v\d+\.\d+\.\d+(-rc\.\d+)?)?$'
+      description: "Existing vX.Y.Z(-rc.N) to re-run publish steps for"
 
 ---
 
@@ -13,45 +18,51 @@ spec:
 ## hand-rolled image + apt-get/rustup/pip setup — the same toolchain
 ## `devenv test` runs locally as `check`.
 ##
-## See CLAUDE.md, "Releasing — the chain", for the cross-repo release design.
-##
 ## Prerequisites in the GitLab project settings:
 ##   - Container Registry enabled (for the `docker-build` job).
 ##   - Settings → CI/CD → Job token permissions → **Allow Git push requests to
-##     the repository**. Off by default; GA in GitLab 18.4. Lets `release`
-##     push the version bump and the tag with nothing but `CI_JOB_TOKEN`.
-##   - A `RELEASE_TRIGGER_TOKEN` CI variable, masked and protected: a pipeline
-##     trigger token (Settings → CI/CD → Pipeline trigger tokens). A job-token
-##     push starts no pipeline, so `scripts/release.sh` asks for the tag
-##     pipeline explicitly with this after pushing the tag.
+##     the repository**. Off by default; GA in GitLab 18.4. Lets the
+##     skema-ci `release` job push the version bump, tag and GitLab Release
+##     with nothing but `CI_JOB_TOKEN`.
 ##   - skema-lib must allow this project to trigger it: Settings → CI/CD →
 ##     Job token permissions → add `skema-language/skema` to its allowlist.
-##     Without it `trigger-lib` gets a 404.
+
+include:
+  - component: $CI_SERVER_FQDN/skema-language/skema-ci/release@0.1.0
+    inputs:
+      version_file_kind: cargo
+      version_file_paths: "Cargo.toml Cargo.lock"
+      generic_package_name: skema
+      asset_globs: "target/release/skema target/release/skema-lsp dist/skema-lsp-* dist/*.whl dist/skema-wasm.tar.gz"
+      dependants: "skema-language/skema-lib"
+      handoff_input_name: skema_lang_version
+      version_stage: version
+      release_stage: release
+      handoff_stage: handoff
+      adopt_stage: check
+      trigger_downstream: $[[ inputs.trigger_downstream ]]
+      republish_version: $[[ inputs.republish_version ]]
 
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "development"
+    - if: $CI_COMMIT_BRANCH == "main"
 
 stages:
   - check
+  - version
   - build
+  - release
   - package
   - pages
-  # Both of these are the tail of a release, but they never run in the same
-  # pipeline: `release` belongs to a default-branch run and produces the tag,
-  # `downstream` belongs to the tag run that the tag then starts.
-  - release
-  - downstream
+  - handoff
 
 variables:
   CARGO_HOME: ${CI_PROJECT_DIR}/.cargo-home
   NIX_CONFIG: |
     experimental-features = nix-command flakes
     sandbox = false
-  # Bridge from spec:inputs to scripts
-  TRIGGER_DOWNSTREAM: $[[ inputs.trigger_downstream ]]
 
 # Root-mode install (`--init none`) - GitLab job containers run as root, and
 # Nix's single-user installer refuses that. `sandbox = false` (NIX_CONFIG
@@ -89,20 +100,6 @@ variables:
     paths:
       - target/
 
-# Verified against the .sha512 GitHub publishes beside the archive - the one
-# thing this job pulls from outside GitLab.
-.install_git_cliff: &install_git_cliff
-  - apt-get update -qq
-  - apt-get install -y -qq --no-install-recommends git curl ca-certificates
-  - |
-    GIT_CLIFF_VERSION=2.10.1
-    GIT_CLIFF_ASSET="git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-musl.tar.gz"
-    curl -fsSL -O "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${GIT_CLIFF_ASSET}"
-    curl -fsSL -O "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${GIT_CLIFF_ASSET}.sha512"
-    sha512sum -c "${GIT_CLIFF_ASSET}.sha512"
-    tar xzf "$GIT_CLIFF_ASSET"
-    install -m 755 "git-cliff-${GIT_CLIFF_VERSION}/git-cliff" /usr/local/bin/git-cliff
-
 default:
   image: debian:bookworm-slim
   before_script: *devenv_setup
@@ -118,27 +115,6 @@ check:
   cache: *rust_cache
   script:
     - devenv test
-
-# The bump logic, checked before it can mis-tag anything. This is the only
-# job here that runs on plain git rather than devenv: scripts/release.sh is
-# deliberately toolchain-free, and so is its test.
-#
-# Worth a job of its own because nothing else would catch it. A wrong version
-# is not a build failure — it is a wrong tag pushed to three repositories and
-# a package registry, and taking that back costs far more than the minute
-# this takes.
-release-test:
-  stage: check
-  image: debian:bookworm-slim
-  needs: []
-  before_script: *install_git_cliff
-  variables:
-    # The suite clones this checkout and tags the clone; a shallow one has no
-    # history to derive a bump from.
-    GIT_DEPTH: 0
-    GIT_STRATEGY: clone
-  script:
-    - scripts/release-test.sh
 
 # Advisory only: dependency vulnerabilities shouldn't block every push, but
 # should be visible. Flip `allow_failure` to false once the crate graph has
@@ -165,6 +141,14 @@ coverage:
 # --------------------------------------------------------------------------
 # build
 # --------------------------------------------------------------------------
+#
+# All four jobs pick up `version`'s patched Cargo.toml/Cargo.lock, so a
+# release build embeds the version it is about to be published under. On an
+# MR there is no `version` job (component rule: main/development only), so
+# `build`/`build-python-wheel` need it only optionally and always run as a
+# plain check; on a branch pipeline with nothing releasable (empty
+# `RELEASE_VERSION`) all four skip their real work instead of spending
+# minutes on artifacts nothing will publish.
 
 # skema-py is excluded on purpose: it's not a standalone binary, and its
 # proper build path (correct ABI tag, wheel packaging) is maturin, handled by
@@ -172,7 +156,12 @@ coverage:
 build:
   stage: build
   cache: *rust_cache
+  needs:
+    - job: version
+      artifacts: true
+      optional: true
   script:
+    - '[ "$CI_PIPELINE_SOURCE" = "merge_request_event" ] || [ -n "$RELEASE_VERSION" ] || { echo "build: nothing to release, skipping."; exit 0; }'
     - devenv shell -- cargo build --release --workspace --exclude skema-py
   artifacts:
     paths:
@@ -188,14 +177,18 @@ build:
 build-release-binaries:
   stage: build
   cache: *rust_cache
+  needs:
+    - job: version
+      artifacts: true
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
   parallel:
     matrix:
       - TARGET:
           - x86_64-unknown-linux-musl
           - x86_64-pc-windows-gnu
   script:
+    - '[ -n "$RELEASE_VERSION" ] || { echo "build-release-binaries: nothing to release, skipping."; exit 0; }'
     - devenv --profile cross shell -- cargo build --release -p skema-lsp --target "$TARGET"
     - mkdir -p dist
     # Named by target triple: the extension's fetch script asks for exactly
@@ -215,7 +208,12 @@ build-release-binaries:
 build-python-wheel:
   stage: build
   cache: *rust_cache
+  needs:
+    - job: version
+      artifacts: true
+      optional: true
   script:
+    - '[ "$CI_PIPELINE_SOURCE" = "merge_request_event" ] || [ -n "$RELEASE_VERSION" ] || { echo "build-python-wheel: nothing to release, skipping."; exit 0; }'
     - devenv shell -- maturin build --release --manifest-path crates/skema-py/Cargo.toml --out dist
     - devenv shell -- python3 -m venv .venv
     - |
@@ -239,9 +237,13 @@ build-python-wheel:
 build-wasm-package:
   stage: build
   cache: *rust_cache
+  needs:
+    - job: version
+      artifacts: true
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
   script:
+    - '[ -n "$RELEASE_VERSION" ] || { echo "build-wasm-package: nothing to release, skipping."; exit 0; }'
     - devenv shell -- bash -c "cd crates/skema-wasm && wasm-pack build --target web --release"
     - mkdir -p dist
     - |
@@ -253,11 +255,32 @@ build-wasm-package:
     expire_in: 1 week
 
 # --------------------------------------------------------------------------
-# package (tags only)
+# release (skema-ci component job, extended)
+# --------------------------------------------------------------------------
+
+# The component's own `release` needs only `version`'s patched manifests; it
+# also uploads this repo's binaries/wheel/wasm bundle as the generic package
+# (`asset_globs` above), so it needs their artifacts too.
+release:
+  needs:
+    - job: version
+      artifacts: true
+    - job: build
+      artifacts: true
+    - job: build-release-binaries
+      artifacts: true
+    - job: build-python-wheel
+      artifacts: true
+    - job: build-wasm-package
+      artifacts: true
+
+# --------------------------------------------------------------------------
+# package
 # --------------------------------------------------------------------------
 
 # Runtime-only image build (Dockerfile just copies the binaries built above),
-# so this doesn't need devenv/Rust at all.
+# so this doesn't need devenv/Rust at all. Tagged from `release`'s
+# RELEASE_TAG rather than a CI tag - there are no tag pipelines any more.
 docker-build:
   stage: package
   image:
@@ -267,45 +290,25 @@ docker-build:
   needs:
     - job: build
       artifacts: true
+    - job: release
+      artifacts: true
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
   script:
+    - '[ -n "$RELEASE_VERSION" ] || { echo "docker-build: nothing released, skipping."; exit 0; }'
     - mkdir -p /kaniko/.docker
     - printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" "$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')" > /kaniko/.docker/config.json
-    - /kaniko/executor
-      --context "dir://${CI_PROJECT_DIR}"
-      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
-      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
-      --destination "${CI_REGISTRY_IMAGE}:latest"
-
-# Just uploads pre-built artifacts, no Rust/devenv needed.
-publish-generic-package:
-  stage: package
-  image: curlimages/curl:latest
-  before_script: []
-  needs:
-    - job: build
-      artifacts: true
-    - job: build-release-binaries
-      artifacts: true
-    - job: build-python-wheel
-      artifacts: true
-    - job: build-wasm-package
-      artifacts: true
-  rules:
-    - if: $CI_COMMIT_TAG
-  script:
-    # `target/release/*` are this runner's own (glibc) build, kept as the
-    # plain `skema`/`skema-lsp` names they have always had. The
-    # `dist/skema-lsp-<triple>` ones are what the VSCode extension fetches;
-    # `dist/skema-wasm.tar.gz` is `build-wasm-package`'s rollback artifact.
     - |
-      for f in target/release/skema target/release/skema-lsp dist/skema-lsp-* dist/*.whl dist/skema-wasm.tar.gz; do
-        [ -e "$f" ] || continue
-        name=$(basename "$f")
-        curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$f" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/skema/${CI_COMMIT_TAG}/${name}"
-      done
+      IMAGE_TAG="${RELEASE_TAG#v}"
+      DESTINATIONS="--destination ${CI_REGISTRY_IMAGE}:${IMAGE_TAG}"
+      case "$IMAGE_TAG" in
+        *-rc.*) ;;
+        *) DESTINATIONS="$DESTINATIONS --destination ${CI_REGISTRY_IMAGE}:latest" ;;
+      esac
+      /kaniko/executor \
+        --context "dir://${CI_PROJECT_DIR}" \
+        --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
+        $DESTINATIONS
 
 # The Cargo registry job that used to live here is gone, not disabled - a job
 # that always fails teaches the team to ignore red pipelines. Why it can't
@@ -313,15 +316,21 @@ publish-generic-package:
 # "Cargo registry publish (rejected, keep off)".
 
 # --------------------------------------------------------------------------
-# pages (default branch only)
+# pages (main, finals only)
 # --------------------------------------------------------------------------
 
 pages:
   stage: pages
   cache: *rust_cache
+  needs:
+    - job: version
+      artifacts: true
+    - job: release
+      artifacts: true
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: '$CI_COMMIT_BRANCH == "main"'
   script:
+    - '[ -n "$RELEASE_VERSION" ] || { echo "pages: nothing released, skipping."; exit 0; }'
     - devenv shell -- mdbook build docs
     - devenv shell -- cargo doc --workspace --no-deps --exclude skema-py
     - mkdir -p public
@@ -345,52 +354,3 @@ pages:
   artifacts:
     paths:
       - public
-
-# --------------------------------------------------------------------------
-# release (default branch only)
-# --------------------------------------------------------------------------
-
-# Works out the next version from the commits since the last tag, writes it
-# into Cargo.toml/Cargo.lock, and pushes the tag. That tag starts the pipeline
-# that actually publishes, so this job deliberately builds nothing itself.
-#
-# No devenv here: scripts/release.sh edits the two manifests with sed and awk
-# precisely so this stays a git-only job, instead of installing Nix and a Rust
-# toolchain to change eight version lines.
-release:
-  stage: release
-  image: debian:bookworm-slim
-  before_script:
-    - apt-get update -qq
-    - apt-get install -y --no-install-recommends git curl ca-certificates >/dev/null
-  variables:
-    # The bump is derived from `git log <last tag>..HEAD`, and the default
-    # shallow clone has neither the tags nor the history to derive it from.
-    GIT_DEPTH: 0
-    GIT_STRATEGY: clone
-  rules:
-    # Release only on real push to the default branch
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
-  script:
-    - scripts/release.sh
-
-# --------------------------------------------------------------------------
-# downstream (tags only)
-# --------------------------------------------------------------------------
-
-# Hands the freshly published tag to skema-lib, this repo's only downstream
-# (CLAUDE.md, "Releasing — the chain"). `strategy: mirror` matches the new
-# input-based design. It sits in a stage after `package`: skema-lib fetches
-# this tag's published bundle, and triggering before the upload finished
-# would send it shopping for nothing on the shelf.
-trigger-lib:
-  stage: downstream
-  rules:
-    - if: '$CI_COMMIT_TAG && "$[[ inputs.trigger_downstream ]]" == "true"'
-  trigger:
-    project: skema-language/skema-lib
-    branch: main
-    strategy: mirror
-    inputs:
-      skema_lang_version: $CI_COMMIT_TAG
-      trigger_downstream: $[[ inputs.trigger_downstream ]]

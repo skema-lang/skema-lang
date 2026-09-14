@@ -186,56 +186,10 @@ without either dependency.
 
 ## Releasing
 
-A release is a chain. Only a green default branch starts it:
-
-1. `release` (default branch) works out the next version from the commits
-   since the last tag, writes it into `Cargo.toml`/`Cargo.lock`, and pushes
-   `vX.Y.Z`. It builds nothing.
-2. The tag pipeline publishes: binaries and the Python wheel to the Package
-   Registry, the container image, the `@skema/model` and `@skema/wasm` npm
-   packages, and — for the two downstream repos — the per-platform
-   `skema-lsp` binaries and the browser WASM bundle. The library crates are
-   *not* published; see **No Cargo registry** below.
-3. It then triggers [skema-vscode](https://gitlab.com/skema-language/skema-vscode)
-   and [skema-editor](https://gitlab.com/skema-language/skema-editor), which
-   fetch *that tag's* artifacts, commit them, and tag themselves. Both are
-   `strategy: depend`, so a downstream failure shows up here.
-
-Pushing a tag by hand does the same from step 2 on; the automation adds a
-trigger, not a second release path.
-
-**How the version is picked.** Conventional-commit markers where the history
-has them, `patch` where it does not — this repo's log is not written that
-way today, so the default is the smallest step. `feat:` earns a minor; `!`
-or a `BREAKING CHANGE:` trailer earns a major. Pre-1.0 that major is capped
-at a minor: reaching 1.0 should be a decision, not an accident.
-
-```bash
-scripts/release.sh --dry-run     # what would happen, touching nothing
-scripts/release-test.sh          # the bump logic's own tests
-```
-
-Override the derivation by running the pipeline manually with `BUMP` set to
-`major`/`minor`/`patch`, or `RELEASE_VERSION=1.0.0` to name one outright.
-
-**What CI needs**, in each of the three projects the chain runs through today
-— this one, skema-vscode and skema-editor; skema-lib is not in it yet
-([brain/tasks/07](../brain/tasks/07-close-the-release-chain.md)) — no personal
-or project access token anywhere:
-
-- Settings → CI/CD → Job token permissions → **Allow Git push requests to the
-  repository**. Off by default; GA in GitLab 18.4, every tier. `CI_JOB_TOKEN`
-  then does all the pushing.
-- A `RELEASE_TRIGGER_TOKEN` variable (masked, protected) holding a pipeline
-  trigger token. A job-token push starts no pipeline — which is what stops
-  the release job re-triggering itself — so the publishing pipeline has to
-  be requested explicitly. A trigger token can only start a pipeline, so it
-  is far smaller to leak than one with repository write access.
-- Both downstream projects must allow this one to trigger them, under
-  Settings → CI/CD → Job token permissions.
-
-Everything in the chain is Free-tier: multi-project triggering left Premium in
-12.8, and only the pipeline *graph* that draws it is paid.
+Releases go through the shared `skema-ci` component
+(`.gitlab-ci.yml`'s `include:`), which cascades this repo's release down to
+skema-lib and, from there, the two app repos. Design, branches, versioning
+and job contracts: [brain/release-chain.md](../brain/release-chain.md).
 
 **No Cargo registry.** Publishing the library crates to GitLab's Cargo
 registry is not wired up: GitLab has not shipped it. The feature flag is not
