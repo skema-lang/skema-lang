@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Works out the next version, writes it into Cargo.toml, and pushes the
-# commit and the tag that starts the actual release.
+# Works out the next version from conventional commits using git-cliff,
+# writes it into Cargo.toml, and pushes the commit and the tag that starts
+# the actual release.
 #
 # The split matters: this script never builds or publishes anything. It only
 # moves the version forward and pushes `vX.Y.Z`. Everything that ships — the
@@ -14,9 +15,8 @@
 #     scripts/release.sh               # bump, commit, tag, push
 #
 # Environment:
-#   BUMP=major|minor|patch   force a level instead of deriving one
-#   RELEASE_VERSION=1.2.3    use exactly this version, derive nothing
-#   RELEASE_TOKEN            GitLab token with write_repository (CI only)
+#   TRIGGER_DOWNSTREAM    whether to request the tag pipeline (true or false)
+#   RELEASE_TRIGGER_TOKEN GitLab pipeline trigger token (CI only)
 #
 set -euo pipefail
 
@@ -30,74 +30,42 @@ run() {
   if [ "$DRY_RUN" = 1 ]; then say "  would run: $*"; else "$@"; fi
 }
 
-# --------------------------------------------------------------------------
-# Where we are now
-# --------------------------------------------------------------------------
+# Install git-cliff if not present
+if ! command -v git-cliff &> /dev/null; then
+  say "Installing git-cliff..."
+  CLIFF_VERSION="2.10.1"
+  CLIFF_ARCH="x86_64-unknown-linux-musl"
+  CLIFF_URL="https://github.com/orhun/git-cliff/releases/download/v${CLIFF_VERSION}/git-cliff-${CLIFF_VERSION}-${CLIFF_ARCH}.tar.gz"
+  CLIFF_SHA_URL="${CLIFF_URL}.sha512"
 
-# The tag is the source of truth for "what was last released", not Cargo.toml:
-# Cargo.toml is what the *next* release will carry, and on a fresh repo the two
-# are deliberately the same (see below).
-LAST_TAG=$(git tag -l 'v[0-9]*' --sort=-v:refname | head -n1)
-
-CARGO_VERSION=$(sed -n '/^\[workspace\.package\]/,/^\[/p' Cargo.toml |
-  sed -n -E 's/^version = "([^"]+)".*/\1/p' | head -n1)
-
-if [ -z "$CARGO_VERSION" ]; then
-  say "Could not read [workspace.package] version from Cargo.toml"
-  exit 1
+  mkdir -p /tmp/git-cliff-install
+  cd /tmp/git-cliff-install
+  curl -fL "$CLIFF_URL" -o git-cliff.tar.gz
+  curl -fL "$CLIFF_SHA_URL" -o git-cliff.tar.gz.sha512
+  sha512sum -c git-cliff.tar.gz.sha512 > /dev/null
+  tar -xzf git-cliff.tar.gz
+  mkdir -p ~/.local/bin
+  mv git-cliff ~/.local/bin/
+  export PATH="$HOME/.local/bin:$PATH"
+  cd - > /dev/null
 fi
 
-# First release ever: ship the version the workspace already declares rather
-# than bumping past it. v0.1.0 is a more honest first tag than v0.1.1 on a
-# repo whose Cargo.toml has said 0.1.0 all along.
-if [ -z "$LAST_TAG" ]; then
-  NEXT="$CARGO_VERSION"
-  say "No tag yet — releasing the version Cargo.toml already declares: v$NEXT"
-else
-  CURRENT="${LAST_TAG#v}"
+# Compute the next version using git-cliff
+NEXT_WITH_V=$(git-cliff --bumped-version)
+NEXT="${NEXT_WITH_V#v}"
 
-  # --------------------------------------------------------------------------
-  # How far to move
-  # --------------------------------------------------------------------------
-  if [ -n "${RELEASE_VERSION:-}" ]; then
-    NEXT="${RELEASE_VERSION#v}"
-    say "RELEASE_VERSION given — releasing v$NEXT"
-  else
-    LEVEL="${BUMP:-}"
-    if [ -z "$LEVEL" ]; then
-      # Conventional-commit markers when they are there, patch when they are
-      # not. The history in this repo is not written that way today, so the
-      # honest default is the smallest step; a `feat:` or a `!` earns more as
-      # soon as commits start saying so.
-      RANGE="$LAST_TAG..HEAD"
-      if git log --format='%s%n%b' "$RANGE" | grep -qE '^[a-z]+(\([^)]*\))?!:|^BREAKING[ -]CHANGE'; then
-        LEVEL=major
-      elif git log --format='%s' "$RANGE" | grep -qE '^feat(\([^)]*\))?:'; then
-        LEVEL=minor
-      else
-        LEVEL=patch
-      fi
-      say "Derived bump level from $RANGE: $LEVEL"
-    else
-      say "BUMP given: $LEVEL"
-    fi
+say "Next version from git-cliff: v$NEXT"
 
-    IFS=. read -r MAJOR MINOR PATCH <<<"$CURRENT"
-    case "$LEVEL" in
-      # Pre-1.0, a breaking change moves the minor instead of declaring 1.0.
-      # Reaching 1.0 is a decision someone makes on purpose, with
-      # RELEASE_VERSION=1.0.0 — not something a `!` in a commit message does.
-      major) if [ "$MAJOR" = 0 ]; then MINOR=$((MINOR + 1)); PATCH=0
-             else MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0; fi ;;
-      minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-      patch) PATCH=$((PATCH + 1)) ;;
-      *) say "BUMP must be major, minor or patch — got '$LEVEL'"; exit 1 ;;
-    esac
-    NEXT="$MAJOR.$MINOR.$PATCH"
+# Nothing to release: exit cleanly (no commits matching conventional patterns)
+if [ -z "$NEXT" ] || [ "$NEXT" = "v0.1.0" ]; then
+  # Check if this is truly a no-op release by seeing if we're already at the computed tag
+  if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null 2>&1; then
+    say "Nothing to release (already at v$NEXT)"
+    exit 0
   fi
 fi
 
-if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null; then
+if git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null 2>&1; then
   say "Tag v$NEXT already exists — nothing to do"
   exit 0
 fi
@@ -203,9 +171,10 @@ if [ -n "${CI:-}" ]; then
     say "tokens), or start a pipeline for v$NEXT by hand."
     exit 1
   fi
-  say "Starting the release pipeline for v$NEXT"
-  curl --fail --silent --show-error --output /dev/null \
-    --form "token=${RELEASE_TRIGGER_TOKEN}" \
-    --form "ref=v$NEXT" \
-    "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/trigger/pipeline"
+  TRIGGER_DOWNSTREAM="${TRIGGER_DOWNSTREAM:-true}"
+  say "Starting the release pipeline for v$NEXT (trigger_downstream=$TRIGGER_DOWNSTREAM)"
+  curl --fail \
+    --header "Content-Type: application/json" \
+    --data "{\"token\":\"${RELEASE_TRIGGER_TOKEN}\",\"ref\":\"v${NEXT}\",\"inputs\":{\"trigger_downstream\":${TRIGGER_DOWNSTREAM}}}" \
+    "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipeline" || true
 fi

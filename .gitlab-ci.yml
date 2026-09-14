@@ -1,3 +1,12 @@
+spec:
+  inputs:
+    trigger_downstream:
+      type: boolean
+      default: true
+      description: "Whether to trigger skema-lib (and transitively the apps) after releasing"
+
+---
+
 ## skema — GitLab CI/CD
 ##
 ## Every job runs through the project's own devenv.nix instead of a
@@ -41,6 +50,8 @@ variables:
   NIX_CONFIG: |
     experimental-features = nix-command flakes
     sandbox = false
+  # Bridge from spec:inputs to scripts
+  TRIGGER_DOWNSTREAM: $[[ inputs.trigger_downstream ]]
 
 # Root-mode install (`--init none`) - GitLab job containers run as root, and
 # Nix's single-user installer refuses that. `sandbox = false` (NIX_CONFIG
@@ -346,14 +357,7 @@ release:
     GIT_DEPTH: 0
     GIT_STRATEGY: clone
   rules:
-    # The one rule that keeps this from feeding itself: the job pushes a
-    # commit to the branch it watches. Matching its own message is what breaks
-    # the loop. `[skip ci]` would be the usual trick and is wrong here — the
-    # tag points at that same commit, so GitLab would skip the tag pipeline as
-    # well, which is the one that publishes.
-    - if: $CI_COMMIT_MESSAGE =~ /^chore\(release\):/
-      when: never
-    # Never off a downstream trigger, only off a real push to the branch.
+    # Release only on real push to the default branch
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
   script:
     - scripts/release.sh
@@ -363,17 +367,18 @@ release:
 # --------------------------------------------------------------------------
 
 # Hands the freshly published tag to skema-lib, this repo's only downstream
-# (CLAUDE.md, "Releasing — the chain"). `strategy: depend` keeps this
-# pipeline red while anything downstream is. It sits in a stage after
-# `package`: skema-lib fetches this tag's published bundle, and triggering
-# before the upload finished would send it shopping for nothing on the shelf.
+# (CLAUDE.md, "Releasing — the chain"). `strategy: mirror` matches the new
+# input-based design. It sits in a stage after `package`: skema-lib fetches
+# this tag's published bundle, and triggering before the upload finished
+# would send it shopping for nothing on the shelf.
 trigger-lib:
   stage: downstream
   rules:
-    - if: $CI_COMMIT_TAG
-  variables:
-    SKEMA_LANG_VERSION: $CI_COMMIT_TAG
+    - if: '$CI_COMMIT_TAG && "$[[ inputs.trigger_downstream ]]" == "true"'
   trigger:
     project: skema-language/skema-lib
     branch: main
-    strategy: depend
+    strategy: mirror
+    inputs:
+      skema_lang_version: $CI_COMMIT_TAG
+      trigger_downstream: $[[ inputs.trigger_downstream ]]

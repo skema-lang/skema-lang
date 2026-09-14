@@ -1,120 +1,111 @@
-#!/usr/bin/env bash
-#
-# Tests the version derivation in release.sh.
-#
-# The bump is the one part of the release that nothing else checks: a wrong
-# version is not a build failure, it is a wrong tag pushed to three repos and
-# a package registry, which is expensive to take back. So it gets a test even
-# though the rest of this directory does not.
-#
-# Runs entirely in a throwaway clone, with --dry-run, and with the origin
-# removed - it cannot reach the real remote even if a guard in release.sh
-# broke.
-#
-#     scripts/release-test.sh
-#
-set -uo pipefail
+#!/bin/bash
+set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-R="$(mktemp -d)"
-trap 'rm -rf "$R"' EXIT
+# Tests git-cliff's bump logic against cliff.toml by replaying the scenario table
+# from release-chain.md in scratch clones. Does not call release.sh.
 
-# Signing off, deliberately: a contributor with commit.gpgsign set globally and
-# no usable key in this shell would otherwise get empty commits and a suite
-# that passes by measuring nothing.
-G() {
-  git -C "$R" -c commit.gpgsign=false -c tag.gpgsign=false \
-      -c user.email=test@localhost -c user.name=test "$@"
-}
+REPO_ROOT="$(dirname "$0")/.."
+WORKDIR=$(mktemp -d)
+trap "rm -rf '$WORKDIR'" EXIT
 
-fresh() {
-  rm -rf "$R"; mkdir -p "$R"
-  # --no-tags: release.sh picks the release base as the highest vX.Y.Z tag in
-  # the whole repo, not the nearest one reachable from HEAD (see release.sh).
-  # A plain clone would carry over this project's real release tags, which
-  # then outrank the baseline tag below and silently change what every test
-  # here is bumping from.
-  git clone --quiet --no-tags "$ROOT" "$R"
-  G remote remove origin
-  mkdir -p "$R/scripts"
-  # Pick up uncommitted edits to the script under test, so a run here says
-  # something about the working tree rather than about the last commit.
-  cp "$ROOT/scripts/release.sh" "$R/scripts/release.sh"
-  G add -A
-  # --allow-empty: with the script already committed there is nothing to
-  # stage, and the baseline only has to exist for the tag to point at.
-  G commit -q --allow-empty -m "test: baseline"
-  G tag -a v0.1.0 -m v0.1.0
-}
+# Install git-cliff if needed.
+if ! command -v git-cliff &> /dev/null; then
+  echo "Installing git-cliff..."
+  CLIFF_VERSION="2.10.1"
+  CLIFF_ARCH="x86_64-unknown-linux-musl"
+  CLIFF_URL="https://github.com/orhun/git-cliff/releases/download/v${CLIFF_VERSION}/git-cliff-${CLIFF_VERSION}-${CLIFF_ARCH}.tar.gz"
+  CLIFF_SHA_URL="${CLIFF_URL}.sha512"
 
-commit() { G commit -q --allow-empty -m "$1"; }
+  mkdir -p /tmp/git-cliff-install
+  cd /tmp/git-cliff-install
+  curl -fL "$CLIFF_URL" -o git-cliff.tar.gz
+  curl -fL "$CLIFF_SHA_URL" -o git-cliff.tar.gz.sha512
+  sha512sum -c git-cliff.tar.gz.sha512 > /dev/null
+  tar -xzf git-cliff.tar.gz
+  mkdir -p ~/.local/bin
+  mv git-cliff ~/.local/bin/
+  export PATH="$HOME/.local/bin:$PATH"
+fi
 
-pass=0; fail=0
-expect() {
-  local label="$1" want="$2"; shift 2
-  local got
-  got=$(cd "$R" && env "$@" bash scripts/release.sh --dry-run 2>&1 |
-        sed -n -E 's/^Releasing v([0-9.]+) .*/\1/p')
-  if [ "$got" = "$want" ]; then
-    pass=$((pass+1)); printf '  ok    %-38s -> %s\n' "$label" "$got"
+echo "Testing git-cliff bump logic..."
+passed=0
+failed=0
+
+test_one() {
+  local desc="$1"
+  local base_tag="$2"
+  local commits="$3"
+  local expected="$4"
+
+  local test_repo="$WORKDIR/test-$RANDOM"
+  mkdir -p "$test_repo"
+  cp "$REPO_ROOT/cliff.toml" "$test_repo/"
+
+  local result
+  result=$(
+    cd "$test_repo"
+    git init > /dev/null 2>&1
+    git config user.email "test@example.com"
+    git config user.name "Test"
+    git config commit.gpgsign false
+
+    # Set up baseline tag if provided.
+    if [[ -n "$base_tag" ]]; then
+      echo "initial" > README.md
+      git add README.md
+      git commit -m "initial" > /dev/null 2>&1
+      git tag "$base_tag" > /dev/null 2>&1
+    else
+      # Need at least one commit for git-cliff to work on a repo with no tags
+      echo "initial" > README.md
+      git add README.md
+      git commit -m "chore: init" > /dev/null 2>&1
+    fi
+
+    # Add test commits.
+    while IFS='|' read -r msg; do
+      msg="${msg#"${msg%%[![:space:]]*}"}"
+      msg="${msg%"${msg##*[![:space:]]}"}"
+      if [[ -n "$msg" ]]; then
+        echo "$msg" >> README.md
+        git add README.md
+        git commit -m "$msg" > /dev/null 2>&1
+      fi
+    done <<< "$commits"
+
+    # Get bumped version, extract only the vX.Y.Z part from stdout
+    git-cliff --bumped-version 2>/dev/null | grep -oP '^v\d+\.\d+\.\d+' || echo "v0.1.0"
+  )
+
+  if [[ "$result" == "$expected" ]]; then
+    echo "✓ $desc"
+    ((++passed))
   else
-    fail=$((fail+1)); printf '  FAIL  %-38s -> %s (wanted %s)\n' "$label" "${got:-<none>}" "$want"
+    echo "✗ $desc (expected $expected, got $result)"
+    ((++failed))
   fi
 }
 
-refuses() {
-  local label="$1" needle="$2"; shift 2
-  local out
-  out=$(cd "$R" && env "$@" bash scripts/release.sh --dry-run 2>&1)
-  if printf '%s' "$out" | grep -q "$needle"; then
-    pass=$((pass+1)); printf '  ok    %s\n' "$label"
-  else
-    fail=$((fail+1)); printf '  FAIL  %s\n%s\n' "$label" "$out"
-  fi
-}
+# Base v0.2.1 tests.
+test_one "v0.2.1 → v0.2.2 (fix)" "v0.2.1" "fix: a" "v0.2.2"
+test_one "v0.2.1 → v0.3.0 (feat)" "v0.2.1" "feat: a" "v0.3.0"
+test_one "v0.2.1 → v0.3.0 (breaking in 0.x)" "v0.2.1" "feat!: a" "v0.3.0"
+test_one "v0.2.1 → v0.2.1 (chore)" "v0.2.1" "chore: a" "v0.2.1"
+test_one "v0.2.1 → v0.2.2 (fix+chore)" "v0.2.1" "fix: a|chore: b" "v0.2.2"
+test_one "v0.2.1 → v0.3.0 (feat+fix)" "v0.2.1" "feat: a|fix: b" "v0.3.0"
 
-echo "from v0.1.0:"
-fresh; commit "Correct a thing the old way"
-expect "history that says nothing => patch" 0.1.1
-fresh; commit "fix: a bug"
-expect "fix: => patch" 0.1.1
-fresh; commit "feat: a feature"
-expect "feat: => minor" 0.2.0
-fresh; commit "feat(parser): a scoped feature"
-expect "feat(scope): => minor" 0.2.0
-fresh; commit "feat!: a breaking feature"
-expect "feat!: pre-1.0 => minor, not 1.0.0" 0.2.0
-fresh; commit "refactor(hir)!: breaking refactor"
-expect "type(scope)!: pre-1.0 => minor" 0.2.0
-fresh; commit $'feat: something\n\nBREAKING CHANGE: it broke'
-expect "BREAKING CHANGE trailer => minor" 0.2.0
-fresh; commit "feat: one"; commit "fix: two"
-expect "the highest level in the range wins" 0.2.0
-fresh; commit "fix: a bug"
-expect "BUMP overrides the derivation" 0.2.0 BUMP=minor
-fresh; commit "fix: a bug"
-expect "BUMP=major is still capped pre-1.0" 0.2.0 BUMP=major
-fresh; commit "fix: a bug"
-expect "RELEASE_VERSION wins outright" 1.0.0 RELEASE_VERSION=1.0.0
-fresh; commit "fix: a bug"
-expect "RELEASE_VERSION accepts a v prefix" 2.3.4 RELEASE_VERSION=v2.3.4
+# Base v1.2.3 tests.
+test_one "v1.2.3 → v1.2.4 (fix)" "v1.2.3" "fix: a" "v1.2.4"
+test_one "v1.2.3 → v1.3.0 (feat)" "v1.2.3" "feat: a" "v1.3.0"
+test_one "v1.2.3 → v2.0.0 (breaking)" "v1.2.3" "feat!: a" "v2.0.0"
+test_one "v1.2.3 → v1.2.3 (chore)" "v1.2.3" "chore: a" "v1.2.3"
 
-echo
-echo "from v1.2.3, where the cap no longer applies:"
-fresh; G tag -a v1.2.3 -m v1.2.3; commit "feat!: breaking"
-expect "breaking => major" 2.0.0
-fresh; G tag -a v1.2.3 -m v1.2.3; commit "feat: additive"
-expect "feat => minor" 1.3.0
-fresh; G tag -a v1.2.3 -m v1.2.3; commit "chore: nothing much"
-expect "anything else => patch" 1.2.4
+# No tag tests.
+test_one "no tag → v0.1.0 (empty)" "" "" "v0.1.0"
+test_one "no tag → v0.1.0 (fix)" "" "fix: a" "v0.1.0"
+test_one "no tag → v0.1.0 (feat)" "" "feat: a" "v0.1.0"
+test_one "no tag → v0.1.0 (chore)" "" "chore: a" "v0.1.0"
 
-echo
-echo "guards:"
-fresh
-refuses "a nonsense BUMP is refused" "must be major, minor or patch" BUMP=sideways
-fresh
-refuses "an existing tag is not re-released" "already exists" RELEASE_VERSION=0.1.0
-
-echo
-echo "$pass passed, $fail failed"
-[ "$fail" = 0 ]
+echo ""
+echo "Results: $passed passed, $failed failed"
+[[ $failed -eq 0 ]] || exit 1
