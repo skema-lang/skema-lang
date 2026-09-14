@@ -84,20 +84,70 @@ Table Order {
 
 There is **no** styling directly on an individual element. To highlight one table, define a class and assign it — this keeps every visual decision in one place instead of scattered through the model.
 
-Three cascade levels, weakest to strongest:
+Four cascade levels, weakest to strongest:
 
-1. `Style @…` in `Project` — project-wide default
-2. `Style @…` in `Document` — this file's override
-3. Classes from `styleClasses`, in list order — the last one wins
+1. `Style @…` in `Project` — project-wide default for all elements of that type
+2. `@document.backgroundColor` — inherited by `@table`, `@enum`, `@group` (special case: see below)
+3. `Style @…` in `Document` — this file's override
+4. Classes from `styleClasses`, in list order — the last one wins
 
 Rule: **more specific beats more general, later beats earlier.** No specificity arithmetic to memorize.
 
 ```mermaid
 flowchart TB
-    A["Style @table in Project<br/>(project-wide default)"] --> B["Style @table in Document<br/>(this file's override)"]
-    B --> C["Meta.styleClasses, in order<br/>(last class wins)"]
-    C --> D["Rendered element"]
+    A["Style @table in Project<br/>(project-wide default)"] --> B["@document.backgroundColor<br/>(inherited as default for boxes)"]
+    B --> C["Style @table in Document<br/>(this file's override)"]
+    C --> D["Meta.styleClasses, in order<br/>(last class wins)"]
+    D --> E["Rendered element"]
 ```
+
+### @document.backgroundColor special case
+
+The `@document` selector's `backgroundColor` property does not render as a visible element (no "file region" container exists in the diagram). Instead, it feeds into the `backgroundColor` cascade of every `@table`, `@enum`, and `@group` in that file as an extra, inherited layer — acting like a weaker version of the document's own `Style @table/enum/group` rules.
+
+This allows one document to set a default background for all its box elements without repeating the same style rule three times. The ranking for `backgroundColor` on a table/enum/group is:
+
+- **Weakest:** project-wide `Style @table/enum/group` default
+- → this document's `@document.backgroundColor`
+- → this document's own `Style @table/enum/group` override
+- **Strongest:** classes from `Meta.styleClasses`
+
+**Important:** `@document.backgroundColor` does **not** apply to `@relation` — a relationship line has no fill color. Relations use only `lineColor`, `lineWidth`, and `lineStyle` from their cascade.
+
+For the reasoning behind this design, see [decisions.md, "Style rendering scope"](../../brain/decisions.md#style-rendering-scope-tasks-39-41).
+
+### Example: @document.backgroundColor inheritance
+
+```skema
+Project {
+  Style @table {
+    backgroundColor = "#ffffff";  # project-wide default: white
+  }
+
+  Style exception {
+    backgroundColor = "#ffffcc";  # light yellow
+  }
+}
+
+Document archive {
+  Style @document {
+    backgroundColor = "#f0f0f0";  # light gray — inherited default for all boxes in this file
+  }
+
+  # This table uses document's inherited gray background
+  Table HistoricalRecord {
+    id int [pk];
+  }
+
+  # This table overrides with the "exception" class, which wins over @document.backgroundColor
+  Table AuditLog {
+    id int [pk];
+    Meta { styleClasses = [exception]; }
+  }
+}
+```
+
+**Result:** `HistoricalRecord` gets light gray (`#f0f0f0`), `AuditLog` gets light yellow (`#ffffcc`). The class assignment overrides the document's inherited default.
 
 ## Style properties
 
@@ -160,9 +210,7 @@ Tables and enums share the same box styling. Note: `bodyBackgroundColor` is the 
 
 | Property | Type | Meaning |
 |---|---|---|
-| `backgroundColor` | color | Override diagram background for this file's elements |
-
-Note: Detailed inheritance and cascade rules for `@document` styling are under development — see [task 41](../../brain/tasks/41-document-style-cascade-inheritance.md).
+| `backgroundColor` | color | Inherited default background for all `@table`, `@enum`, and `@group` boxes in this file (see [Cascade](#cascade) section for ranking and inheritance details) |
 
 #### @relation
 
