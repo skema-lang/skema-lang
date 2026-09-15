@@ -28,7 +28,7 @@ spec:
 ##     Job token permissions → add `skema-language/skema` to its allowlist.
 
 include:
-  - component: $CI_SERVER_FQDN/skema-language/skema-ci/release@0.1.1
+  - component: $CI_SERVER_FQDN/skema-language/skema-ci/release@0.1.2
     inputs:
       version_file_kind: cargo
       version_file_paths: "Cargo.toml Cargo.lock"
