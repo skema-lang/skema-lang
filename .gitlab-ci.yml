@@ -149,12 +149,27 @@ coverage:
 # plain check; on a branch pipeline with nothing releasable (empty
 # `RELEASE_VERSION`) all four skip their real work instead of spending
 # minutes on artifacts nothing will publish.
+#
+# Every job in this stage realises its own container-local Nix store of
+# several GB (Nix is installed fresh per job), and the self-hosted runner ran
+# out of disk when five of them did it at once - pipelines 58-60, "No space
+# left on device" and a full /nix/var/nix/db/db.sqlite. One shared
+# resource_group makes GitLab run them one at a time, so peak disk is one
+# store rather than five. `check` succeeding on its own is the evidence that
+# a single store does fit.
+#
+# This is a stopgap for runner capacity, not a fix for it: it trades a
+# parallel build stage (~8 min) for a serial one (~35 min). Delete the
+# resource_group from these four jobs once the runner has headroom - more
+# disk, a lower `concurrent`, or a persistent /nix volume so the toolchain is
+# realised once instead of per job.
 
 # skema-py is excluded on purpose: it's not a standalone binary, and its
 # proper build path (correct ABI tag, wheel packaging) is maturin, handled by
 # build-python-wheel below.
 build:
   stage: build
+  resource_group: nix-store
   cache: *rust_cache
   needs:
     - job: version
@@ -176,6 +191,7 @@ build:
 # back to `skema.serverPath` with a locally built server.
 build-release-binaries:
   stage: build
+  resource_group: nix-store
   cache: *rust_cache
   needs:
     - job: version
@@ -210,6 +226,7 @@ build-release-binaries:
 
 build-python-wheel:
   stage: build
+  resource_group: nix-store
   cache: *rust_cache
   needs:
     - job: version
@@ -239,6 +256,7 @@ build-python-wheel:
 # needs to be: skemaeditor used to vendor these four files directly.
 build-wasm-package:
   stage: build
+  resource_group: nix-store
   cache: *rust_cache
   needs:
     - job: version
