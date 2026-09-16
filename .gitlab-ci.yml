@@ -184,12 +184,15 @@ build-release-binaries:
     - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
   parallel:
     matrix:
-      - TARGET:
-          - x86_64-unknown-linux-musl
-          - x86_64-pc-windows-gnu
+      # One profile per target: each job realises only its own platform's
+      # cross toolchain - see devenv.nix, "cross - the release toolchain".
+      - TARGET: x86_64-unknown-linux-musl
+        PROFILE: cross-musl
+      - TARGET: x86_64-pc-windows-gnu
+        PROFILE: cross-windows
   script:
     - '[ -n "$RELEASE_VERSION" ] || { echo "build-release-binaries: nothing to release, skipping."; exit 0; }'
-    - devenv --profile cross shell -- cargo build --release -p skema-lsp --target "$TARGET"
+    - devenv --profile "$PROFILE" shell -- cargo build --release -p skema-lsp --target "$TARGET"
     - mkdir -p dist
     # Named by target triple: the extension's fetch script asks for exactly
     # this name, and one unqualified `skema-lsp` per tag could only ever be

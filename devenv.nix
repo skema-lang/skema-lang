@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 {
   # ---------------------------------------------------------------------------
@@ -19,9 +19,19 @@
       "cargo"
       "clippy"
       "rustfmt"
+      "llvm-tools" # needed by `cargo llvm-cov` (test coverage)
+    ]
+    # Editor tooling, deliberately left out of CI. Five build-stage jobs run
+    # at once, each unpacking its own copy of this toolchain into its own
+    # container, and the runner ran out of disk doing it (pipeline 58,
+    # "No space left on device" while unpacking rustc). These two are the
+    # only components nothing in CI ever invokes. The reproducibility the
+    # header above cares about is unaffected: rustc/cargo/clippy/rustfmt are
+    # still pinned identically everywhere, and neither of these can change a
+    # build's output.
+    ++ lib.optionals (builtins.getEnv "CI" == "") [
       "rust-analyzer"
       "rust-src" # rust-analyzer needs the std sources for go-to-definition
-      "llvm-tools" # needed by `cargo llvm-cov` (test coverage)
     ];
     # `crates/skema-wasm` compiles the core to WASM for the browser.
     #
@@ -102,7 +112,7 @@
   # ---------------------------------------------------------------------------
   # cross – the release toolchain, off by default
   # ---------------------------------------------------------------------------
-  # `devenv --profile cross shell -- cargo build --target …`
+  # `devenv --profile cross-musl shell -- cargo build --target …`
   #
   # Only `build-release-binaries` (tags only) cross-compiles; fmt, clippy,
   # tests, coverage, audit, the wheel and the wasm bundle all build for the
@@ -122,19 +132,31 @@
   # A profile is the smallest fix that keeps the cross setup declarative and
   # pinned: the jobs that need it ask for it, the jobs that don't never
   # evaluate it.
-  profiles.cross.module = {
+  #
+  # One profile *per target*, not one for both: `build-release-binaries` is a
+  # matrix and each of its jobs builds exactly one target, so a combined
+  # profile made each job realise the other platform's GCC for nothing. With
+  # five build-stage jobs unpacking their own container-local Nix store at
+  # once, that surplus is what the runner ran out of disk on (pipeline 58).
+  # It also keeps the musl job out of the Windows tree described above, so
+  # the `win-dll-link.sh` hazard cannot reach it at all.
+  profiles.cross-musl.module = {
     # musl links statically, so one Linux binary runs on every distribution
     # regardless of its glibc.
-    languages.rust.targets = [
-      "x86_64-unknown-linux-musl"
-      "x86_64-pc-windows-gnu"
-    ];
+    languages.rust.targets = [ "x86_64-unknown-linux-musl" ];
 
-    # Cross linkers for the targets above. Rust can *compile* for a target on
-    # its own; linking needs that platform's toolchain.
+    # Rust can *compile* for a target on its own; linking needs that
+    # platform's toolchain.
+    env.CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER =
+      "${pkgs.pkgsCross.musl64.stdenv.cc}/bin/x86_64-unknown-linux-musl-cc";
+
+    packages = [ pkgs.pkgsCross.musl64.stdenv.cc ];
+  };
+
+  profiles.cross-windows.module = {
+    languages.rust.targets = [ "x86_64-pc-windows-gnu" ];
+
     env = {
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER =
-        "${pkgs.pkgsCross.musl64.stdenv.cc}/bin/x86_64-unknown-linux-musl-cc";
       CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER =
         "${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/x86_64-w64-mingw32-cc";
       # Rust's windows-gnu target links against a static pthreads that the
@@ -143,9 +165,6 @@
         "-L ${pkgs.pkgsCross.mingwW64.windows.mcfgthreads}/lib -L ${pkgs.pkgsCross.mingwW64.windows.pthreads}/lib";
     };
 
-    packages = [
-      pkgs.pkgsCross.musl64.stdenv.cc
-      pkgs.pkgsCross.mingwW64.stdenv.cc
-    ];
+    packages = [ pkgs.pkgsCross.mingwW64.stdenv.cc ];
   };
 }
