@@ -41,6 +41,23 @@ pub fn declarations(file: &SourceFile) -> Vec<Decl> {
     file.items.iter().filter_map(decl_of).collect()
 }
 
+/// The `SymbolKind` an LSP client shows for a declaration - shared between
+/// the document outline (`main.rs::symbol_of`) and `workspace/symbol`
+/// (`workspace_symbols.rs`), so the two never disagree on what a `Table` is.
+pub fn symbol_kind(kind: DeclKind) -> lsp_types::SymbolKind {
+    match kind {
+        DeclKind::Block(BlockKind::Table | BlockKind::Partial) => lsp_types::SymbolKind::CLASS,
+        DeclKind::Block(BlockKind::Enum) => lsp_types::SymbolKind::ENUM,
+        DeclKind::Block(BlockKind::Datatype) => lsp_types::SymbolKind::STRUCT,
+        DeclKind::Block(BlockKind::Group) => lsp_types::SymbolKind::NAMESPACE,
+        DeclKind::Block(BlockKind::Document) => lsp_types::SymbolKind::MODULE,
+        DeclKind::Block(_) => lsp_types::SymbolKind::OBJECT,
+        DeclKind::Field => lsp_types::SymbolKind::FIELD,
+        DeclKind::Index => lsp_types::SymbolKind::KEY,
+        DeclKind::Reference => lsp_types::SymbolKind::VARIABLE,
+    }
+}
+
 /// The file's own namespace: the name of its `Document` block (`docs/02`).
 pub fn document_name(file: &SourceFile) -> Option<String> {
     file.blocks()

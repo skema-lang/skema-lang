@@ -30,6 +30,7 @@ mod protocol;
 mod roots;
 mod symbols;
 mod tokens;
+mod workspace_symbols;
 
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -43,7 +44,7 @@ use lsp_types::notification::{
 };
 use lsp_types::request::{
     Completion, DocumentSymbolRequest, FoldingRangeRequest, GotoDefinition, HoverRequest,
-    Request as _, SemanticTokensFullRequest,
+    Request as _, SemanticTokensFullRequest, WorkspaceSymbolRequest,
 };
 use lsp_types::{
     CompletionOptions, FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams,
@@ -65,6 +66,7 @@ fn main() -> Result<(), DynError> {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        workspace_symbol_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
             // The characters after which something is worth offering with
             // nothing typed yet: a relation arrow, a qualifier's dot, the
@@ -310,6 +312,11 @@ impl Server {
                 let result = self.folding_ranges(&params);
                 self.respond(id, &result)
             }
+            WorkspaceSymbolRequest::METHOD => {
+                let (id, params) = cast::<WorkspaceSymbolRequest>(request)?;
+                let result = self.workspace_symbols(&params);
+                self.respond(id, &result)
+            }
             protocol::MODEL_REQUEST => {
                 let params: protocol::ModelParams = serde_json::from_value(request.params)?;
                 let result = self.model(&params);
@@ -384,6 +391,19 @@ impl Server {
             .map(|decl| symbol_of(decl, &source))
             .collect();
         Some(lsp_types::DocumentSymbolResponse::Nested(symbols))
+    }
+
+    /// Unlike every other handler, this answers from `self` rather than one
+    /// file's `Analysis` - there is no "current file" for a workspace-wide
+    /// search.
+    fn workspace_symbols(
+        &self,
+        params: &lsp_types::WorkspaceSymbolParams,
+    ) -> lsp_types::WorkspaceSymbolResponse {
+        lsp_types::WorkspaceSymbolResponse::Flat(workspace_symbols::workspace_symbols(
+            &self.analyses,
+            &params.query,
+        ))
     }
 
     fn folding_ranges(
@@ -557,25 +577,10 @@ where
 
 #[allow(deprecated)] // `DocumentSymbol::deprecated` is required by the struct.
 fn symbol_of(decl: &symbols::Decl, source: &str) -> lsp_types::DocumentSymbol {
-    use skema_syntax::ast::BlockKind;
-    use symbols::DeclKind;
-
-    let kind = match decl.kind {
-        DeclKind::Block(BlockKind::Table | BlockKind::Partial) => lsp_types::SymbolKind::CLASS,
-        DeclKind::Block(BlockKind::Enum) => lsp_types::SymbolKind::ENUM,
-        DeclKind::Block(BlockKind::Datatype) => lsp_types::SymbolKind::STRUCT,
-        DeclKind::Block(BlockKind::Group) => lsp_types::SymbolKind::NAMESPACE,
-        DeclKind::Block(BlockKind::Document) => lsp_types::SymbolKind::MODULE,
-        DeclKind::Block(_) => lsp_types::SymbolKind::OBJECT,
-        DeclKind::Field => lsp_types::SymbolKind::FIELD,
-        DeclKind::Index => lsp_types::SymbolKind::KEY,
-        DeclKind::Reference => lsp_types::SymbolKind::VARIABLE,
-    };
-
     lsp_types::DocumentSymbol {
         name: decl.name.clone(),
         detail: decl.detail.clone(),
-        kind,
+        kind: symbols::symbol_kind(decl.kind),
         tags: None,
         deprecated: None,
         range: convert::range_of(source, decl.span),
