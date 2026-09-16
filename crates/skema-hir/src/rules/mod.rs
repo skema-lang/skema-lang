@@ -100,6 +100,10 @@ pub(crate) fn run(
     let groups = group::check(&ctx, project.as_ref(), &mut links, &mut diags);
     let (tables, enums) = resolve::run(&ctx, project.as_ref(), &mut links, &mut diags);
 
+    // Always-on, unlike `lint::check` below – not a style choice a team can
+    // opt out of (`decisions.md`, "Lint catalog expansion (tasks 66–70)").
+    resolve::check_required_fk_cycles(&tables, &mut diags);
+
     lint::check(&ctx, project.as_ref(), &tables, &mut diags);
 
     diags.sort_by_key(|d| (d.span.start, d.span.end));

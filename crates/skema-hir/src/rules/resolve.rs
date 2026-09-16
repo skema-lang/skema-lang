@@ -1,7 +1,7 @@
 //! Builds the exportable model: `use` partials inlined, relationships and
 //! types resolved, physical names cascaded (`docs/05`–`docs/11`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use skema_syntax::Span;
 use skema_syntax::ast::{self, BlockKind, RelationOp, ValueKind};
@@ -714,6 +714,117 @@ fn check_relation_action(
         ));
     }
     Some(text)
+}
+
+// ===========================================================================
+// Circular required foreign keys
+// ===========================================================================
+
+/// Identifies a table project-wide – `name` alone is ambiguous (`docs/02`:
+/// two files may each declare a `Table Copy`).
+type TableKey = (String, String);
+
+fn table_key(table: &model::Table) -> TableKey {
+    (table.namespace.clone(), table.name.clone())
+}
+
+/// Rejects a cycle of `required`/`pk` foreign keys: every row in such a
+/// cycle needs a not-yet-existing row to already exist first, so no target
+/// database has a valid insert order – including the one-table self-loop
+/// (`Employee.manager >Employee.id [required]`). Always an error, never
+/// gated by `Lint` or `mode` – see `decisions.md`, "Lint catalog expansion
+/// (tasks 66–70)". Runs on the whole-project table graph, so it needs
+/// `resolve::run`'s output and cannot live inside `resolve_field` itself.
+pub(crate) fn check_required_fk_cycles(tables: &[model::Table], diags: &mut Vec<Diagnostic>) {
+    // An edge `from -> to` per `required`/`pk` `>`/`-` field – `<`
+    // back-references create no column, so they create no edge (docs/07,
+    // "Not every relationship creates a column").
+    let mut adjacency: HashMap<TableKey, Vec<TableKey>> = HashMap::new();
+    let mut edges: Vec<(TableKey, TableKey, &model::Field)> = Vec::new();
+    for table in tables {
+        let from = table_key(table);
+        for field in &table.fields {
+            let Some(relation) = &field.relation else {
+                continue;
+            };
+            if relation.kind == model::RelationKind::ManyToOne {
+                continue;
+            }
+            if !(field.flags.contains_key("required") || field.flags.contains_key("pk")) {
+                continue; // optional – can be inserted NULL first, breaks any cycle
+            }
+            let to = (
+                relation.target_namespace.clone(),
+                relation.target_table.clone(),
+            );
+            adjacency.entry(from.clone()).or_default().push(to.clone());
+            edges.push((from.clone(), to, field));
+        }
+    }
+
+    let mut reach_cache: HashMap<TableKey, HashSet<TableKey>> = HashMap::new();
+    for (from, to, field) in &edges {
+        if !reach(to, &adjacency, &mut reach_cache).contains(from) {
+            continue; // `to` never leads back to `from` – no cycle through this edge
+        }
+        let members = cycle_members(from, &adjacency, &mut reach_cache);
+        let names: Vec<&str> = members.iter().map(|(_, name)| name.as_str()).collect();
+        diags.push(Diagnostic::error(
+            field.file,
+            field.span,
+            format!(
+                "`required` foreign key `{}` closes a cycle among tables: {} \
+                 – no row in the cycle could ever be inserted first (docs/07)",
+                field.name,
+                names.join(", ")
+            ),
+        ));
+    }
+}
+
+/// Every node reachable from `start` by following one or more edges –
+/// includes `start` itself exactly when some path leads back to it (a
+/// cycle through `start`). Memoized because the same `to` is looked up
+/// once per field that targets it.
+fn reach(
+    start: &TableKey,
+    adjacency: &HashMap<TableKey, Vec<TableKey>>,
+    cache: &mut HashMap<TableKey, HashSet<TableKey>>,
+) -> HashSet<TableKey> {
+    if let Some(set) = cache.get(start) {
+        return set.clone();
+    }
+    let mut visited = HashSet::new();
+    let mut stack: Vec<TableKey> = adjacency.get(start).cloned().unwrap_or_default();
+    while let Some(node) = stack.pop() {
+        if visited.insert(node.clone()) {
+            if let Some(next) = adjacency.get(&node) {
+                stack.extend(next.iter().cloned());
+            }
+        }
+    }
+    cache.insert(start.clone(), visited.clone());
+    visited
+}
+
+/// The strongly-connected component `from` belongs to: `from` itself plus
+/// every node it can reach that can also reach back to it. Used only to
+/// name the cycle in a diagnostic – not full Tarjan/Kosaraju, since we only
+/// ever need this for nodes already known to sit on a cycle.
+fn cycle_members(
+    from: &TableKey,
+    adjacency: &HashMap<TableKey, Vec<TableKey>>,
+    cache: &mut HashMap<TableKey, HashSet<TableKey>>,
+) -> BTreeSet<TableKey> {
+    let forward = reach(from, adjacency, cache);
+    let mut members: BTreeSet<TableKey> = BTreeSet::new();
+    members.insert(from.clone());
+    for node in &forward {
+        if reach(node, adjacency, cache).contains(from) {
+            members.insert(node.clone());
+        }
+    }
+    members
 }
 
 fn resolve_named_type(

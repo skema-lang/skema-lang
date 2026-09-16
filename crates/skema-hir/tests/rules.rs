@@ -1540,3 +1540,107 @@ fn enum_is_unaffected_by_either_note_rule() {
     let (_, diags) = analyze_src(src);
     assert!(diags.is_empty(), "{diags:#?}");
 }
+
+// --- required-FK cycles (always-on, not `Lint`) -----------------------------
+
+#[test]
+fn two_table_required_cycle_is_rejected_under_draft_with_no_lint_block() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; a >A.id [required]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let msgs = messages(&diags);
+    let hits: Vec<&&str> = msgs
+        .iter()
+        .filter(|m| m.contains("closes a cycle among tables: A, B"))
+        .collect();
+    assert_eq!(
+        hits.len(),
+        2,
+        "one diagnostic per field that closes the cycle, not gated by `Lint`/`mode`: {diags:#?}"
+    );
+}
+
+#[test]
+fn two_table_required_cycle_is_rejected_under_strict_with_lint_block() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { unusedImport = warn; } }\nTable A { id int [pk]; b >B.id [required]; }\nTable B { id int [pk]; a >A.id [required]; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits = messages(&diags)
+        .iter()
+        .filter(|m| m.contains("closes a cycle among tables: A, B"))
+        .count();
+    assert_eq!(hits, 2, "{diags:#?}");
+}
+
+#[test]
+fn three_table_required_cycle_is_rejected() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; c >C.id [required]; }}\nTable C {{ id int [pk]; a >A.id [required]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let hits = messages(&diags)
+        .iter()
+        .filter(|m| m.contains("closes a cycle among tables: A, B, C"))
+        .count();
+    assert_eq!(hits, 3, "{diags:#?}");
+}
+
+#[test]
+fn self_referencing_required_foreign_key_is_rejected() {
+    let src =
+        format!("{HEADER}\nTable Employee {{ id int [pk]; manager >Employee.id [required]; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let hits = messages(&diags)
+        .iter()
+        .filter(|m| m.contains("closes a cycle among tables: Employee"))
+        .count();
+    assert_eq!(hits, 1, "{diags:#?}");
+}
+
+#[test]
+fn pk_flag_foreign_key_counts_as_required() {
+    // `b` carries `[pk]`, not `[required]` – `pk` implies `required` (docs/05,
+    // "pk implies required and unique") and must close the cycle just the same.
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [pk]; }}\nTable B {{ id int [pk]; a >A.id [required]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let msgs = messages(&diags);
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("foreign key `b`") && m.contains("A, B")),
+        "{diags:#?}"
+    );
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("foreign key `a`") && m.contains("A, B")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn noncircular_required_chain_is_not_flagged() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; c >C.id [required]; }}\nTable C {{ id int [pk]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn optional_link_breaks_the_cycle() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; a >A.id; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn back_reference_does_not_create_a_cycle_edge() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; bs <A.b; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}

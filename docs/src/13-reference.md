@@ -71,6 +71,8 @@ Full walkthrough: [01 — Language Basics](01-language-basics.md).
 
 No operator exists for many-to-many — write the junction table. Full explanation: [07 — Relationships](07-relationships.md).
 
+A cycle of `required`/`pk` `>`/`-` relationships is always an error, in every `mode` — [07, "No cycles of `required` foreign keys"](07-relationships.md#no-cycles-of-required-foreign-keys).
+
 ## Block quick reference
 
 | Block | Top-level? | Named? | Typical parents | Typical children |
