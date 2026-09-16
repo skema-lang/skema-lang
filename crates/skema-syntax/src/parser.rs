@@ -200,7 +200,7 @@ impl<'a> Parser<'a> {
     /// Is there a line break between the last consumed token and the
     /// current one? Answerable only because the stream is lossless: what
     /// lies between two tokens is exactly the slice between their spans.
-    fn line_break_before_current(&self) -> bool {
+    pub(crate) fn line_break_before_current(&self) -> bool {
         let from = self.prev_span().end as usize;
         let to = self.current().span.start as usize;
         self.src

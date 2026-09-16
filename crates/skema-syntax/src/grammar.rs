@@ -185,17 +185,48 @@ impl Parser<'_> {
         ItemKind::Use(Use { target })
     }
 
-    /// `mode = draft;`
+    /// `mode = draft;`, `fieldNaming = snake_case [error];`
     fn parse_setting(&mut self) -> ItemKind {
-        let Some(attr) = self.parse_attr() else {
+        let Some(mut attr) = self.parse_attr() else {
             self.recover_item();
             return ItemKind::Error;
         };
         if attr.value.is_none() {
             self.error(attr.span, "a value is missing here: `key = value;`");
         }
+        if self.at(T::LBracket) {
+            attr.severity_override = self.parse_severity_override();
+        }
         self.expect_terminator();
         ItemKind::Setting(attr)
+    }
+
+    /// `[error]` on a setting — a severity override, not a flag list: one
+    /// bare word, no comma (task 67 gives it meaning; here it's grammar
+    /// only, legal after any setting in any block, `docs/13`).
+    fn parse_severity_override(&mut self) -> Option<Ident> {
+        let start = self.current().span;
+        self.bump(); // `[`
+        if self.at(T::Ident) && self.nth(1) == T::RBracket {
+            let word = self.ident();
+            self.bump(); // `]`
+            return word;
+        }
+        // Not exactly one bare word: skip to `]`, a safe stopping point, or
+        // a fresh line — the same emergency brake as `recover_item`.
+        while !matches!(
+            self.current().kind,
+            T::RBracket | T::Semi | T::RBrace | T::Eof
+        ) && !self.line_break_before_current()
+        {
+            self.bump();
+        }
+        self.error(
+            start.cover(self.prev_span()),
+            "expected exactly one identifier, e.g. `[error]`",
+        );
+        self.eat(T::RBracket);
+        None
     }
 
     /// `Table Customer { … }`, `Style @table { … }`, `Table shop.User;`
@@ -410,6 +441,7 @@ impl Parser<'_> {
         Some(Attr {
             key,
             value,
+            severity_override: None,
             span: start.cover(self.prev_span()),
         })
     }
@@ -1027,6 +1059,114 @@ mod tests {
             1,
             "a missing `;` between two assignments must be reported"
         );
+    }
+
+    // -- Severity override -----------------------------------------------------
+
+    /// `docs/13`, "Lint severities": grammar-legal after any setting, in
+    /// any block — task 67 restricts where it's *meaningful*.
+    #[test]
+    fn severity_override_captured_on_a_setting() {
+        let text = |src: &str| {
+            let b = block(src);
+            let ItemKind::Setting(a) = &b.items[0].kind else {
+                panic!("expected an assignment");
+            };
+            a.severity_override.as_ref().map(|i| i.text.clone())
+        };
+        assert_eq!(
+            text("Lint { fieldNaming = snake_case [error]; }"),
+            Some("error".to_owned())
+        );
+        assert_eq!(
+            text(r#"Meta { author = "anna" [warn]; }"#),
+            Some("warn".to_owned())
+        );
+    }
+
+    #[test]
+    fn severity_override_absent_without_brackets() {
+        let b = block("Meta { author = \"anna\"; }");
+        let ItemKind::Setting(a) = &b.items[0].kind else {
+            panic!("expected an assignment");
+        };
+        assert!(a.severity_override.is_none());
+    }
+
+    /// A field's `[flags]` and an index entry's `[flags]` are a different
+    /// grammar position — a bracket there already means something else and
+    /// must stay untouched by this feature.
+    #[test]
+    fn field_and_index_flags_leave_severity_override_none() {
+        let t = block(
+            r#"
+            Table Customer {
+              email varchar [unique];
+              (email) [unique];
+            }
+        "#,
+        );
+        let ItemKind::Field(f) = &t.items[0].kind else {
+            panic!("expected a field");
+        };
+        assert!(f.flags[0].severity_override.is_none());
+        assert_eq!(f.flags[0].key.text, "unique");
+
+        let ItemKind::IndexEntry(idx) = &t.items[1].kind else {
+            panic!("expected an index entry");
+        };
+        assert!(idx.flags[0].severity_override.is_none());
+    }
+
+    #[test]
+    fn malformed_severity_override_recovers() {
+        for src in [
+            "Lint { fieldNaming = snake_case []; }",
+            "Lint { fieldNaming = snake_case [a, b]; }",
+            "Lint { fieldNaming = snake_case [1]; }",
+        ] {
+            let (file, messages) = parse(src);
+            assert!(!messages.is_empty(), "{src:?} should be reported");
+            let lint = file.blocks().next().expect("Lint block");
+            let ItemKind::Setting(a) = &lint.items[0].kind else {
+                panic!("expected an assignment in {src:?}");
+            };
+            assert!(
+                a.severity_override.is_none(),
+                "malformed override must not be captured in {src:?}"
+            );
+        }
+    }
+
+    /// An unterminated `[` must not swallow the next, well-formed setting.
+    #[test]
+    fn unterminated_severity_override_does_not_swallow_the_next_setting() {
+        let (file, messages) = parse(
+            r#"
+            Lint {
+              fieldNaming = snake_case [
+              tableNaming = PascalCase;
+            }
+        "#,
+        );
+        assert!(
+            !messages.is_empty(),
+            "the unterminated `[` must be reported"
+        );
+        let lint = file.blocks().next().expect("Lint block");
+        let keys: Vec<_> = lint
+            .items
+            .iter()
+            .filter_map(|i| match &i.kind {
+                ItemKind::Setting(a) => Some(a.key.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys, ["fieldNaming", "tableNaming"]);
+        let ItemKind::Setting(second) = &lint.items[1].kind else {
+            panic!("expected the second setting");
+        };
+        assert!(second.value.is_some(), "tableNaming must keep its value");
     }
 
     // -- Error handling -----------------------------------------------------

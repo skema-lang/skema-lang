@@ -170,6 +170,12 @@ pub enum ValueKind {
 pub struct Attr {
     pub key: Key,
     pub value: Option<Value>,
+    /// `key = value [error]` — a per-setting severity override. Set only
+    /// when this `Attr` came from a plain setting (`parse_setting`); a
+    /// field's `[flags]`, an index entry's `[flags]`, and a `Datatype`
+    /// parameter always leave it `None`, since a bracket already means
+    /// something else there.
+    pub severity_override: Option<Ident>,
     pub span: Span,
 }
 
