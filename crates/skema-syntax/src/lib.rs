@@ -24,6 +24,7 @@
 //! | `grammar` | the language's rules (*what*) |
 //! | `diagnostic` | messages with a location |
 //! | `dump` | tree as text, for inspection |
+//! | `format` | reindents and normalizes blank lines, layout only |
 //!
 //! # Parse permissively, validate strictly
 //!
@@ -58,6 +59,7 @@
 pub mod ast;
 mod diagnostic;
 mod dump;
+mod format;
 mod grammar;
 mod lexer;
 mod parser;
@@ -67,6 +69,7 @@ mod token;
 
 pub use diagnostic::{Diagnostic, Severity};
 pub use dump::dump;
+pub use format::format;
 pub use lexer::{Lexer, tokenize};
 pub use parser::Parser;
 pub use semantic::{SemanticKind, classify};

@@ -37,7 +37,7 @@ echo 'direnv hook fish | source' >> ~/.config/fish/config.fish
 
 ## The three tools
 
-### CLI – `skema check` / `skema export` / `skema diff`
+### CLI – `skema check` / `skema export` / `skema diff` / `skema fmt`
 
 ```bash
 cargo run -p skema-cli -- check examples/generic/project.skema
@@ -47,6 +47,8 @@ cargo run -p skema-cli -- export --json --locations examples/generic/project.ske
 cargo run -p skema-cli -- diff examples/diff/old.skema examples/diff/new.skema
 cargo run -p skema-cli -- diff --json examples/diff/old.skema examples/diff/new.skema
 cargo run -p skema-cli -- diff --fail-on-breaking examples/diff/old.skema examples/diff/new.skema
+cargo run -p skema-cli -- fmt examples/generic/project.skema
+cargo run -p skema-cli -- fmt --check examples/generic/project.skema
 ```
 
 `check` loads the root file plus everything it reaches via `import` (project
@@ -74,7 +76,15 @@ Table Shipment: table added
 `--fail-on-breaking` exits non-zero when any entry is breaking; without it,
 `diff` is report-only and always exits zero.
 
-All three emit `skema-api`'s types
+`fmt` reindents a file to 2 spaces per `{`/`}` depth and collapses runs of
+blank lines to one, working straight off the lexer's token stream
+(`skema-syntax::format`) rather than the AST — so every comment, every
+declaration, and their relative order stay exactly where the author put
+them; it never reorders anything. Rewrites the file in place by default;
+`--check` writes nothing and exits non-zero if the file isn't already
+formatted, for a CI gate.
+
+All three of `check`/`export`/`diff` emit `skema-api`'s types
 ([`crates/skema-api/src/dto.rs`](crates/skema-api/src/dto.rs),
 [`crates/skema-api/src/diff.rs`](crates/skema-api/src/diff.rs)), the same
 ones the language server and the browser editor answer with. `--locations`
@@ -141,7 +151,7 @@ crates/
   skema-hir/      ✅ Name resolution, rule checking, resolved model
   skema-loader/   ✅ Loads a root file plus its import graph from disk, and analyzes it
   skema-api/      ✅ Editor-facing services: resolved model, Meta offsets, Style blocks, highlighting
-  skema-cli/      ✅ Binary `skema`: check / export --json
+  skema-cli/      ✅ Binary `skema`: check / export --json / diff / fmt
   skema-lsp/      ✅ Binary `skema-lsp`: language server (stdio)
   skema-py/       ✅ pyo3 bindings over skema-loader: check() / export()
   skema-wasm/     ✅ wasm-bindgen wrapper around skema-api

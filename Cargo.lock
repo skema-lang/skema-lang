@@ -735,6 +735,7 @@ dependencies = [
  "serde_json",
  "skema-api",
  "skema-loader",
+ "skema-syntax",
  "tempfile",
 ]
 

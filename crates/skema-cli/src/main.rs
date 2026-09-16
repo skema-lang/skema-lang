@@ -4,6 +4,7 @@
 //! skema check main.skema
 //! skema export --json main.skema
 //! skema diff old.skema new.skema
+//! skema fmt main.skema
 //! ```
 //!
 //! The work happens in `skema-loader`: it loads the import graph and returns
@@ -13,6 +14,7 @@
 
 mod report;
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -61,6 +63,16 @@ enum Command {
         #[arg(long)]
         fail_on_breaking: bool,
     },
+    /// Reindents a file and normalizes its blank lines — layout only, never
+    /// reorders a declaration or touches a comment's content or position
+    /// (`skema-syntax::format`). Rewrites the file in place by default.
+    Fmt {
+        file: PathBuf,
+        /// Don't write the file; exit non-zero and report it if formatting
+        /// would change it, for a CI gate (mirrors `cargo fmt --check`).
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -77,6 +89,7 @@ fn main() -> ExitCode {
             json,
             fail_on_breaking,
         } => run_diff(&old, &new, json, fail_on_breaking),
+        Command::Fmt { file, check } => run_fmt(&file, check),
     }
 }
 
@@ -162,6 +175,37 @@ fn run_diff(old: &Path, new: &Path, json: bool, fail_on_breaking: bool) -> ExitC
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// `--check` never writes; a plain run rewrites the file only when
+/// formatting actually changes it, so an already-formatted file's mtime is
+/// left alone.
+fn run_fmt(path: &Path, check: bool) -> ExitCode {
+    let original = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let formatted = skema_syntax::format(&original);
+    let unchanged = formatted == original;
+
+    if check {
+        if !unchanged {
+            println!("would reformat {}", path.display());
+        }
+        return exit_code(unchanged);
+    }
+
+    if !unchanged {
+        if let Err(e) = fs::write(path, &formatted) {
+            eprintln!("{}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+    }
+    ExitCode::SUCCESS
 }
 
 /// Loads and checks one side of a `diff`, exactly like `run_check` – a model
