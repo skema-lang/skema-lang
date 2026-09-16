@@ -2,17 +2,22 @@
 
 use std::collections::HashMap;
 
+use skema_syntax::Severity;
 use skema_syntax::ast;
 
-use super::Ctx;
+use super::project::read_word;
+use super::{Ctx, Mode, ProjectSettings};
 use crate::model;
 use crate::{Diagnostic, FileId};
 
 pub(crate) fn check(
     ctx: &Ctx<'_>,
+    project: Option<&ProjectSettings<'_>>,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<model::Group> {
+    let dangling_ref_severity = dangling_ref_severity(project, diags);
+
     // Every declaration may belong to at most one group – for that we keep
     // track of who claimed it first.
     let mut claimed: HashMap<(FileId, String), String> = HashMap::new();
@@ -41,8 +46,9 @@ pub(crate) fn check(
                 }
 
                 let Some(decl) = ctx.lookup_decl(owner, name) else {
-                    diags.push(Diagnostic::error(
+                    diags.push(Diagnostic::new(
                         file.id,
+                        dangling_ref_severity,
                         name_span,
                         format!("unknown declaration `{name}`"),
                     ));
@@ -104,4 +110,38 @@ pub(crate) fn check(
     }
 
     out
+}
+
+/// `Lint.danglingRef`'s configured severity (`docs/04`, "Other rules") –
+/// same opt-in shape as every other `Lint` rule: applies only under
+/// `mode = strict` and only when the key is written, otherwise the
+/// unresolved-reference error stays unconditional.
+fn dangling_ref_severity(
+    project: Option<&ProjectSettings<'_>>,
+    diags: &mut Vec<Diagnostic>,
+) -> Severity {
+    let Some(project) = project else {
+        return Severity::Error;
+    };
+    if project.mode != Mode::Strict {
+        return Severity::Error;
+    }
+    let Some(lint) = project.lint else {
+        return Severity::Error;
+    };
+    let Some((word, span)) = read_word(lint, "danglingRef") else {
+        return Severity::Error;
+    };
+    match word {
+        "warn" => Severity::Warning,
+        "error" => Severity::Error,
+        other => {
+            diags.push(Diagnostic::error(
+                project.file,
+                span,
+                format!("unknown severity `{other}` – allowed: warn, error"),
+            ));
+            Severity::Error
+        }
+    }
 }

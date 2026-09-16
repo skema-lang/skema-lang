@@ -135,6 +135,54 @@ fn duplicate_group_membership_is_rejected() {
 }
 
 #[test]
+fn dangling_group_ref_is_an_error_by_default() {
+    let src = format!("{HEADER}\nGroup G {{ Table Ghost; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown declaration"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_group_ref_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nGroup G { Table Ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown declaration"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_group_ref_stays_an_error_when_explicitly_configured() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = error; } }\nGroup G { Table Ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown declaration"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_group_ref_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nGroup G { Table Ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown declaration"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
 fn partial_field_collision_is_rejected() {
     let src =
         format!("{HEADER}\nPartial P {{ id int [pk]; }}\nTable T {{ use P; id uuid [pk]; }}\n");

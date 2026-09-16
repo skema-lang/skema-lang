@@ -97,7 +97,7 @@ pub(crate) fn run(
 
     let ctx = Ctx { facts, namespaces };
 
-    let groups = group::check(&ctx, &mut links, &mut diags);
+    let groups = group::check(&ctx, project.as_ref(), &mut links, &mut diags);
     let (tables, enums) = resolve::run(&ctx, project.as_ref(), &mut links, &mut diags);
 
     lint::check(&ctx, project.as_ref(), &mut diags);
