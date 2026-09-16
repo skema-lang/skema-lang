@@ -291,6 +291,367 @@ fn dangling_group_ref_ignores_configured_severity_under_draft() {
     assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
 }
 
+// ===========================================================================
+// `Lint.danglingRef` on the other reference kinds `resolve.rs` resolves
+// (task 90) – same `dangling_ref_severity` helper as `Group`'s tests above.
+// ===========================================================================
+
+#[test]
+fn dangling_use_target_is_an_error_by_default() {
+    let src = format!("{HEADER}\nTable T {{ use Ghost; id uuid [pk]; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown `Partial` `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_use_target_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nTable T { use Ghost; id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown `Partial` `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_use_target_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nTable T { use Ghost; id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown `Partial` `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_table_is_an_error_by_default() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; customer >Ghost.id; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown table `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_table_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nTable T { id uuid [pk]; customer >Ghost.id; }\n";
+    let (model, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown table `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+
+    // Owner-decided model behaviour (task 90): downgrading to `warn` keeps
+    // the field, untyped and relation-less, and blocks nothing.
+    let table = model.tables.iter().find(|t| t.name == "T").unwrap();
+    let field = table.fields.iter().find(|f| f.name == "customer").unwrap();
+    assert_eq!(field.ty.name, "unknown");
+    assert!(field.relation.is_none());
+    assert!(
+        !diags
+            .iter()
+            .any(|d| d.severity == skema_hir::Severity::Error),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn dangling_relation_table_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nTable T { id int [pk]; customer >Ghost.id; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown table `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_field_is_an_error_by_default() {
+    let src = format!(
+        "{HEADER}\nTable Customer {{ id int [pk]; }}\nTable Order {{ id int [pk]; customer >Customer.ghost; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("`Customer` has no field `ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_field_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nTable Customer { id uuid [pk]; }\nTable Order { id uuid [pk]; customer >Customer.ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("`Customer` has no field `ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_relation_field_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("`Customer` has no field `ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_type_name_is_an_error_by_default() {
+    let src = format!("{HEADER}\nTable T {{ x ghosttype; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown type `ghosttype`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_type_name_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nTable T { x ghosttype; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown type `ghosttype`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_type_name_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nTable T { x ghosttype; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown type `ghosttype`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_type_name_under_a_dialect_is_also_governed() {
+    // The dialect-specific "unknown type" message (`resolve_named_type`'s
+    // other `None` arm) is the same governed diagnostic under a different
+    // wording – covers both variants task 90 lists under kind 5.
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; Lint { danglingRef = warn; } }\nTable T { x ghosttype; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown type `ghosttype`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_use_wrong_kind_is_an_error_by_default() {
+    let src = format!(
+        "{HEADER}\nEnum Status {{ Field {{ type = string; }} draft; }}\nTable T {{ use Status; id int [pk]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("expects a `Partial`, `Status` is a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_use_wrong_kind_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { use Status; id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("expects a `Partial`, `Status` is a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_use_wrong_kind_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { use Status; id int [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("expects a `Partial`, `Status` is a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_wrong_kind_is_an_error_by_default() {
+    let src = format!(
+        "{HEADER}\nEnum Status {{ Field {{ type = string; }} draft; }}\nTable T {{ id int [pk]; x >Status.draft; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`Status` is not a `Table`, but a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_wrong_kind_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { id uuid [pk]; x >Status.draft; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`Status` is not a `Table`, but a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_relation_wrong_kind_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { id int [pk]; x >Status.draft; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`Status` is not a `Table`, but a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn use_of_a_namespace_without_a_partial_is_a_hard_error() {
+    // `use ns;` where `ns` resolves to an imported namespace but no
+    // `Partial` name follows it – previously silent (`Ctx::resolve_decl_path`
+    // returning `None`), never governed by `danglingRef` (task 90).
+    let imported = "spec 1;\nDocument ns { }\nPartial P { id uuid [pk]; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nTable T { use ns; other uuid; }\n";
+
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`use` expects a `Partial` after namespace `ns`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn use_of_a_namespace_without_a_partial_stays_an_error_under_warn() {
+    let imported = "spec 1;\nDocument ns { }\nPartial P { id uuid [pk]; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nimport \"./a.skema\";\nTable T { use ns; other uuid; }\n";
+
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`use` expects a `Partial` after namespace `ns`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn cycle_in_use_still_errors_under_warn() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nPartial A { use B; }\nPartial B { use A; }\nTable T { use A; id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let cycles: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("cycle in `use`"))
+        .collect();
+    assert!(!cycles.is_empty(), "{diags:#?}");
+    assert!(
+        cycles
+            .iter()
+            .all(|d| d.severity == skema_hir::Severity::Error),
+        "{diags:#?}"
+    );
+}
+
 #[test]
 fn partial_field_collision_is_rejected() {
     let src =

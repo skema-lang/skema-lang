@@ -49,7 +49,7 @@ fieldNaming = snake_case [error];
 
 | Rule | Governs |
 |---|---|
-| `danglingRef` | a reference (for example, in a `Group`) pointing at a nonexistent declaration |
+| `danglingRef` | a reference pointing at an unknown or wrong-kind declaration, relation field, or type name (a `Group` member, a `use` target, a relationship's table/field, or a field's type) |
 | `unusedImport` | an `import` whose namespace is never referenced |
 | `requirePrimaryKey` | a `Table` with no `pk` field |
 | `requireForeignKeyIndex` | a foreign key column (`>`/`-`) with no covering `[unique]`/`[pk]` or leading `Index` entry |

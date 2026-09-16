@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use skema_syntax::Severity;
 use skema_syntax::Span;
 use skema_syntax::ast::{self, BlockKind, RelationOp, ValueKind};
 
@@ -20,6 +21,9 @@ struct Env<'c, 'a> {
     ctx: &'c Ctx<'a>,
     dialect: Dialect,
     mode: Mode,
+    /// `Lint.danglingRef`'s configured severity, computed once for the whole
+    /// analysis (`rules::dangling_ref_severity`) – shared with `group`.
+    dangling_ref_severity: Severity,
 }
 
 /// The fields and indexes of a `Table` or a `Partial`, after every `use`
@@ -41,6 +45,7 @@ struct Flattened<'a> {
 pub(crate) fn run<'a>(
     ctx: &Ctx<'a>,
     project: Option<&ProjectSettings<'a>>,
+    dangling_ref_severity: Severity,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> (Vec<model::Table>, Vec<model::Enum>) {
@@ -48,6 +53,7 @@ pub(crate) fn run<'a>(
         ctx,
         dialect: project.map_or(Dialect::Generic, |p| p.dialect),
         mode: project.map_or(Mode::Draft, |p| p.mode),
+        dangling_ref_severity,
     };
     let project_database = project.and_then(|p| p.database);
 
@@ -56,7 +62,8 @@ pub(crate) fn run<'a>(
         for (&name, decl) in &file.declarations {
             if matches!(decl.kind, BlockKind::Table | BlockKind::Partial) {
                 let mut stack = Vec::new();
-                let flat = flatten_items(ctx, file.id, &decl.block.items, &mut stack, links, diags);
+                let flat =
+                    flatten_items(&env, file.id, &decl.block.items, &mut stack, links, diags);
                 flattened.insert((file.id, name), flat);
             }
         }
@@ -123,7 +130,7 @@ pub(crate) fn run<'a>(
 // ===========================================================================
 
 fn flatten_partial<'a>(
-    ctx: &Ctx<'a>,
+    env: &Env<'_, 'a>,
     owner: FileId,
     name: &str,
     name_span: Span,
@@ -140,17 +147,19 @@ fn flatten_partial<'a>(
         ));
         return Flattened::default();
     }
-    let Some(decl) = ctx.lookup_decl(owner, name) else {
-        diags.push(Diagnostic::error(
+    let Some(decl) = env.ctx.lookup_decl(owner, name) else {
+        diags.push(Diagnostic::new(
             owner,
+            env.dangling_ref_severity,
             name_span,
             format!("unknown `Partial` `{name}`"),
         ));
         return Flattened::default();
     };
     if decl.kind != BlockKind::Partial {
-        diags.push(Diagnostic::error(
+        diags.push(Diagnostic::new(
             owner,
+            env.dangling_ref_severity,
             name_span,
             format!(
                 "`use` expects a `Partial`, `{name}` is a `{}`",
@@ -161,19 +170,20 @@ fn flatten_partial<'a>(
     }
 
     stack.push(key);
-    let result = flatten_items(ctx, owner, &decl.block.items, stack, links, diags);
+    let result = flatten_items(env, owner, &decl.block.items, stack, links, diags);
     stack.pop();
     result
 }
 
 fn flatten_items<'a>(
-    ctx: &Ctx<'a>,
+    env: &Env<'_, 'a>,
     owner: FileId,
     items: &'a [ast::Item],
     stack: &mut Vec<(FileId, String)>,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Flattened<'a> {
+    let ctx = env.ctx;
     let mut out = Flattened::default();
     for item in items {
         match &item.kind {
@@ -181,6 +191,19 @@ fn flatten_items<'a>(
                 let Some((target_owner, name, name_span, rest)) =
                     ctx.resolve_decl_path(owner, &u.target)
                 else {
+                    // A namespace with nothing after it (`use ns;`) – the only
+                    // other `None` case, an empty path, cannot occur here.
+                    let namespace = u
+                        .target
+                        .segments
+                        .first()
+                        .map(|s| s.text.as_str())
+                        .unwrap_or_default();
+                    diags.push(Diagnostic::error(
+                        owner,
+                        u.target.span,
+                        format!("`use` expects a `Partial` after namespace `{namespace}`"),
+                    ));
                     continue;
                 };
                 if !rest.is_empty() {
@@ -201,7 +224,7 @@ fn flatten_items<'a>(
                     }
                 }
                 let inner =
-                    flatten_partial(ctx, target_owner, name, name_span, stack, links, diags);
+                    flatten_partial(env, target_owner, name, name_span, stack, links, diags);
                 for field in inner.fields {
                     push_field(&mut out, field, diags);
                 }
@@ -608,16 +631,18 @@ fn resolve_relation<'a>(
     let field_name = rest[0].text.as_str();
 
     let Some(decl) = env.ctx.lookup_decl(table_owner, table_name) else {
-        diags.push(Diagnostic::error(
+        diags.push(Diagnostic::new(
             owner,
+            env.dangling_ref_severity,
             table_span,
             format!("unknown table `{table_name}`"),
         ));
         return None;
     };
     if decl.kind != BlockKind::Table {
-        diags.push(Diagnostic::error(
+        diags.push(Diagnostic::new(
             owner,
+            env.dangling_ref_severity,
             table_span,
             format!(
                 "`{table_name}` is not a `Table`, but a `{}`",
@@ -638,8 +663,9 @@ fn resolve_relation<'a>(
             .find(|(_, _, f)| f.name.text == field_name)
     });
     let Some(&(field_owner, _, field)) = field_decl else {
-        diags.push(Diagnostic::error(
+        diags.push(Diagnostic::new(
             owner,
+            env.dangling_ref_severity,
             rest[0].span,
             format!("`{table_name}` has no field `{field_name}`"),
         ));
@@ -945,8 +971,9 @@ fn resolve_named_type(
             }
         }
         None if env.dialect == Dialect::Generic => {
-            diags.push(Diagnostic::error(
+            diags.push(Diagnostic::new(
                 owner,
+                env.dangling_ref_severity,
                 span,
                 format!(
                     "unknown type `{dotted}` – allowed are the built-in types, a custom \
@@ -960,8 +987,9 @@ fn resolve_named_type(
         }
         None => {
             let engine = env.dialect.engine_name().unwrap_or("this dialect");
-            diags.push(Diagnostic::error(
+            diags.push(Diagnostic::new(
                 owner,
+                env.dangling_ref_severity,
                 span,
                 format!(
                     "unknown type `{dotted}` – allowed are the built-in types, `{engine}`'s own \

@@ -10,6 +10,7 @@ mod project;
 mod resolve;
 mod style;
 
+use skema_syntax::Severity;
 use skema_syntax::Span;
 use skema_syntax::ast;
 
@@ -98,8 +99,16 @@ pub(crate) fn run(
 
     let ctx = Ctx { facts, namespaces };
 
-    let groups = group::check(&ctx, project.as_ref(), &mut links, &mut diags);
-    let (tables, enums) = resolve::run(&ctx, project.as_ref(), &mut links, &mut diags);
+    let dangling_ref_severity = dangling_ref_severity(project.as_ref(), &mut diags);
+
+    let groups = group::check(&ctx, dangling_ref_severity, &mut links, &mut diags);
+    let (tables, enums) = resolve::run(
+        &ctx,
+        project.as_ref(),
+        dangling_ref_severity,
+        &mut links,
+        &mut diags,
+    );
 
     // Always-on, unlike `lint::check` below – not a style choice a team can
     // opt out of (`decisions.md`, "Lint catalog expansion (tasks 66–70)").
@@ -173,6 +182,42 @@ impl OracleIdentifierLength {
         match self {
             Self::Standard => crate::catalog::ORACLEDB_IDENTIFIER_LIMIT_STANDARD,
             Self::Extended => crate::catalog::ORACLEDB_IDENTIFIER_LIMIT_EXTENDED,
+        }
+    }
+}
+
+/// `Lint.danglingRef`'s configured severity (`docs/04`, "Other rules") – same
+/// opt-in shape as every other `Lint` rule: applies only under `mode =
+/// strict` and only when the key is written, otherwise every dangling
+/// reference stays an unconditional `Error`. Governs every unresolved- or
+/// wrong-kind-reference diagnostic in `group` and `resolve` (task 90);
+/// computed once per analysis so they all agree.
+fn dangling_ref_severity(
+    project: Option<&ProjectSettings<'_>>,
+    diags: &mut Vec<Diagnostic>,
+) -> Severity {
+    let Some(project) = project else {
+        return Severity::Error;
+    };
+    if project.mode != Mode::Strict {
+        return Severity::Error;
+    }
+    let Some(lint) = project.lint else {
+        return Severity::Error;
+    };
+    let Some((word, span)) = project::read_word(lint, "danglingRef") else {
+        return Severity::Error;
+    };
+    match word {
+        "warn" => Severity::Warning,
+        "error" => Severity::Error,
+        other => {
+            diags.push(Diagnostic::error(
+                project.file,
+                span,
+                format!("unknown severity `{other}` – allowed: warn, error"),
+            ));
+            Severity::Error
         }
     }
 }
