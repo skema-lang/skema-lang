@@ -14,6 +14,7 @@ crate-type = ["cdylib", "rlib"]
 # declarations and their wasm ABI; without it this crate could not return
 # them across the boundary at all.
 skema-api = { workspace = true, features = ["typescript"] }
+skema-syntax.workspace = true
 
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
