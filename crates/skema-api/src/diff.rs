@@ -36,6 +36,10 @@ use crate::dto::{ExportedEnum, ExportedField, ExportedIndex, ExportedModel, Expo
 pub struct SchemaDiff {
     pub tables: Vec<TableDiff>,
     pub enums: Vec<EnumDiff>,
+    /// True iff any entry below is `breaking` – computed once here so
+    /// callers (task 74's `--fail-on-breaking`) never re-derive it by
+    /// scanning entries themselves.
+    pub has_breaking_changes: bool,
 }
 
 /// One change affecting one table – either the table itself (added /
@@ -49,6 +53,8 @@ pub struct TableDiff {
     pub namespace: String,
     pub name: String,
     pub change: TableChange,
+    /// Per the taxonomy in [task 73](../../../../brain/tasks/73-breaking-change-classification.md).
+    pub breaking: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -117,6 +123,7 @@ pub struct EnumDiff {
     pub namespace: String,
     pub name: String,
     pub change: EnumChange,
+    pub breaking: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -138,10 +145,45 @@ fn table_key(t: &ExportedTable) -> TableKey {
 }
 
 pub fn diff_models(old: &ExportedModel, new: &ExportedModel) -> SchemaDiff {
+    let tables = diff_tables(&old.tables, &new.tables);
+    let enums = diff_enums(&old.enums, &new.enums);
+    let has_breaking_changes =
+        tables.iter().any(|t| t.breaking) || enums.iter().any(|e| e.breaking);
     SchemaDiff {
-        tables: diff_tables(&old.tables, &new.tables),
-        enums: diff_enums(&old.enums, &new.enums),
+        tables,
+        enums,
+        has_breaking_changes,
     }
+}
+
+/// Breaking-change taxonomy (owner-confirmed, `brain/decisions.md` "Schema
+/// diff & migrations"; task 73). `ColumnAdded` is the only variant that
+/// needs the new side's field flags, since a nullable or defaulted column
+/// added is safe but a required-with-no-default one is not.
+fn is_table_change_breaking(
+    change: &TableChange,
+    new_fields: &HashMap<&str, &ExportedField>,
+) -> bool {
+    match change {
+        TableChange::Dropped
+        | TableChange::ColumnDropped { .. }
+        | TableChange::ColumnTypeChanged { .. }
+        | TableChange::ColumnNewlyRequired { .. }
+        | TableChange::ColumnNewlyUniqueOrPk { .. }
+        | TableChange::RelationRemoved { .. } => true,
+        TableChange::Added
+        | TableChange::Renamed { .. }
+        | TableChange::RelationAdded { .. }
+        | TableChange::IndexAdded { .. }
+        | TableChange::IndexRemoved { .. } => false,
+        TableChange::ColumnAdded { column } => new_fields.get(column.as_str()).is_some_and(|f| {
+            (has_flag(f, "required") || has_flag(f, "pk")) && !has_flag(f, "default")
+        }),
+    }
+}
+
+fn is_enum_change_breaking(change: &EnumChange) -> bool {
+    matches!(change, EnumChange::EntryRemoved { .. })
 }
 
 fn diff_tables(old: &[ExportedTable], new: &[ExportedTable]) -> Vec<TableDiff> {
@@ -177,6 +219,7 @@ fn diff_tables(old: &[ExportedTable], new: &[ExportedTable]) -> Vec<TableDiff> {
                         change: TableChange::Renamed {
                             from: from_name.clone(),
                         },
+                        breaking: false,
                     });
                     entries.extend(diff_matched_table(old_table, new_table));
                     continue;
@@ -188,6 +231,7 @@ fn diff_tables(old: &[ExportedTable], new: &[ExportedTable]) -> Vec<TableDiff> {
             namespace: new_table.namespace.clone(),
             name: new_table.name.clone(),
             change: TableChange::Added,
+            breaking: false,
         });
     }
 
@@ -200,6 +244,7 @@ fn diff_tables(old: &[ExportedTable], new: &[ExportedTable]) -> Vec<TableDiff> {
             namespace: old_table.namespace.clone(),
             name: old_table.name.clone(),
             change: TableChange::Dropped,
+            breaking: true,
         });
     }
 
@@ -213,13 +258,19 @@ fn diff_tables(old: &[ExportedTable], new: &[ExportedTable]) -> Vec<TableDiff> {
 fn diff_matched_table(old: &ExportedTable, new: &ExportedTable) -> Vec<TableDiff> {
     let namespace = new.namespace.clone();
     let name = new.name.clone();
+    let new_by_name: HashMap<&str, &ExportedField> =
+        new.fields.iter().map(|f| (f.name.as_str(), f)).collect();
     diff_columns_and_relations(&old.fields, &new.fields)
         .into_iter()
         .chain(diff_indexes(&old.indexes, &new.indexes))
-        .map(|change| TableDiff {
-            namespace: namespace.clone(),
-            name: name.clone(),
-            change,
+        .map(|change| {
+            let breaking = is_table_change_breaking(&change, &new_by_name);
+            TableDiff {
+                namespace: namespace.clone(),
+                name: name.clone(),
+                change,
+                breaking,
+            }
         })
         .collect()
 }
@@ -387,23 +438,29 @@ fn diff_enums(old: &[ExportedEnum], new: &[ExportedEnum]) -> Vec<EnumDiff> {
 
         for entry in &new_enum.entries {
             if !old_names.contains(&entry.name.as_str()) {
+                let change = EnumChange::EntryAdded {
+                    entry: entry.name.clone(),
+                };
+                let breaking = is_enum_change_breaking(&change);
                 entries.push(EnumDiff {
                     namespace: new_enum.namespace.clone(),
                     name: new_enum.name.clone(),
-                    change: EnumChange::EntryAdded {
-                        entry: entry.name.clone(),
-                    },
+                    change,
+                    breaking,
                 });
             }
         }
         for entry in &old_enum.entries {
             if !new_names.contains(&entry.name.as_str()) {
+                let change = EnumChange::EntryRemoved {
+                    entry: entry.name.clone(),
+                };
+                let breaking = is_enum_change_breaking(&change);
                 entries.push(EnumDiff {
                     namespace: new_enum.namespace.clone(),
                     name: new_enum.name.clone(),
-                    change: EnumChange::EntryRemoved {
-                        entry: entry.name.clone(),
-                    },
+                    change,
+                    breaking,
                 });
             }
         }
@@ -509,6 +566,7 @@ mod tests {
         let d = diff(body, body);
         assert!(d.tables.is_empty());
         assert!(d.enums.is_empty());
+        assert!(!d.has_breaking_changes);
     }
 
     #[test]
@@ -520,6 +578,8 @@ mod tests {
         assert_eq!(d.tables.len(), 1);
         assert_eq!(d.tables[0].name, "U");
         assert!(matches!(d.tables[0].change, TableChange::Added));
+        assert!(!d.tables[0].breaking);
+        assert!(!d.has_breaking_changes);
     }
 
     #[test]
@@ -531,6 +591,8 @@ mod tests {
         assert_eq!(d.tables.len(), 1);
         assert_eq!(d.tables[0].name, "U");
         assert!(matches!(d.tables[0].change, TableChange::Dropped));
+        assert!(d.tables[0].breaking);
+        assert!(d.has_breaking_changes);
     }
 
     #[test]
@@ -548,6 +610,8 @@ mod tests {
         assert!(matches!(&renamed.change, TableChange::Renamed { from } if from == "T"));
         // No separate add/drop alongside the rename.
         assert_eq!(d.tables.len(), 1);
+        assert!(!renamed.breaking);
+        assert!(!d.has_breaking_changes);
     }
 
     #[test]
@@ -561,10 +625,32 @@ mod tests {
         assert_eq!(d.tables.len(), 1);
         assert_eq!(d.tables[0].name, "U");
         assert!(matches!(d.tables[0].change, TableChange::Added));
+        assert!(!d.tables[0].breaking);
     }
 
     #[test]
-    fn a_new_column_is_added() {
+    fn a_table_rename_with_no_moved_from_match_reports_as_a_breaking_drop_plus_a_nonbreaking_add() {
+        // No `Meta.movedFrom` link at all: "T" simply disappears and "U"
+        // simply appears, same as an unrelated drop and add.
+        let d = diff("Table T { id int [pk]; }\n", "Table U { id int [pk]; }\n");
+        assert_eq!(d.tables.len(), 2);
+        let dropped = d
+            .tables
+            .iter()
+            .find(|t| matches!(t.change, TableChange::Dropped))
+            .expect("a dropped entry for T");
+        let added = d
+            .tables
+            .iter()
+            .find(|t| matches!(t.change, TableChange::Added))
+            .expect("an added entry for U");
+        assert!(dropped.breaking);
+        assert!(!added.breaking);
+        assert!(d.has_breaking_changes);
+    }
+
+    #[test]
+    fn a_new_nullable_column_is_added_and_non_breaking() {
         let d = diff(
             "Table T { id int [pk]; }\n",
             "Table T { id int [pk]; name varchar(50); }\n",
@@ -573,10 +659,39 @@ mod tests {
             &d.tables[0].change,
             TableChange::ColumnAdded { column } if column == "name"
         ));
+        assert!(!d.tables[0].breaking);
+        assert!(!d.has_breaking_changes);
     }
 
     #[test]
-    fn a_removed_column_is_dropped() {
+    fn a_new_column_with_a_default_is_added_and_non_breaking() {
+        let d = diff(
+            "Table T { id int [pk]; }\n",
+            "Table T { id int [pk]; name varchar(50) [default=\"x\"]; }\n",
+        );
+        assert!(matches!(
+            &d.tables[0].change,
+            TableChange::ColumnAdded { column } if column == "name"
+        ));
+        assert!(!d.tables[0].breaking);
+    }
+
+    #[test]
+    fn a_new_required_column_with_no_default_is_added_and_breaking() {
+        let d = diff(
+            "Table T { id int [pk]; }\n",
+            "Table T { id int [pk]; name varchar(50) [required]; }\n",
+        );
+        assert!(matches!(
+            &d.tables[0].change,
+            TableChange::ColumnAdded { column } if column == "name"
+        ));
+        assert!(d.tables[0].breaking);
+        assert!(d.has_breaking_changes);
+    }
+
+    #[test]
+    fn a_removed_column_is_dropped_and_breaking() {
         let d = diff(
             "Table T { id int [pk]; name varchar(50); }\n",
             "Table T { id int [pk]; }\n",
@@ -585,10 +700,33 @@ mod tests {
             &d.tables[0].change,
             TableChange::ColumnDropped { column } if column == "name"
         ));
+        assert!(d.tables[0].breaking);
     }
 
     #[test]
-    fn a_columns_type_signature_change_is_reported() {
+    fn a_column_rename_reports_as_a_breaking_drop_plus_a_nonbreaking_add() {
+        // No column-rename marker exists in v1 (decisions.md) – always
+        // drop + add, and classified the same as any other drop + add.
+        let d = diff(
+            "Table T { id int [pk]; old_name varchar(50); }\n",
+            "Table T { id int [pk]; new_name varchar(50); }\n",
+        );
+        let dropped = d
+            .tables
+            .iter()
+            .find(|t| matches!(&t.change, TableChange::ColumnDropped { column } if column == "old_name"))
+            .expect("a dropped entry for old_name");
+        let added = d
+            .tables
+            .iter()
+            .find(|t| matches!(&t.change, TableChange::ColumnAdded { column } if column == "new_name"))
+            .expect("an added entry for new_name");
+        assert!(dropped.breaking);
+        assert!(!added.breaking);
+    }
+
+    #[test]
+    fn a_columns_type_signature_change_is_reported_and_breaking() {
         let d = diff(
             "Table T { id int [pk]; name varchar(50); }\n",
             "Table T { id int [pk]; name varchar(100); }\n",
@@ -598,10 +736,11 @@ mod tests {
             TableChange::ColumnTypeChanged { column, old_type, new_type }
                 if column == "name" && old_type == "varchar(50)" && new_type == "varchar(100)"
         ));
+        assert!(d.tables[0].breaking);
     }
 
     #[test]
-    fn a_column_newly_required_with_no_default_is_reported() {
+    fn a_column_newly_required_with_no_default_is_reported_and_breaking() {
         let d = diff(
             "Table T { id int [pk]; name varchar(50); }\n",
             "Table T { id int [pk]; name varchar(50) [required]; }\n",
@@ -610,6 +749,7 @@ mod tests {
             &d.tables[0].change,
             TableChange::ColumnNewlyRequired { column } if column == "name"
         ));
+        assert!(d.tables[0].breaking);
     }
 
     #[test]
@@ -619,10 +759,11 @@ mod tests {
             "Table T { id int [pk]; name varchar(50) [required, default=\"x\"]; }\n",
         );
         assert!(d.tables.is_empty());
+        assert!(!d.has_breaking_changes);
     }
 
     #[test]
-    fn an_existing_column_newly_unique_is_reported() {
+    fn an_existing_column_newly_unique_is_reported_and_breaking() {
         let d = diff(
             "Table T { id int [pk]; name varchar(50); }\n",
             "Table T { id int [pk]; name varchar(50) [unique]; }\n",
@@ -631,6 +772,7 @@ mod tests {
             &d.tables[0].change,
             TableChange::ColumnNewlyUniqueOrPk { column } if column == "name"
         ));
+        assert!(d.tables[0].breaking);
     }
 
     #[test]
@@ -644,10 +786,13 @@ mod tests {
             &d.tables[0].change,
             TableChange::ColumnAdded { column } if column == "name"
         ));
+        // Brand new, still nullable (unique alone doesn't imply required) –
+        // non-breaking.
+        assert!(!d.tables[0].breaking);
     }
 
     #[test]
-    fn a_relation_added_is_reported() {
+    fn a_relation_added_is_reported_and_non_breaking() {
         let d = diff(
             "Table Customer { id int [pk]; }\nTable T { id int [pk]; customer_id int; }\n",
             "Table Customer { id int [pk]; }\nTable T { id int [pk]; customer_id >Customer.id; }\n",
@@ -657,10 +802,11 @@ mod tests {
             &entry.change,
             TableChange::RelationAdded { column } if column == "customer_id"
         ));
+        assert!(!entry.breaking);
     }
 
     #[test]
-    fn a_relation_removed_is_reported() {
+    fn a_relation_removed_is_reported_and_breaking() {
         let d = diff(
             "Table Customer { id int [pk]; }\nTable T { id int [pk]; customer_id >Customer.id; }\n",
             "Table Customer { id int [pk]; }\nTable T { id int [pk]; customer_id int; }\n",
@@ -670,6 +816,7 @@ mod tests {
             &entry.change,
             TableChange::RelationRemoved { column } if column == "customer_id"
         ));
+        assert!(entry.breaking);
     }
 
     #[test]
@@ -685,7 +832,7 @@ mod tests {
     }
 
     #[test]
-    fn an_index_added_is_reported() {
+    fn an_index_added_is_reported_and_non_breaking() {
         let d = diff(
             "Table T { id int [pk]; name varchar(50); }\n",
             "Table T { id int [pk]; name varchar(50); Index { ix_name (name); } }\n",
@@ -694,10 +841,12 @@ mod tests {
             &d.tables[0].change,
             TableChange::IndexAdded { index } if index.name.as_deref() == Some("ix_name")
         ));
+        assert!(!d.tables[0].breaking);
+        assert!(!d.has_breaking_changes);
     }
 
     #[test]
-    fn an_index_removed_is_reported() {
+    fn an_index_removed_is_reported_and_non_breaking() {
         let d = diff(
             "Table T { id int [pk]; name varchar(50); Index { ix_name (name); } }\n",
             "Table T { id int [pk]; name varchar(50); }\n",
@@ -706,6 +855,8 @@ mod tests {
             &d.tables[0].change,
             TableChange::IndexRemoved { index } if index.name.as_deref() == Some("ix_name")
         ));
+        assert!(!d.tables[0].breaking);
+        assert!(!d.has_breaking_changes);
     }
 
     #[test]
@@ -735,7 +886,7 @@ mod tests {
     const ENUM_HEADER: &str = "Enum Status {\n  Field { type = string; }\n";
 
     #[test]
-    fn an_enum_entry_added_is_reported() {
+    fn an_enum_entry_added_is_reported_and_non_breaking() {
         let d = diff(
             &format!("{ENUM_HEADER}  draft;\n}}\n"),
             &format!("{ENUM_HEADER}  draft;\n  paid;\n}}\n"),
@@ -745,10 +896,12 @@ mod tests {
             &d.enums[0].change,
             EnumChange::EntryAdded { entry } if entry == "paid"
         ));
+        assert!(!d.enums[0].breaking);
+        assert!(!d.has_breaking_changes);
     }
 
     #[test]
-    fn an_enum_entry_removed_is_reported() {
+    fn an_enum_entry_removed_is_reported_and_breaking() {
         let d = diff(
             &format!("{ENUM_HEADER}  draft;\n  paid;\n}}\n"),
             &format!("{ENUM_HEADER}  draft;\n}}\n"),
@@ -758,5 +911,40 @@ mod tests {
             &d.enums[0].change,
             EnumChange::EntryRemoved { entry } if entry == "paid"
         ));
+        assert!(d.enums[0].breaking);
+        assert!(d.has_breaking_changes);
+    }
+
+    #[test]
+    fn the_summary_flag_is_true_when_any_entry_is_breaking() {
+        // One breaking table entry (dropped) and one non-breaking enum
+        // entry (added) – the flag reflects the table alone.
+        let d = diff(
+            &format!("Table T {{ id int [pk]; }}\n{ENUM_HEADER}  draft;\n}}\n"),
+            &format!("{ENUM_HEADER}  draft;\n  paid;\n}}\n"),
+        );
+        assert!(d.tables.iter().any(|t| t.breaking));
+        assert!(d.enums.iter().all(|e| !e.breaking));
+        assert!(d.has_breaking_changes);
+    }
+
+    #[test]
+    fn the_summary_flag_is_false_when_every_entry_is_non_breaking() {
+        let d = diff(
+            "Table T { id int [pk]; }\n",
+            "Table T { id int [pk]; }\nTable U { id int [pk]; }\n",
+        );
+        assert!(!d.tables.is_empty());
+        assert!(d.tables.iter().all(|t| !t.breaking));
+        assert!(!d.has_breaking_changes);
+    }
+
+    #[test]
+    fn the_summary_flag_is_false_for_an_empty_diff() {
+        let body = "Table T { id int [pk]; }\n";
+        let d = diff(body, body);
+        assert!(d.tables.is_empty());
+        assert!(d.enums.is_empty());
+        assert!(!d.has_breaking_changes);
     }
 }
