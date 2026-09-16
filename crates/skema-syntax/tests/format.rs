@@ -5,7 +5,8 @@
 //! `src/format.rs` itself; what belongs here is the invariants that only
 //! mean something over a large, varied body of real text.
 
-use skema_syntax::{TokenKind, format, parse, tokenize};
+use skema_syntax::ast::{BlockKind, Path};
+use skema_syntax::{TokenKind, format, parse, reorder, tokenize};
 
 const EXAMPLE: &str = include_str!("../../../examples/myexample.skema");
 const GENERIC_PROJECT: &str = include_str!("../../../examples/generic/project.skema");
@@ -159,6 +160,114 @@ fn corpus_formatting_is_a_semantic_no_op() {
         assert_eq!(
             before, after,
             "{name}: diagnostics changed after formatting"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `--sort` (`reorder::reorder`)
+// ---------------------------------------------------------------------------
+
+/// Position of a declaration's `BlockKind` in the canonical order — mirrors
+/// `reorder::SORTED_KINDS` plus `Project`/`Document`'s own earlier slots,
+/// kept independently here so the test can't share a bug with the code it
+/// checks. Any kind outside the seven declaration kinds sorts last instead
+/// of panicking — the ordering assertion below still catches it, just as a
+/// reported mismatch rather than a hard crash mid-suite.
+fn canonical_slot(kind: BlockKind) -> usize {
+    const ORDER: [BlockKind; 7] = [
+        BlockKind::Project,
+        BlockKind::Document,
+        BlockKind::Partial,
+        BlockKind::Table,
+        BlockKind::Enum,
+        BlockKind::Datatype,
+        BlockKind::Group,
+    ];
+    ORDER.iter().position(|k| *k == kind).unwrap_or(usize::MAX)
+}
+
+/// `(BlockKind, name)` for every top-level declaration, in file order.
+fn declaration_signature(src: &str) -> Vec<(BlockKind, Option<String>)> {
+    let (file, _) = parse(src);
+    file.blocks()
+        .map(|b| {
+            (
+                b.kind,
+                b.name
+                    .as_ref()
+                    .and_then(Path::as_ident)
+                    .map(|i| i.text.clone()),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn corpus_sort_succeeds_on_every_example() {
+    for (name, src) in example_corpus() {
+        reorder(src).unwrap_or_else(|e| panic!("{name}: expected sorting to succeed, got {e}"));
+    }
+}
+
+#[test]
+fn corpus_sort_orders_declarations_canonically() {
+    for (name, src) in example_corpus() {
+        let sorted = reorder(src).expect("sorts").text;
+        let sequence = declaration_signature(&sorted);
+
+        let mut previous: Option<(usize, &str)> = None;
+        for (kind, decl_name) in &sequence {
+            let slot = canonical_slot(*kind);
+            let decl_name = decl_name.as_deref().unwrap_or("");
+            if let Some((prev_slot, prev_name)) = previous {
+                assert!(
+                    (prev_slot, prev_name) <= (slot, decl_name),
+                    "{name}: {:?} {decl_name:?} out of canonical order after slot {prev_slot} name {prev_name:?}",
+                    kind
+                );
+            }
+            previous = Some((slot, decl_name));
+        }
+    }
+}
+
+#[test]
+fn corpus_sort_keeps_the_same_declarations() {
+    for (name, src) in example_corpus() {
+        let sorted = reorder(src).expect("sorts").text;
+
+        let mut before = declaration_signature(src);
+        let mut after = declaration_signature(&sorted);
+        before.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+        after.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+        assert_eq!(before, after, "{name}: declaration set changed by sorting");
+    }
+}
+
+#[test]
+fn corpus_sort_is_a_semantic_no_op_beyond_comments() {
+    for (name, src) in example_corpus() {
+        let sorted = reorder(src).expect("sorts").text;
+        let (_, before_diag) = parse(src);
+        let (_, after_diag) = parse(&sorted);
+        assert_eq!(
+            before_diag.len(),
+            after_diag.len(),
+            "{name}: diagnostic count changed by sorting"
+        );
+    }
+}
+
+#[test]
+fn corpus_sort_is_idempotent() {
+    for (name, src) in example_corpus() {
+        let once = reorder(src).expect("sorts").text;
+        let twice = reorder(&once).expect("re-sorting the sorted output must also succeed");
+        assert_eq!(once, twice.text, "{name}: sorting twice differs");
+        assert_eq!(
+            twice.comments_removed, 0,
+            "{name}: a second sort still found comments to remove"
         );
     }
 }

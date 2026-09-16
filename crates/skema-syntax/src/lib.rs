@@ -25,6 +25,7 @@
 //! | `diagnostic` | messages with a location |
 //! | `dump` | tree as text, for inspection |
 //! | `format` | reindents and normalizes blank lines, layout only |
+//! | `reorder` | sorts top-level declarations into canonical order, drops comments |
 //!
 //! # Parse permissively, validate strictly
 //!
@@ -63,6 +64,7 @@ mod format;
 mod grammar;
 mod lexer;
 mod parser;
+mod reorder;
 mod semantic;
 mod span;
 mod token;
@@ -72,6 +74,7 @@ pub use dump::dump;
 pub use format::format;
 pub use lexer::{Lexer, tokenize};
 pub use parser::Parser;
+pub use reorder::{Reordered, reorder};
 pub use semantic::{SemanticKind, classify};
 pub use span::{Span, TextSize};
 pub use token::{Token, TokenKind, keyword_from_str};

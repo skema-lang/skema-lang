@@ -49,6 +49,7 @@ cargo run -p skema-cli -- diff --json examples/diff/old.skema examples/diff/new.
 cargo run -p skema-cli -- diff --fail-on-breaking examples/diff/old.skema examples/diff/new.skema
 cargo run -p skema-cli -- fmt examples/generic/project.skema
 cargo run -p skema-cli -- fmt --check examples/generic/project.skema
+cargo run -p skema-cli -- fmt --sort examples/generic/project.skema
 ```
 
 `check` loads the root file plus everything it reaches via `import` (project
@@ -83,6 +84,14 @@ declaration, and their relative order stay exactly where the author put
 them; it never reorders anything. Rewrites the file in place by default;
 `--check` writes nothing and exits non-zero if the file isn't already
 formatted, for a CI gate.
+
+`--sort` (`skema-syntax::reorder`, composes with `--check`) is the one
+operation that does reorder: it sorts a file's top-level declarations into
+one canonical order — `spec`, `import`s, `Project`, `Document`, then
+`Partial`/`Table`/`Enum`/`Datatype`/`Group` each alphabetized by name — and
+drops every comment in the process, warning on stderr with the count when
+it removes any; it refuses (leaving the file untouched) rather than guess
+at anything it can't place unambiguously, e.g. an unnamed declaration.
 
 All three of `check`/`export`/`diff` emit `skema-api`'s types
 ([`crates/skema-api/src/dto.rs`](crates/skema-api/src/dto.rs),

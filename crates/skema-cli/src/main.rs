@@ -72,6 +72,13 @@ enum Command {
         /// would change it, for a CI gate (mirrors `cargo fmt --check`).
         #[arg(long)]
         check: bool,
+        /// Also reorders top-level declarations into canonical order
+        /// (spec, imports, Project, Document, Partial, Table, Enum,
+        /// Datatype, Group — alphabetized by name within each kind) and
+        /// drops every comment (`skema-syntax::reorder`). Composes with
+        /// `--check`.
+        #[arg(long)]
+        sort: bool,
     },
 }
 
@@ -89,7 +96,7 @@ fn main() -> ExitCode {
             json,
             fail_on_breaking,
         } => run_diff(&old, &new, json, fail_on_breaking),
-        Command::Fmt { file, check } => run_fmt(&file, check),
+        Command::Fmt { file, check, sort } => run_fmt(&file, check, sort),
     }
 }
 
@@ -179,8 +186,9 @@ fn run_diff(old: &Path, new: &Path, json: bool, fail_on_breaking: bool) -> ExitC
 
 /// `--check` never writes; a plain run rewrites the file only when
 /// formatting actually changes it, so an already-formatted file's mtime is
-/// left alone.
-fn run_fmt(path: &Path, check: bool) -> ExitCode {
+/// left alone. `--sort` additionally reorders declarations and drops
+/// comments (`skema_syntax::reorder`) before the same reindentation pass.
+fn run_fmt(path: &Path, check: bool, sort: bool) -> ExitCode {
     let original = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -189,7 +197,26 @@ fn run_fmt(path: &Path, check: bool) -> ExitCode {
         }
     };
 
-    let formatted = skema_syntax::format(&original);
+    let formatted = if sort {
+        match skema_syntax::reorder(&original) {
+            Ok(result) => {
+                if result.comments_removed > 0 {
+                    eprintln!(
+                        "warning: removed {} comments while sorting {}",
+                        result.comments_removed,
+                        path.display()
+                    );
+                }
+                result.text
+            }
+            Err(e) => {
+                eprintln!("{}: cannot sort: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        skema_syntax::format(&original)
+    };
     let unchanged = formatted == original;
 
     if check {
