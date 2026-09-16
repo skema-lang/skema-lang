@@ -39,6 +39,12 @@ Accepted values: `snake_case`, `camelCase`, `PascalCase`, `SCREAMING_SNAKE_CASE`
 
 Naming style itself is a project decision, not a language rule — skema accepts `created_at`, `createdAt`, and `CreatedAt` equally (see [01 — Language Basics](01-language-basics.md#numbers-and-identifiers)). `Lint` is where a project commits to one style.
 
+A violation is a `warn` by default. Append `[warn]` or `[error]` after the value to override it — the only place this bracket is legal:
+
+```skema
+fieldNaming = snake_case [error];
+```
+
 ## Other rules
 
 | Rule | Governs |
@@ -50,7 +56,7 @@ Naming style itself is a project decision, not a language rule — skema accepts
 | `requireTableNote` | a `Table` with no `Meta.note` |
 | `requireFieldNote` | a `Table`/`Partial` field with no `note` |
 
-Severity values (`warn`, `error`) are shown above; a full rule catalog and a syntax for overriding severity per rule are not finalized — see [Reference → Known limitations](13-reference.md#known-limitations).
+These rules already choose their severity through their value (`warn` or `error`) — the `[warn]`/`[error]` override above is not accepted here.
 
 ## See also
 

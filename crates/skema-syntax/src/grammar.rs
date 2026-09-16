@@ -1063,8 +1063,8 @@ mod tests {
 
     // -- Severity override -----------------------------------------------------
 
-    /// `docs/13`, "Lint severities": grammar-legal after any setting, in
-    /// any block — task 67 restricts where it's *meaningful*.
+    /// `docs/04`, "Naming rules": grammar-legal after any setting, in any
+    /// block — task 67 restricts where it's *meaningful*.
     #[test]
     fn severity_override_captured_on_a_setting() {
         let text = |src: &str| {

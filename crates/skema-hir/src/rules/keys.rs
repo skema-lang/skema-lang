@@ -16,7 +16,8 @@ use skema_syntax::ast::{self, BlockKind};
 
 use crate::catalog::{
     COLUMN_BODY_KEYS, DATABASE_KEYS, ENTRY_BODY_KEYS, FIELD_BLOCK_KEYS, FLAG_KEYS, INDEX_FLAG_KEYS,
-    LINT_KEYS, META_KEYS, PARAM_BODY_KEYS, PROJECT_KEYS, TABLE_ONLY_META_KEYS,
+    LINT_KEYS, META_KEYS, PARAM_BODY_KEYS, PROJECT_KEYS, SEVERITY_OVERRIDABLE_LINT_KEYS,
+    TABLE_ONLY_META_KEYS,
 };
 use crate::{Diagnostic, FileId};
 
@@ -71,12 +72,12 @@ fn walk(
         match &item.kind {
             ast::ItemKind::Setting(a) => {
                 let known = enclosing.and_then(|k| known_settings_for(k, declaration));
-                check_attr(id, a, known.as_deref(), diags);
+                check_attr(id, a, known.as_deref(), enclosing, diags);
             }
             ast::ItemKind::Block(b) if b.kind == BlockKind::Field => {
                 for sub in &b.items {
                     if let ast::ItemKind::Setting(a) = &sub.kind {
-                        check_attr(id, a, Some(FIELD_BLOCK_KEYS), diags);
+                        check_attr(id, a, Some(FIELD_BLOCK_KEYS), Some(b.kind), diags);
                     }
                 }
             }
@@ -92,16 +93,18 @@ fn walk(
                 let known = enclosing.and_then(known_field_body_for);
                 for sub in &f.items {
                     if let ast::ItemKind::Setting(a) = &sub.kind {
-                        check_attr(id, a, known, diags);
+                        // A field body is never `Lint` – the bracket is
+                        // never legal here regardless of enclosing.
+                        check_attr(id, a, known, None, diags);
                     }
                 }
                 for flag in &f.flags {
-                    check_attr(id, flag, Some(FLAG_KEYS), diags);
+                    check_attr(id, flag, Some(FLAG_KEYS), None, diags);
                 }
             }
             ast::ItemKind::IndexEntry(e) => {
                 for flag in &e.flags {
-                    check_attr(id, flag, Some(INDEX_FLAG_KEYS), diags);
+                    check_attr(id, flag, Some(INDEX_FLAG_KEYS), None, diags);
                 }
             }
             _ => {}
@@ -109,7 +112,29 @@ fn walk(
     }
 }
 
-fn check_attr(id: FileId, attr: &ast::Attr, known: Option<&[&str]>, diags: &mut Vec<Diagnostic>) {
+fn check_attr(
+    id: FileId,
+    attr: &ast::Attr,
+    known: Option<&[&str]>,
+    enclosing: Option<BlockKind>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if let Some(severity_override) = &attr.severity_override {
+        let placed_on_naming_rule = enclosing == Some(BlockKind::Lint)
+            && SEVERITY_OVERRIDABLE_LINT_KEYS.contains(&attr.key.text.as_str());
+        if !placed_on_naming_rule {
+            diags.push(Diagnostic::error(
+                id,
+                severity_override.span,
+                format!(
+                    "severity override `[{}]` is only valid on \
+                     `fieldNaming`/`tableNaming`/`enumNaming` (docs/04)",
+                    severity_override.text
+                ),
+            ));
+        }
+    }
+
     if attr.key.quoted {
         if !attr.key.text.starts_with("x-") {
             diags.push(Diagnostic::error(

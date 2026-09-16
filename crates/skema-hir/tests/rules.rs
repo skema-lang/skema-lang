@@ -1753,3 +1753,150 @@ fn back_reference_does_not_create_a_cycle_edge() {
     let (_, diags) = analyze_src(&src);
     assert!(diags.is_empty(), "{diags:#?}");
 }
+
+// --- Naming-rule severity override ------------------------------------------
+
+/// `(Lint key, declaration with one violating name, message fragment)` – a
+/// bad `CamelCaseName` against a `snake_case` rule, shared by every test
+/// below that behaves identically across all three naming rules.
+const NAMING_LINT_CASES: &[(&str, &str, &str)] = &[
+    (
+        "fieldNaming",
+        "Table T { id uuid [pk]; CamelCaseName text; }",
+        "`CamelCaseName` does not follow the configured `fieldNaming`",
+    ),
+    (
+        "tableNaming",
+        "Table CamelCaseName { id uuid [pk]; }",
+        "`CamelCaseName` does not follow the configured `tableNaming`",
+    ),
+    (
+        "enumNaming",
+        "Enum CamelCaseName { Field { type = string; } draft; }",
+        "`CamelCaseName` does not follow the configured `enumNaming`",
+    ),
+];
+
+#[test]
+fn naming_rule_violation_defaults_to_warning() {
+    for &(key, decls, gap) in NAMING_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = snake_case; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        let hits: Vec<_> = diags.iter().filter(|d| d.message.contains(gap)).collect();
+        assert_eq!(hits.len(), 1, "`{key}`: {diags:#?}");
+        assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+    }
+}
+
+#[test]
+fn naming_rule_explicit_warn_override_stays_a_warning() {
+    for &(key, decls, gap) in NAMING_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = snake_case [warn]; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        let hits: Vec<_> = diags.iter().filter(|d| d.message.contains(gap)).collect();
+        assert_eq!(hits.len(), 1, "`{key}`: {diags:#?}");
+        assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+    }
+}
+
+#[test]
+fn naming_rule_error_override_is_respected() {
+    for &(key, decls, gap) in NAMING_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = snake_case [error]; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        let hits: Vec<_> = diags.iter().filter(|d| d.message.contains(gap)).collect();
+        assert_eq!(hits.len(), 1, "`{key}`: {diags:#?}");
+        assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+    }
+}
+
+#[test]
+fn naming_rule_unknown_severity_word_is_rejected() {
+    for &(key, decls, gap) in NAMING_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = snake_case [oops]; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("unknown severity `oops`")),
+            "`{key}`: {diags:#?}"
+        );
+        assert!(
+            !messages(&diags).iter().any(|m| m.contains(gap)),
+            "`{key}` still ran its check after an invalid severity: {diags:#?}"
+        );
+        assert_eq!(
+            diags.len(),
+            1,
+            "`{key}` should yield exactly one diagnostic: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn severity_override_on_unused_import_is_rejected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { unusedImport = warn [error]; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags).iter().any(|m| m.contains(
+            "severity override `[error]` is only valid on `fieldNaming`/`tableNaming`/`enumNaming`"
+        )),
+        "{diags:#?}"
+    );
+    assert_eq!(diags.len(), 1, "{diags:#?}");
+}
+
+#[test]
+fn severity_override_on_require_lint_key_is_rejected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn [error]; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags).iter().any(|m| m.contains(
+            "severity override `[error]` is only valid on `fieldNaming`/`tableNaming`/`enumNaming`"
+        )),
+        "{diags:#?}"
+    );
+    assert_eq!(diags.len(), 1, "{diags:#?}");
+}
+
+#[test]
+fn severity_override_on_meta_setting_is_rejected() {
+    for mode in ["draft", "strict"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = {mode}; dialect = generic; }}\nTable T {{ id uuid [pk]; Meta {{ author = \"anna\" [error]; }} }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags).iter().any(|m| m.contains(
+                "severity override `[error]` is only valid on `fieldNaming`/`tableNaming`/`enumNaming`"
+            )),
+            "mode={mode}: {diags:#?}"
+        );
+        assert_eq!(diags.len(), 1, "mode={mode}: {diags:#?}");
+    }
+}
+
+#[test]
+fn severity_override_on_database_setting_is_rejected() {
+    for mode in ["draft", "strict"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = {mode}; dialect = generic; }}\nTable T {{ id uuid [pk]; Database {{ table = \"t\" [error]; }} }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags).iter().any(|m| m.contains(
+                "severity override `[error]` is only valid on `fieldNaming`/`tableNaming`/`enumNaming`"
+            )),
+            "mode={mode}: {diags:#?}"
+        );
+        assert_eq!(diags.len(), 1, "mode={mode}: {diags:#?}");
+    }
+}

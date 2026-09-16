@@ -65,18 +65,33 @@ fn read_severity(
     diags: &mut Vec<Diagnostic>,
 ) -> Option<Severity> {
     let (word, span) = read_word(lint, key)?;
+    let severity = parse_severity(word);
+    if severity.is_none() {
+        diags.push(Diagnostic::error(
+            project_file,
+            span,
+            format!("unknown severity `{word}` – allowed: warn, error"),
+        ));
+    }
+    severity
+}
+
+fn parse_severity(word: &str) -> Option<Severity> {
     match word {
         "warn" => Some(Severity::Warning),
         "error" => Some(Severity::Error),
-        other => {
-            diags.push(Diagnostic::error(
-                project_file,
-                span,
-                format!("unknown severity `{other}` – allowed: warn, error"),
-            ));
-            None
-        }
+        _ => None,
     }
+}
+
+/// The `[word]` after `key = value` in `lint`, if written – `rules::keys`
+/// already confirmed placement (`fieldNaming`/`tableNaming`/`enumNaming`
+/// only), so here it's just read and parsed.
+fn read_severity_override<'a>(lint: &'a ast::Block, key: &str) -> Option<&'a ast::Ident> {
+    lint.items.iter().find_map(|item| match &item.kind {
+        ast::ItemKind::Setting(a) if a.key.text == key => a.severity_override.as_ref(),
+        _ => None,
+    })
 }
 
 // ===========================================================================
@@ -120,12 +135,15 @@ pub(crate) fn matches_case(name: &str, case: Case) -> bool {
     }
 }
 
+/// Reads `key = case_style [warn|error];` – the style, and the severity to
+/// report a violation at (`Warning` when no bracket is written, unchanged
+/// from before the override existed).
 fn read_case(
     project_file: FileId,
     lint: &ast::Block,
     key: &str,
     diags: &mut Vec<Diagnostic>,
-) -> Option<Case> {
+) -> Option<(Case, Severity)> {
     let (word, span) = read_word(lint, key)?;
     let case = parse_case(word);
     if case.is_none() {
@@ -138,7 +156,23 @@ fn read_case(
             ),
         ));
     }
-    case
+    let case = case?;
+
+    let severity = match read_severity_override(lint, key) {
+        Some(ident) => match parse_severity(&ident.text) {
+            Some(severity) => severity,
+            None => {
+                diags.push(Diagnostic::error(
+                    project_file,
+                    ident.span,
+                    format!("unknown severity `{}` – allowed: warn, error", ident.text),
+                ));
+                return None;
+            }
+        },
+        None => Severity::Warning,
+    };
+    Some((case, severity))
 }
 
 fn check_naming(
@@ -149,14 +183,15 @@ fn check_naming(
     kind: BlockKind,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let Some(case) = read_case(project_file, lint, key, diags) else {
+    let Some((case, severity)) = read_case(project_file, lint, key, diags) else {
         return;
     };
     for file in &ctx.facts {
         for (&name, decl) in &file.declarations {
             if decl.kind == kind && !matches_case(name, case) {
-                diags.push(Diagnostic::warning(
+                diags.push(Diagnostic::new(
                     file.id,
+                    severity,
                     decl.name_span,
                     format!("`{name}` does not follow the configured `{key}` (Lint)"),
                 ));
@@ -171,7 +206,7 @@ fn check_field_naming(
     lint: &ast::Block,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let Some(case) = read_case(project_file, lint, "fieldNaming", diags) else {
+    let Some((case, severity)) = read_case(project_file, lint, "fieldNaming", diags) else {
         return;
     };
     for file in &ctx.facts {
@@ -184,8 +219,9 @@ fn check_field_naming(
                     continue;
                 };
                 if !matches_case(&f.name.text, case) {
-                    diags.push(Diagnostic::warning(
+                    diags.push(Diagnostic::new(
                         file.id,
+                        severity,
                         f.name.span,
                         format!(
                             "`{}` does not follow the configured `fieldNaming` (Lint)",

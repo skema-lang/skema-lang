@@ -24,6 +24,10 @@ pub const LINT_KEYS: &[&str] = &[
     "requireTableNote",
     "requireFieldNote",
 ];
+/// The subset of [`LINT_KEYS`] whose value slot is a case style rather than
+/// a severity – the only keys a `[warn|error]` override (`docs/04`) can
+/// legally follow. `rules::keys` rejects the bracket everywhere else.
+pub const SEVERITY_OVERRIDABLE_LINT_KEYS: &[&str] = &["fieldNaming", "tableNaming", "enumNaming"];
 pub const DATABASE_KEYS: &[&str] = &["database", "schema", "table"];
 pub const PROJECT_KEYS: &[&str] = &["mode", "dialect"];
 pub const FIELD_BLOCK_KEYS: &[&str] = &["type", "default", "regex", "note"];
