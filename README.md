@@ -37,13 +37,16 @@ echo 'direnv hook fish | source' >> ~/.config/fish/config.fish
 
 ## The three tools
 
-### CLI – `skema check` / `skema export`
+### CLI – `skema check` / `skema export` / `skema diff`
 
 ```bash
 cargo run -p skema-cli -- check examples/generic/project.skema
 cargo run -p skema-cli -- check examples/generic/project.skema --json
 cargo run -p skema-cli -- export --json examples/generic/project.skema > model.json
 cargo run -p skema-cli -- export --json --locations examples/generic/project.skema
+cargo run -p skema-cli -- diff examples/diff/old.skema examples/diff/new.skema
+cargo run -p skema-cli -- diff --json examples/diff/old.skema examples/diff/new.skema
+cargo run -p skema-cli -- diff --fail-on-breaking examples/diff/old.skema examples/diff/new.skema
 ```
 
 `check` loads the root file plus everything it reaches via `import` (project
@@ -53,12 +56,32 @@ the resolved model to stdout — `Partial`s applied, relationships resolved,
 physical names cascaded — with messages on stderr, so the redirect above
 yields the model alone.
 
-Both emit `skema-api`'s types
-([`crates/skema-api/src/dto.rs`](crates/skema-api/src/dto.rs)), the same ones
-the language server and the browser editor answer with. `--locations` adds a
-`location` (file, line, 1-based UTF-16 column) to every entity. Off by
-default: it roughly doubles the output and a consumer reading only the
-structure never looks at it. Diagnostics always carry theirs.
+`diff` loads and checks two project roots independently — they are plain
+paths, not git refs, so comparing two revisions means checking each out to
+its own directory first — and structurally compares their exported models:
+tables and enums added, dropped, renamed (`Meta.movedFrom`), or changed
+inside (a column, its relation, or an index), each flagged `breaking` or
+not. Either side failing its own check is reported the same way `check`
+would report it, and no diff is attempted. Default output is one line per
+change, e.g.:
+
+```
+Table Purchase: renamed from Order
+Table Purchase: column customer_id dropped [BREAKING]
+Table Shipment: table added
+```
+
+`--fail-on-breaking` exits non-zero when any entry is breaking; without it,
+`diff` is report-only and always exits zero.
+
+All three emit `skema-api`'s types
+([`crates/skema-api/src/dto.rs`](crates/skema-api/src/dto.rs),
+[`crates/skema-api/src/diff.rs`](crates/skema-api/src/diff.rs)), the same
+ones the language server and the browser editor answer with. `--locations`
+adds a `location` (file, line, 1-based UTF-16 column) to every entity in
+`export`. Off by default: it roughly doubles the output and a consumer
+reading only the structure never looks at it. Diagnostics always carry
+theirs.
 
 ### Language server – `skema-lsp`
 

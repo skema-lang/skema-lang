@@ -3,6 +3,7 @@
 //! ```bash
 //! skema check main.skema
 //! skema export --json main.skema
+//! skema diff old.skema new.skema
 //! ```
 //!
 //! The work happens in `skema-loader`: it loads the import graph and returns
@@ -16,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use skema_loader::ProjectAnalysis;
 
 #[derive(Parser)]
 #[command(name = "skema", version, about = "Checks and exports .skema projects")]
@@ -47,6 +49,18 @@ enum Command {
         #[arg(long)]
         locations: bool,
     },
+    /// Structurally diffs the resolved models of two projects, each loaded
+    /// and checked independently (not git refs – see `README.md`).
+    Diff {
+        old: PathBuf,
+        new: PathBuf,
+        /// Print the diff as JSON instead of one line per change.
+        #[arg(long)]
+        json: bool,
+        /// Exit non-zero when the diff contains a breaking change.
+        #[arg(long)]
+        fail_on_breaking: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -57,6 +71,12 @@ fn main() -> ExitCode {
             json: _,
             locations,
         } => run_export(&file, locations),
+        Command::Diff {
+            old,
+            new,
+            json,
+            fail_on_breaking,
+        } => run_diff(&old, &new, json, fail_on_breaking),
     }
 }
 
@@ -66,20 +86,28 @@ fn run_check(path: &Path, json: bool) -> ExitCode {
         Err(e) => return report_load_error(&e, json),
     };
     let analysis = skema_loader::analyze(&project, false);
+    if !report_diagnostics(&analysis, json) {
+        return ExitCode::FAILURE;
+    }
+    exit_code(analysis.ok())
+}
 
+/// The `check` output: a JSON array, or one line per diagnostic (`no
+/// messages` when there are none). Shared with `diff`, which reports a side
+/// this way whenever it fails to check cleanly on its own. Returns `false`
+/// on a JSON serialization failure, the same signal `print_json` gives.
+fn report_diagnostics(analysis: &ProjectAnalysis, json: bool) -> bool {
     if json {
-        if !print_json(&analysis.diagnostics) {
-            return ExitCode::FAILURE;
-        }
-    } else if analysis.diagnostics.is_empty() {
+        return print_json(&analysis.diagnostics);
+    }
+    if analysis.diagnostics.is_empty() {
         println!("no messages");
     } else {
         for d in &analysis.diagnostics {
             println!("{}", report::line(d));
         }
     }
-
-    exit_code(analysis.ok())
+    true
 }
 
 fn run_export(path: &Path, locations: bool) -> ExitCode {
@@ -100,6 +128,54 @@ fn run_export(path: &Path, locations: bool) -> ExitCode {
     }
 
     exit_code(analysis.ok())
+}
+
+fn run_diff(old: &Path, new: &Path, json: bool, fail_on_breaking: bool) -> ExitCode {
+    let old_analysis = match load_checked(old, json) {
+        Ok(a) => a,
+        Err(code) => return code,
+    };
+    let new_analysis = match load_checked(new, json) {
+        Ok(a) => a,
+        Err(code) => return code,
+    };
+
+    let diff = skema_api::diff_models(&old_analysis.model, &new_analysis.model);
+
+    if json {
+        if !print_json(&diff) {
+            return ExitCode::FAILURE;
+        }
+    } else if diff.tables.is_empty() && diff.enums.is_empty() {
+        println!("no differences");
+    } else {
+        for t in &diff.tables {
+            println!("{}", report::table_diff_line(t));
+        }
+        for e in &diff.enums {
+            println!("{}", report::enum_diff_line(e));
+        }
+    }
+
+    if fail_on_breaking && diff.has_breaking_changes {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Loads and checks one side of a `diff`, exactly like `run_check` – a model
+/// that doesn't check cleanly on its own isn't meaningful to diff. `Err`
+/// already carries the exit code, with the load error or diagnostics
+/// reported on the way.
+fn load_checked(path: &Path, json: bool) -> Result<ProjectAnalysis, ExitCode> {
+    let project = skema_loader::load(path).map_err(|e| report_load_error(&e, json))?;
+    let analysis = skema_loader::analyze(&project, false);
+    if !analysis.ok() {
+        report_diagnostics(&analysis, json);
+        return Err(ExitCode::FAILURE);
+    }
+    Ok(analysis)
 }
 
 fn print_json(value: &impl serde::Serialize) -> bool {

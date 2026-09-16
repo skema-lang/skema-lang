@@ -1,0 +1,23 @@
+spec 1;
+
+/*
+ * "Before" side of a `skema diff` example:
+ *
+ *     cargo run -p skema-cli -- diff examples/diff/old.skema examples/diff/new.skema
+ */
+
+Document shop {
+  Meta {
+    note = "Before: skema diff example";
+  }
+}
+
+Project {
+  mode    = draft;
+  dialect = generic;
+}
+
+Table Order {
+  id          int [pk];
+  customer_id int [required];
+}
