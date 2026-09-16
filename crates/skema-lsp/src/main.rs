@@ -5,9 +5,10 @@
 //!
 //! # What it serves
 //!
-//! Diagnostics, hover, go-to-definition, completion, semantic tokens and the
-//! document outline over standard LSP - plus three `skema/` messages a live
-//! ER diagram needs and LSP has no word for ([`protocol`]).
+//! Diagnostics, hover, go-to-definition, completion, semantic tokens,
+//! document links and the document outline over standard LSP - plus three
+//! `skema/` messages a live ER diagram needs and LSP has no word for
+//! ([`protocol`]).
 //!
 //! Every answer past the load comes from `skema-api`, the same crate the
 //! browser editor's WASM build serves, so a model looks the same in both.
@@ -26,6 +27,7 @@ mod convert;
 mod definition;
 mod folding;
 mod hover;
+mod links;
 mod protocol;
 mod roots;
 mod symbols;
@@ -43,14 +45,15 @@ use lsp_types::notification::{
     DidSaveTextDocument, Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentSymbolRequest, FoldingRangeRequest, GotoDefinition, HoverRequest,
-    Request as _, SemanticTokensFullRequest, WorkspaceSymbolRequest,
+    Completion, DocumentLinkRequest, DocumentSymbolRequest, FoldingRangeRequest, GotoDefinition,
+    HoverRequest, Request as _, SemanticTokensFullRequest, WorkspaceSymbolRequest,
 };
 use lsp_types::{
-    CompletionOptions, FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams,
-    OneOf, PublishDiagnosticsParams, SemanticTokensFullOptions, SemanticTokensLegend,
-    SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkDoneProgressOptions,
+    CompletionOptions, DocumentLinkOptions, FoldingRangeProviderCapability,
+    HoverProviderCapability, InitializeParams, OneOf, PublishDiagnosticsParams,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Url, WorkDoneProgressOptions,
 };
 
 use analysis::Analysis;
@@ -91,6 +94,12 @@ fn main() -> Result<(), DynError> {
             },
         )),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+        document_link_provider: Some(DocumentLinkOptions {
+            // Everything needed to resolve a link is already loaded by the
+            // time any request answers - no `documentLink/resolve` round trip.
+            resolve_provider: Some(false),
+            work_done_progress_options: WorkDoneProgressOptions::default(),
+        }),
         ..ServerCapabilities::default()
     })?;
 
@@ -312,6 +321,11 @@ impl Server {
                 let result = self.folding_ranges(&params);
                 self.respond(id, &result)
             }
+            DocumentLinkRequest::METHOD => {
+                let (id, params) = cast::<DocumentLinkRequest>(request)?;
+                let result = self.document_links(&params);
+                self.respond(id, &result)
+            }
             WorkspaceSymbolRequest::METHOD => {
                 let (id, params) = cast::<WorkspaceSymbolRequest>(request)?;
                 let result = self.workspace_symbols(&params);
@@ -416,6 +430,19 @@ impl Server {
         let source = self.source_of(&path)?;
         let (ast, _) = skema_syntax::parse(&source);
         Some(folding::folding_ranges(&source, &ast))
+    }
+
+    fn document_links(
+        &mut self,
+        params: &lsp_types::DocumentLinkParams,
+    ) -> Vec<lsp_types::DocumentLink> {
+        let Some(path) = convert::path_of(&params.text_document.uri) else {
+            return Vec::new();
+        };
+        let Some(analysis) = self.analysis_for(&path) else {
+            return Vec::new();
+        };
+        links::document_links(analysis, &path)
     }
 
     fn model(&mut self, params: &protocol::ModelParams) -> Option<protocol::ModelResponse> {
