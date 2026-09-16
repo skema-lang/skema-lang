@@ -5,9 +5,10 @@
 //!
 //! # What it serves
 //!
-//! Diagnostics, hover, go-to-definition, completion, semantic tokens and the
-//! document outline over standard LSP - plus three `skema/` messages a live
-//! ER diagram needs and LSP has no word for ([`protocol`]).
+//! Diagnostics, hover, go-to-definition, find-references, completion,
+//! semantic tokens and the document outline over standard LSP - plus three
+//! `skema/` messages a live ER diagram needs and LSP has no word for
+//! ([`protocol`]).
 //!
 //! Every answer past the load comes from `skema-api`, the same crate the
 //! browser editor's WASM build serves, so a model looks the same in both.
@@ -26,6 +27,7 @@ mod convert;
 mod definition;
 mod hover;
 mod protocol;
+mod references;
 mod roots;
 mod symbols;
 mod tokens;
@@ -41,7 +43,7 @@ use lsp_types::notification::{
     DidSaveTextDocument, Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, Request as _,
+    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Request as _,
     SemanticTokensFullRequest,
 };
 use lsp_types::{
@@ -63,6 +65,7 @@ fn main() -> Result<(), DynError> {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
             // The characters after which something is worth offering with
@@ -288,6 +291,11 @@ impl Server {
                 let result = self.definition(&params);
                 self.respond(id, &result.map(lsp_types::GotoDefinitionResponse::Scalar))
             }
+            References::METHOD => {
+                let (id, params) = cast::<References>(request)?;
+                let result = self.references(&params);
+                self.respond(id, &result)
+            }
             Completion::METHOD => {
                 let (id, params) = cast::<Completion>(request)?;
                 let result = self.completion(&params);
@@ -334,6 +342,18 @@ impl Server {
         let file = analysis.file(&path)?;
         let offset = convert::offset_of(&file.src, position.position) as u32;
         definition::definition(analysis, &path, offset)
+    }
+
+    fn references(
+        &mut self,
+        params: &lsp_types::ReferenceParams,
+    ) -> Option<Vec<lsp_types::Location>> {
+        let position = &params.text_document_position;
+        let path = convert::path_of(&position.text_document.uri)?;
+        let analysis = self.analysis_for(&path)?;
+        let file = analysis.file(&path)?;
+        let offset = convert::offset_of(&file.src, position.position) as u32;
+        references::references(analysis, &path, offset, params.context.include_declaration)
     }
 
     fn completion(

@@ -41,6 +41,21 @@ pub fn declarations(file: &SourceFile) -> Vec<Decl> {
     file.items.iter().filter_map(decl_of).collect()
 }
 
+/// The declaration named at `offset` - a click on a declaration itself
+/// rather than on a reference to one (`references.rs`, whose other branch
+/// is a lookup over `Analysis::references` instead of this tree).
+pub fn find_at(decls: &[Decl], offset: u32) -> Option<&Decl> {
+    for decl in decls {
+        if let Some(found) = find_at(&decl.children, offset) {
+            return Some(found);
+        }
+        if decl.name_span.start <= offset && offset <= decl.name_span.end {
+            return Some(decl);
+        }
+    }
+    None
+}
+
 /// The file's own namespace: the name of its `Document` block (`docs/02`).
 pub fn document_name(file: &SourceFile) -> Option<String> {
     file.blocks()
@@ -236,6 +251,25 @@ mod tests {
         let names: Vec<&str> = decls[0].children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["Customer", "cat.Status"]);
         assert_eq!(decls[0].children[0].kind, DeclKind::Reference);
+    }
+
+    #[test]
+    fn find_at_returns_the_declaration_whose_name_contains_the_offset() {
+        let source = "Table Customer { id int; }";
+        let file = parse(source);
+        let decls = declarations(&file);
+        let offset = source.find("id").expect("id") as u32;
+        let found = find_at(&decls, offset).expect("a declaration");
+        assert_eq!(found.name, "id");
+    }
+
+    #[test]
+    fn find_at_returns_none_outside_any_declaration_name() {
+        let source = "Table Customer { id int; }";
+        let file = parse(source);
+        let decls = declarations(&file);
+        let offset = source.find("int").expect("int") as u32;
+        assert!(find_at(&decls, offset).is_none());
     }
 
     #[test]
