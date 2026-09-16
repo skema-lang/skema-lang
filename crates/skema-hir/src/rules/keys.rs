@@ -16,18 +16,30 @@ use skema_syntax::ast::{self, BlockKind};
 
 use crate::catalog::{
     COLUMN_BODY_KEYS, DATABASE_KEYS, ENTRY_BODY_KEYS, FIELD_BLOCK_KEYS, FLAG_KEYS, INDEX_FLAG_KEYS,
-    LINT_KEYS, META_KEYS, PARAM_BODY_KEYS, PROJECT_KEYS,
+    LINT_KEYS, META_KEYS, PARAM_BODY_KEYS, PROJECT_KEYS, TABLE_ONLY_META_KEYS,
 };
 use crate::{Diagnostic, FileId};
 
 /// Known keys for the *direct* settings of a block, e.g. `mode`/`dialect`
-/// in `Project`.
-fn known_settings_for(kind: BlockKind) -> Option<&'static [&'static str]> {
+/// in `Project`. `declaration` is the nearest enclosing top-level
+/// declaration kind (`Table`, `Project`, …) – `Meta` needs it to keep
+/// `TABLE_ONLY_META_KEYS` out of every other declaration's allowed list.
+fn known_settings_for(
+    kind: BlockKind,
+    declaration: Option<BlockKind>,
+) -> Option<Vec<&'static str>> {
     match kind {
-        BlockKind::Meta => Some(META_KEYS),
-        BlockKind::Lint => Some(LINT_KEYS),
-        BlockKind::Database => Some(DATABASE_KEYS),
-        BlockKind::Project => Some(PROJECT_KEYS),
+        BlockKind::Meta if declaration != Some(BlockKind::Table) => Some(
+            META_KEYS
+                .iter()
+                .copied()
+                .filter(|k| !TABLE_ONLY_META_KEYS.contains(k))
+                .collect(),
+        ),
+        BlockKind::Meta => Some(META_KEYS.to_vec()),
+        BlockKind::Lint => Some(LINT_KEYS.to_vec()),
+        BlockKind::Database => Some(DATABASE_KEYS.to_vec()),
+        BlockKind::Project => Some(PROJECT_KEYS.to_vec()),
         _ => None,
     }
 }
@@ -45,19 +57,21 @@ fn known_field_body_for(enclosing: BlockKind) -> Option<&'static [&'static str]>
 }
 
 pub(crate) fn check(id: FileId, file: &ast::SourceFile, diags: &mut Vec<Diagnostic>) {
-    walk(id, &file.items, None, diags);
+    walk(id, &file.items, None, None, diags);
 }
 
 fn walk(
     id: FileId,
     items: &[ast::Item],
     enclosing: Option<BlockKind>,
+    declaration: Option<BlockKind>,
     diags: &mut Vec<Diagnostic>,
 ) {
     for item in items {
         match &item.kind {
             ast::ItemKind::Setting(a) => {
-                check_attr(id, a, enclosing.and_then(known_settings_for), diags);
+                let known = enclosing.and_then(|k| known_settings_for(k, declaration));
+                check_attr(id, a, known.as_deref(), diags);
             }
             ast::ItemKind::Block(b) if b.kind == BlockKind::Field => {
                 for sub in &b.items {
@@ -66,7 +80,14 @@ fn walk(
                     }
                 }
             }
-            ast::ItemKind::Block(b) => walk(id, &b.items, Some(b.kind), diags),
+            ast::ItemKind::Block(b) => {
+                let next_declaration = if b.kind.is_declaration() {
+                    Some(b.kind)
+                } else {
+                    declaration
+                };
+                walk(id, &b.items, Some(b.kind), next_declaration, diags);
+            }
             ast::ItemKind::Field(f) => {
                 let known = enclosing.and_then(known_field_body_for);
                 for sub in &f.items {

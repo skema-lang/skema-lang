@@ -88,6 +88,7 @@ pub(crate) fn run<'a>(
             let namespace = file
                 .document
                 .map_or_else(String::new, |(n, ..)| n.to_owned());
+            let moved_from = resolve_moved_from(file.id, decl.block.child(BlockKind::Meta), diags);
             tables.push(model::Table {
                 file: file.id,
                 namespace,
@@ -96,6 +97,7 @@ pub(crate) fn run<'a>(
                 fields,
                 indexes,
                 examples,
+                moved_from,
                 span: decl.item_span,
             });
         }
@@ -714,6 +716,31 @@ fn check_relation_action(
         ));
     }
     Some(text)
+}
+
+/// Resolves a `Table`'s `Meta.movedFrom` (`docs/03`) – `rules::keys` already
+/// confirmed the key is only legal here; this checks its value is a string,
+/// same as `author`/`note`/`version`.
+fn resolve_moved_from(
+    owner: FileId,
+    meta: Option<&ast::Block>,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    let attr = meta?.items.iter().find_map(|item| match &item.kind {
+        ast::ItemKind::Setting(a) if a.key.text == "movedFrom" => Some(a),
+        _ => None,
+    })?;
+    match attr.value.as_ref().map(|v| &v.kind) {
+        Some(ValueKind::Str(s)) => Some(s.clone()),
+        _ => {
+            diags.push(Diagnostic::error(
+                owner,
+                attr.span,
+                "`movedFrom` must be a string, e.g. `movedFrom = \"OldName\";` (docs/03)",
+            ));
+            None
+        }
+    }
 }
 
 // ===========================================================================

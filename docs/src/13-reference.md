@@ -14,7 +14,7 @@
 | `Enum` | A closed, ordered set of named values with a `Field` block describing storage. |
 | `Group` | A named, cross-file collection of declarations for diagrams and documentation. No schema effect. |
 | `Datatype` | A user-defined type: parameters, a `Field` block, and per-engine `Dialect` blocks. |
-| `Meta` | Descriptive block (author, note, version, style classes). Never affects generated schema. |
+| `Meta` | Descriptive block (author, note, version, style classes; `Table`-only `movedFrom`). Never affects generated schema. |
 | `Style` | Visual block. `@name` selects a built-in element type; a bare name defines a reusable class. |
 | `Lint` | Project-wide naming/consistency rules, enforced only under `mode = strict`. |
 | `Database` | The block for physical names: `database`, `schema`, `table`. |

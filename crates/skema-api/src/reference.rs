@@ -140,7 +140,7 @@ fn block_reference(
             &["Field", "Dialect"],
         ),
         Meta => (
-            "Descriptive metadata - author, note, version, style classes. Never affects the generated schema.",
+            "Descriptive metadata - author, note, version, style classes, and (Table only) movedFrom for the planned schema diff. Never affects the generated schema.",
             &[
                 "Project", "Document", "Table", "Partial", "Enum", "Group", "Datatype",
             ],

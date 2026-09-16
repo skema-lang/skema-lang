@@ -7,7 +7,12 @@
 
 use TypeParamSlot::{Int, OptInt, OptOneOf};
 
-pub const META_KEYS: &[&str] = &["author", "note", "version", "styleClasses"];
+pub const META_KEYS: &[&str] = &["author", "note", "version", "styleClasses", "movedFrom"];
+
+/// The subset of [`META_KEYS`] legal only in a `Table`'s `Meta`
+/// (`docs/03`) – `rules::keys` rejects them elsewhere with the same
+/// diagnostic an unknown key gets.
+pub const TABLE_ONLY_META_KEYS: &[&str] = &["movedFrom"];
 pub const LINT_KEYS: &[&str] = &[
     "fieldNaming",
     "tableNaming",

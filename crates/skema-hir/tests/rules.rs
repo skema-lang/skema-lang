@@ -96,6 +96,115 @@ fn known_key_with_x_prefix_is_allowed() {
     assert!(diags.is_empty(), "{diags:#?}");
 }
 
+#[test]
+fn moved_from_on_a_table_meta_is_accepted_and_resolved() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; Meta {{ movedFrom = \"OldName\"; }} }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(model.tables[0].moved_from.as_deref(), Some("OldName"));
+}
+
+#[test]
+fn table_without_moved_from_resolves_to_none() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(model.tables[0].moved_from, None);
+}
+
+#[test]
+fn moved_from_with_a_non_string_value_is_rejected() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; Meta {{ movedFrom = [foo]; }} }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`movedFrom` must be a string")),
+        "{diags:#?}"
+    );
+    assert_eq!(model.tables[0].moved_from, None);
+}
+
+#[test]
+fn moved_from_is_rejected_in_project_meta() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Meta { movedFrom = \"OldName\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_document_meta() {
+    let src = "spec 1;\nDocument shop { Meta { movedFrom = \"OldName\"; } }\nProject { mode = draft; dialect = generic; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_partial_meta() {
+    let src = format!(
+        "{HEADER}\nPartial P {{ id int [pk]; Meta {{ movedFrom = \"OldName\"; }} }}\nTable T {{ use P; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_enum_meta() {
+    let src = format!(
+        "{HEADER}\nEnum Status {{ Field {{ type = string; }} Meta {{ movedFrom = \"OldName\"; }} draft; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_group_meta() {
+    let src = format!(
+        "{HEADER}\nTable Order {{ id int [pk]; }}\nGroup G {{ Meta {{ movedFrom = \"OldName\"; }} Table Order; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_datatype_meta() {
+    let src = format!(
+        "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; }} Meta {{ movedFrom = \"OldName\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
 /// A field body needs no `[…]` flags of its own – `bar string { label =
 /// "…"; };` is the whole statement (`docs/05`, the "any part may be
 /// missing" rule).
