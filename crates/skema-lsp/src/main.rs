@@ -6,9 +6,9 @@
 //! # What it serves
 //!
 //! Diagnostics, hover, go-to-definition, completion, semantic tokens,
-//! document links and the document outline over standard LSP - plus three
-//! `skema/` messages a live ER diagram needs and LSP has no word for
-//! ([`protocol`]).
+//! document links, inlay hints and the document outline over standard LSP -
+//! plus three `skema/` messages a live ER diagram needs and LSP has no word
+//! for ([`protocol`]).
 //!
 //! Every answer past the load comes from `skema-api`, the same crate the
 //! browser editor's WASM build serves, so a model looks the same in both.
@@ -27,6 +27,7 @@ mod convert;
 mod definition;
 mod folding;
 mod hover;
+mod inlay_hints;
 mod links;
 mod protocol;
 mod roots;
@@ -46,7 +47,8 @@ use lsp_types::notification::{
 };
 use lsp_types::request::{
     Completion, DocumentLinkRequest, DocumentSymbolRequest, FoldingRangeRequest, GotoDefinition,
-    HoverRequest, Request as _, SemanticTokensFullRequest, WorkspaceSymbolRequest,
+    HoverRequest, InlayHintRequest, Request as _, SemanticTokensFullRequest,
+    WorkspaceSymbolRequest,
 };
 use lsp_types::{
     CompletionOptions, DocumentLinkOptions, FoldingRangeProviderCapability,
@@ -94,6 +96,7 @@ fn main() -> Result<(), DynError> {
             },
         )),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+        inlay_hint_provider: Some(OneOf::Left(true)),
         document_link_provider: Some(DocumentLinkOptions {
             // Everything needed to resolve a link is already loaded by the
             // time any request answers - no `documentLink/resolve` round trip.
@@ -326,6 +329,11 @@ impl Server {
                 let result = self.document_links(&params);
                 self.respond(id, &result)
             }
+            InlayHintRequest::METHOD => {
+                let (id, params) = cast::<InlayHintRequest>(request)?;
+                let result = self.inlay_hints(&params);
+                self.respond(id, &result)
+            }
             WorkspaceSymbolRequest::METHOD => {
                 let (id, params) = cast::<WorkspaceSymbolRequest>(request)?;
                 let result = self.workspace_symbols(&params);
@@ -443,6 +451,16 @@ impl Server {
             return Vec::new();
         };
         links::document_links(analysis, &path)
+    }
+
+    fn inlay_hints(&mut self, params: &lsp_types::InlayHintParams) -> Vec<lsp_types::InlayHint> {
+        let Some(path) = convert::path_of(&params.text_document.uri) else {
+            return Vec::new();
+        };
+        let Some(analysis) = self.analysis_for(&path) else {
+            return Vec::new();
+        };
+        inlay_hints::inlay_hints(analysis, &path, params.range)
     }
 
     fn model(&mut self, params: &protocol::ModelParams) -> Option<protocol::ModelResponse> {
