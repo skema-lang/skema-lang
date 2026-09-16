@@ -29,8 +29,8 @@ pub use skema_api::{
     ExportedEnumEntry, ExportedField, ExportedFlag, ExportedGroup, ExportedGroupMember,
     ExportedIndex, ExportedModel, ExportedPhysical, ExportedRelation, ExportedTable,
     ExportedTypeRef, FlagValue, GroupMeta, GroupMetas, Location, MetaEntry, ProjectFile,
-    ProjectFileStatus, ProjectInput, ProjectResult, RelationKind, Severity, Span, StyleBlock,
-    StyleBlocks, StyleScope, TableMeta, TableMetas, Utf16Range,
+    ProjectFileStatus, ProjectInput, ProjectResult, ReferenceLink, RelationKind, Severity, Span,
+    StyleBlock, StyleBlocks, StyleScope, TableMeta, TableMetas, Utf16Range,
 };
 
 /// Readable panic messages in the browser console instead of an opaque

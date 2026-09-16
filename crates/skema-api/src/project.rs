@@ -86,6 +86,10 @@ pub struct ProjectResult {
     /// which interleaves files by coincidental byte offset once more than
     /// one is in play.
     pub diagnostics: Vec<Diagnostic>,
+    /// Every written reference `skema-hir` resolved, paired with what it
+    /// resolves to – the browser's go-to-definition is a lookup against
+    /// this, not a second resolution pass (brain task 81, task 09).
+    pub references: Vec<dto::ReferenceLink>,
 }
 
 pub fn analyze_project(input: ProjectInput) -> ProjectResult {
@@ -114,6 +118,7 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
                 .collect(),
             model: dto::empty_model(),
             diagnostics: orphan_diagnostics(&files, &[]),
+            references: Vec::new(),
         };
     }
 
@@ -146,10 +151,7 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
         })
         .collect();
 
-    // `analyzeProject` is the browser's in-memory analysis – no LSP session,
-    // so nothing consumes go-to-definition data here (`skema-loader::analyze`
-    // is the path that does, for `skema-lsp`).
-    let (model, _references, hir_diagnostics) = skema_hir::analyze(&inputs);
+    let (model, hir_references, hir_diagnostics) = skema_hir::analyze(&inputs);
 
     let entries: Vec<FileEntry<'_>> = parsed
         .iter()
@@ -162,6 +164,10 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
         files: &entries,
         with_locations,
     };
+    let references: Vec<dto::ReferenceLink> = hir_references
+        .iter()
+        .map(|r| dto::reference_link(&ctx, r))
+        .collect();
 
     let mut diagnostics: Vec<Diagnostic> = parsed
         .iter()
@@ -196,6 +202,7 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
             .collect(),
         model: dto::export_model(&model, &ctx),
         diagnostics,
+        references,
     }
 }
 
@@ -378,6 +385,95 @@ mod tests {
         let table = &result.model.tables[0];
         assert_eq!(table.file, "/project.skema");
         assert_eq!(table.fields[0].ty.name, "types.Email");
+    }
+
+    /// A reference-generating fixture covering the four kinds go-to-definition
+    /// cares about (brain task 81): a field type, both halves of a relation
+    /// target, a `use` target, a `Group` member. Mirrors
+    /// `skema-loader::analysis`'s own fixtures (`skema-loader/src/analysis.rs`),
+    /// so the two crates' output can be checked for equivalence.
+    const REFERENCE_FIXTURE: &str = "spec 1;\nDocument shop {}\n\
+        Project { mode = draft; dialect = generic; }\n\
+        Datatype Money { Field { type = int; } }\n\
+        Partial Stamped { createdAt string; }\n\
+        Table Customer { id int [pk]; }\n\
+        Table Order { id int [pk]; total Money; customer >Customer.id; use Stamped; }\n\
+        Group Core { Table Customer; }\n";
+
+    /// The byte span of the `occurrence`-th (0-based) `needle` in `source`.
+    fn span_of(source: &str, needle: &str, occurrence: usize) -> dto::Span {
+        let start = source
+            .match_indices(needle)
+            .nth(occurrence)
+            .unwrap_or_else(|| panic!("occurrence {occurrence} of {needle:?} not found"))
+            .0 as u32;
+        dto::Span {
+            start,
+            end: start + needle.len() as u32,
+        }
+    }
+
+    fn reference_from(refs: &[dto::ReferenceLink], from: dto::Span) -> &dto::ReferenceLink {
+        refs.iter()
+            .find(|r| r.from_span.start == from.start && r.from_span.end == from.end)
+            .unwrap_or_else(|| panic!("no reference from {from:?}, got {refs:#?}"))
+    }
+
+    #[test]
+    fn references_cover_a_field_type_a_relation_both_halves_a_use_target_and_a_group_member() {
+        let source = REFERENCE_FIXTURE;
+        let result = analyze(vec![file("/project.skema", source)], "/project.skema");
+        assert!(
+            result.ok,
+            "expected a clean analysis, got: {:?}",
+            result.diagnostics
+        );
+
+        // A field type: `total Money;` -> `Datatype Money`.
+        let money_decl = span_of(source, "Money", 0);
+        let field_type = reference_from(&result.references, span_of(source, "Money", 1));
+        assert_eq!(field_type.from_file, "/project.skema");
+        assert_eq!(field_type.to_file, "/project.skema");
+        assert_eq!(field_type.to_span.start, money_decl.start);
+        assert_eq!(field_type.to_span.end, money_decl.end);
+
+        // A relation's table half: `>Customer.id` -> `Table Customer`.
+        let customer_decl = span_of(source, "Customer", 0);
+        let relation_table = reference_from(&result.references, span_of(source, "Customer", 1));
+        assert_eq!(relation_table.to_span.start, customer_decl.start);
+        assert_eq!(relation_table.to_span.end, customer_decl.end);
+
+        // A relation's field half: `.id` -> Customer's own `id` column, not
+        // the `id` written at the relation site.
+        let dot_id_start = source.find(".id").expect("a relation target field") as u32 + 1;
+        let relation_field = reference_from(
+            &result.references,
+            dto::Span {
+                start: dot_id_start,
+                end: dot_id_start + 2,
+            },
+        );
+        let customer_id = span_of(source, "id int [pk]", 0);
+        assert_eq!(relation_field.to_span.start, customer_id.start);
+        assert_eq!(relation_field.to_span.end, customer_id.start + 2);
+
+        // A `use` target: `use Stamped;` -> `Partial Stamped`.
+        let stamped_decl = span_of(source, "Stamped", 0);
+        let use_target = reference_from(&result.references, span_of(source, "Stamped", 1));
+        assert_eq!(use_target.to_span.start, stamped_decl.start);
+        assert_eq!(use_target.to_span.end, stamped_decl.end);
+
+        // A `Group` member: `Table Customer;` -> `Table Customer`.
+        let group_member = reference_from(&result.references, span_of(source, "Customer", 2));
+        assert_eq!(group_member.to_span.start, customer_decl.start);
+        assert_eq!(group_member.to_span.end, customer_decl.end);
+
+        assert_eq!(
+            result.references.len(),
+            5,
+            "expected exactly these five references, got {:#?}",
+            result.references
+        );
     }
 
     #[test]
