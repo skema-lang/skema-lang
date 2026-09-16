@@ -2,6 +2,7 @@
 
 mod dialect;
 mod group;
+mod identifiers;
 mod keys;
 mod lint;
 mod placement;
@@ -104,6 +105,8 @@ pub(crate) fn run(
     // opt out of (`decisions.md`, "Lint catalog expansion (tasks 66–70)").
     resolve::check_required_fk_cycles(&tables, &mut diags);
 
+    identifiers::check(project.as_ref(), &tables, &mut diags);
+
     lint::check(&ctx, project.as_ref(), &tables, &mut diags);
 
     diags.sort_by_key(|d| (d.span.start, d.span.end));
@@ -155,6 +158,25 @@ impl Dialect {
     }
 }
 
+/// `Database { Dialect @oracledb { identifierLength = …; } }` (`docs/11`,
+/// Project-level only) – Oracle's identifier byte limit is configurable,
+/// unlike Postgres's and MySQL's fixed ones (task 82).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OracleIdentifierLength {
+    /// The default – no `identifierLength` key, or an absent `Project`.
+    Standard,
+    Extended,
+}
+
+impl OracleIdentifierLength {
+    pub(crate) const fn limit_bytes(self) -> usize {
+        match self {
+            Self::Standard => crate::catalog::ORACLEDB_IDENTIFIER_LIMIT_STANDARD,
+            Self::Extended => crate::catalog::ORACLEDB_IDENTIFIER_LIMIT_EXTENDED,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProjectSettings<'a> {
     /// The file in which the one canonical `Project` block lives.
@@ -163,4 +185,5 @@ pub(crate) struct ProjectSettings<'a> {
     pub dialect: Dialect,
     pub lint: Option<&'a ast::Block>,
     pub database: Option<&'a ast::Block>,
+    pub oracle_identifier_length: OracleIdentifierLength,
 }

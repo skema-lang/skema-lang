@@ -1900,3 +1900,256 @@ fn severity_override_on_database_setting_is_rejected() {
         assert_eq!(diags.len(), 1, "mode={mode}: {diags:#?}");
     }
 }
+
+// ===========================================================================
+// Reserved words & identifier length (task 82)
+// ===========================================================================
+
+#[test]
+fn reserved_physical_table_name_is_flagged_under_strict() {
+    // `order` is reserved in all three dialects (docs/05's own example).
+    for dialect in ["postgres", "mysql", "oracledb"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable Order {{ id uuid [pk]; Database {{ table = \"order\"; }} }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("`order` is a reserved word in")
+                    && m.contains(dialect)
+                    && m.contains("table")),
+            "{dialect}: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn reserved_physical_table_name_is_silent_under_draft_and_generic() {
+    let draft = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = postgres; }\nTable Order { id uuid [pk]; Database { table = \"order\"; } }\n";
+    let (_, diags) = analyze_src(draft);
+    assert!(
+        !messages(&diags).iter().any(|m| m.contains("reserved word")),
+        "draft: {diags:#?}"
+    );
+
+    let generic = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; }\nTable Order { id uuid [pk]; Database { table = \"order\"; } }\n";
+    let (_, diags) = analyze_src(generic);
+    assert!(
+        !messages(&diags).iter().any(|m| m.contains("reserved word")),
+        "generic: {diags:#?}"
+    );
+}
+
+#[test]
+fn reserved_physical_column_name_is_flagged_under_strict() {
+    // `select` is reserved in all three dialects.
+    for dialect in ["postgres", "mysql", "oracledb"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable T {{ id uuid [pk]; select varchar(80); }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("`select` is a reserved word in")
+                    && m.contains(dialect)
+                    && m.contains("column")),
+            "{dialect}: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn too_long_physical_column_name_is_flagged_under_strict() {
+    // One byte over each dialect's limit (oracledb defaults to `standard`, 30).
+    for (dialect, len) in [("postgres", 64), ("mysql", 65), ("oracledb", 31)] {
+        let name = "a".repeat(len);
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable T {{ id uuid [pk]; {name} varchar(80); }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("byte identifier limit")),
+            "{dialect} at {len} bytes: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn physical_column_name_at_the_dialect_limit_is_not_flagged() {
+    // Exactly at each dialect's limit – no diagnostic.
+    for (dialect, len) in [("postgres", 63), ("mysql", 64), ("oracledb", 30)] {
+        let name = "a".repeat(len);
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable T {{ id uuid [pk]; {name} varchar(80); }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            !messages(&diags)
+                .iter()
+                .any(|m| m.contains("byte identifier limit")),
+            "{dialect} at {len} bytes: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn physical_table_name_check_uses_the_database_override_not_the_declared_name() {
+    // Safe declared name, colliding override -> flagged (a safe business
+    // name given a colliding override must not slip through).
+    let collides = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable Purchase { id uuid [pk]; Database { table = \"order\"; } }\n";
+    let (_, diags) = analyze_src(collides);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`order` is a reserved word")),
+        "{diags:#?}"
+    );
+
+    // Colliding declared name, safe override -> not flagged (checking the
+    // business name instead would false-positive here).
+    let safe = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable Order { id uuid [pk]; Database { table = \"purchase_orders\"; } }\n";
+    let (_, diags) = analyze_src(safe);
+    assert!(
+        !messages(&diags).iter().any(|m| m.contains("reserved word")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn physical_column_name_check_uses_the_column_flag_not_the_declared_name() {
+    let collides = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable T { id uuid [pk]; status varchar(80) [column=\"select\"]; }\n";
+    let (_, diags) = analyze_src(collides);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`select` is a reserved word")),
+        "{diags:#?}"
+    );
+
+    let safe = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable T { id uuid [pk]; select varchar(80) [column=\"status\"]; }\n";
+    let (_, diags) = analyze_src(safe);
+    assert!(
+        !messages(&diags).iter().any(|m| m.contains("reserved word")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn reserved_schema_name_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; Database { schema = \"select\"; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`select` is a reserved word in postgres") && m.contains("schema")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn reserved_database_name_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; Database { database = \"select\"; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags).iter().any(
+            |m| m.contains("`select` is a reserved word in postgres") && m.contains("database")
+        ),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn multibyte_physical_column_name_is_counted_in_bytes_not_characters() {
+    // 32 characters, each `é` two UTF-8 bytes -> 64 bytes, one over
+    // postgres's 63-byte limit despite being well under it in characters.
+    let name = "é".repeat(32);
+    let src = format!(
+        "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = postgres; }}\nTable T {{ id uuid [pk]; note varchar(80) [column=\"{name}\"]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("64 bytes long") && m.contains("63-byte identifier limit")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn oracledb_default_identifier_length_is_standard_30_bytes() {
+    let name = "a".repeat(31);
+    let src = format!(
+        "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = oracledb; }}\nTable T {{ id uuid [pk]; {name} varchar(80); }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("30-byte identifier limit")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn identifier_length_extended_raises_oracledbs_limit_to_128_bytes() {
+    let name_31 = "a".repeat(31);
+    let under_limit = format!(
+        "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = oracledb; Database {{ Dialect @oracledb {{ identifierLength = \"extended\"; }} }} }}\nTable T {{ id uuid [pk]; {name_31} varchar(80); }}\n"
+    );
+    let (_, diags) = analyze_src(&under_limit);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("byte identifier limit")),
+        "31 bytes under extended: {diags:#?}"
+    );
+
+    let name_129 = "a".repeat(129);
+    let over_limit = format!(
+        "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = oracledb; Database {{ Dialect @oracledb {{ identifierLength = \"extended\"; }} }} }}\nTable T {{ id uuid [pk]; {name_129} varchar(80); }}\n"
+    );
+    let (_, diags) = analyze_src(&over_limit);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("128-byte identifier limit")),
+        "129 bytes under extended: {diags:#?}"
+    );
+}
+
+#[test]
+fn unknown_identifier_length_value_is_rejected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = oracledb; Database { Dialect @oracledb { identifierLength = \"medium\"; } } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown `identifierLength` value `medium`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn identifier_length_outside_projects_own_database_is_rejected() {
+    let document_level = "spec 1;\nDocument shop { Database { Dialect @oracledb { identifierLength = \"extended\"; } } }\nProject { mode = strict; dialect = oracledb; }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(document_level);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("only legal in `Project`'s own `Database` block")),
+        "document-level: {diags:#?}"
+    );
+
+    let table_level = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = oracledb; }\nTable T { id uuid [pk]; Database { Dialect @oracledb { identifierLength = \"extended\"; } } }\n";
+    let (_, diags) = analyze_src(table_level);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("only legal in `Project`'s own `Database` block")),
+        "table-level: {diags:#?}"
+    );
+}

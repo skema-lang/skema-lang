@@ -154,6 +154,7 @@ Both `mode` and `dialect` are **mandatory and closed**: a `Project` block withou
 |---|---|---|
 | Lint rules | ignored | enforced |
 | Data types | simple types suffice: `string`, `int`, `float`, `bool` | precise types required |
+| Physical identifiers | not checked | checked against the dialect's reserved words and length limit (with a real `dialect` — [11 — Physical Mapping](11-physical-mapping.md#reserved-words-and-identifier-length)) |
 | Intended for | sketching, first pass | a model meant for code generation |
 
 Switching from `draft` to `strict` turns every previously-ignored inconsistency into a visible diagnostic — the switch costs one word.
