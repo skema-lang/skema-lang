@@ -24,6 +24,7 @@ mod analysis;
 mod completion;
 mod convert;
 mod definition;
+mod folding;
 mod hover;
 mod protocol;
 mod roots;
@@ -41,14 +42,14 @@ use lsp_types::notification::{
     DidSaveTextDocument, Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, Request as _,
-    SemanticTokensFullRequest,
+    Completion, DocumentSymbolRequest, FoldingRangeRequest, GotoDefinition, HoverRequest,
+    Request as _, SemanticTokensFullRequest,
 };
 use lsp_types::{
-    CompletionOptions, HoverProviderCapability, InitializeParams, OneOf, PublishDiagnosticsParams,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Url, WorkDoneProgressOptions,
+    CompletionOptions, FoldingRangeProviderCapability, HoverProviderCapability, InitializeParams,
+    OneOf, PublishDiagnosticsParams, SemanticTokensFullOptions, SemanticTokensLegend,
+    SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkDoneProgressOptions,
 };
 
 use analysis::Analysis;
@@ -87,6 +88,7 @@ fn main() -> Result<(), DynError> {
                 work_done_progress_options: WorkDoneProgressOptions::default(),
             },
         )),
+        folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
         ..ServerCapabilities::default()
     })?;
 
@@ -303,6 +305,11 @@ impl Server {
                 let result = self.document_symbols(&params);
                 self.respond(id, &result)
             }
+            FoldingRangeRequest::METHOD => {
+                let (id, params) = cast::<FoldingRangeRequest>(request)?;
+                let result = self.folding_ranges(&params);
+                self.respond(id, &result)
+            }
             protocol::MODEL_REQUEST => {
                 let params: protocol::ModelParams = serde_json::from_value(request.params)?;
                 let result = self.model(&params);
@@ -377,6 +384,18 @@ impl Server {
             .map(|decl| symbol_of(decl, &source))
             .collect();
         Some(lsp_types::DocumentSymbolResponse::Nested(symbols))
+    }
+
+    fn folding_ranges(
+        &mut self,
+        params: &lsp_types::FoldingRangeParams,
+    ) -> Option<Vec<lsp_types::FoldingRange>> {
+        let path = convert::path_of(&params.text_document.uri)?;
+        // Purely syntactic, like `document_symbols` - works without a
+        // project, and for a file that has parse errors elsewhere.
+        let source = self.source_of(&path)?;
+        let (ast, _) = skema_syntax::parse(&source);
+        Some(folding::folding_ranges(&source, &ast))
     }
 
     fn model(&mut self, params: &protocol::ModelParams) -> Option<protocol::ModelResponse> {
