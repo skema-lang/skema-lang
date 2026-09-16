@@ -14,6 +14,10 @@ pub const LINT_KEYS: &[&str] = &[
     "enumNaming",
     "unusedImport",
     "danglingRef",
+    "requirePrimaryKey",
+    "requireForeignKeyIndex",
+    "requireTableNote",
+    "requireFieldNote",
 ];
 pub const DATABASE_KEYS: &[&str] = &["database", "schema", "table"];
 pub const PROJECT_KEYS: &[&str] = &["mode", "dialect"];

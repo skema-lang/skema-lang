@@ -1197,3 +1197,346 @@ fn style_class_with_invalid_key_is_rejected() {
         "{diags:#?}"
     );
 }
+
+// ===========================================================================
+// requirePrimaryKey / requireForeignKeyIndex / requireTableNote /
+// requireFieldNote (task 68)
+// ===========================================================================
+
+/// One (Lint key, source triggering the gap, substring of the gap's
+/// diagnostic) triple per new rule – shared by the omitted-key, draft-mode
+/// and unknown-severity tests below, which behave identically across all
+/// four keys.
+const REQUIRE_LINT_CASES: &[(&str, &str, &str)] = &[
+    (
+        "requirePrimaryKey",
+        "Table T { name string; }",
+        "has no primary key",
+    ),
+    (
+        "requireForeignKeyIndex",
+        "Table Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; }",
+        "has no covering index",
+    ),
+    (
+        "requireTableNote",
+        "Table T { id int [pk]; }",
+        "has no `Meta.note`",
+    ),
+    (
+        "requireFieldNote",
+        "Table T { id int [pk] { note = \"pk\"; } name string; }",
+        "has no `note`",
+    ),
+];
+
+#[test]
+fn require_lint_key_omitted_means_no_check() {
+    for &(key, decls, gap) in REQUIRE_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ danglingRef = warn; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            !messages(&diags).iter().any(|m| m.contains(gap)),
+            "`{key}` fired although it was never written in `Lint`: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn require_lint_key_is_not_checked_under_draft() {
+    for &(key, decls, gap) in REQUIRE_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = draft; dialect = generic; Lint {{ {key} = warn; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            !messages(&diags).iter().any(|m| m.contains(gap)),
+            "`{key}` fired under `mode = draft`: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn require_lint_key_unknown_severity_word_is_rejected() {
+    for &(key, decls, gap) in REQUIRE_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = maybe; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("unknown severity `maybe`")),
+            "`{key}`: {diags:#?}"
+        );
+        assert!(
+            !messages(&diags).iter().any(|m| m.contains(gap)),
+            "`{key}` still ran its check after an invalid severity: {diags:#?}"
+        );
+    }
+}
+
+// --- requirePrimaryKey -----------------------------------------------------
+
+#[test]
+fn table_without_pk_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn; } }\nTable T { name string; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no primary key"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn table_without_pk_severity_error_is_respected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = error; } }\nTable T { name string; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no primary key"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn table_with_a_pk_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn a_pk_inherited_via_use_partial_counts() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn; } }\nPartial P { id int [pk]; }\nTable T { use P; name string; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no primary key")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_partial_without_pk_is_never_flagged_itself() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn; } }\nPartial P { name string; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no primary key")),
+        "a `Partial` never becomes a table (docs/09): {diags:#?}"
+    );
+}
+
+// --- requireForeignKeyIndex -------------------------------------------------
+
+#[test]
+fn uncovered_foreign_key_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no covering index"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn uncovered_foreign_key_severity_error_is_respected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = error; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no covering index"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn foreign_key_with_own_unique_flag_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id [unique]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn foreign_key_with_own_pk_flag_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { customer >Customer.id [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn foreign_key_as_the_leading_column_of_a_composite_index_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; opened_on date; Index { (customer, opened_on); } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn foreign_key_not_leading_a_composite_index_is_still_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; opened_on date; Index { (opened_on, customer); } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn backreference_field_is_never_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; orders <Order.customer; }\nTable Order { id int [pk]; customer >Customer.id; }\n";
+    let (_, diags) = analyze_src(src);
+    let msgs = messages(&diags);
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("`customer` has no covering index")),
+        "the `>` side should still be flagged: {diags:#?}"
+    );
+    assert!(
+        !msgs
+            .iter()
+            .any(|m| m.contains("`orders` has no covering index")),
+        "a `<` backreference creates no column (docs/07) and must be exempt: {diags:#?}"
+    );
+}
+
+#[test]
+fn one_to_one_relation_field_is_also_checked() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable User { id int [pk]; }\nTable Profile { id int [pk]; user -User.id; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`user` has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+// --- requireTableNote --------------------------------------------------------
+
+#[test]
+fn table_without_meta_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = warn; } }\nTable T { id int [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no `Meta.note`"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn table_without_meta_note_severity_error_is_respected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = error; } }\nTable T { id int [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no `Meta.note`"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn table_with_meta_but_no_note_key_is_still_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = warn; } }\nTable T { id int [pk]; Meta { author = \"anna\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no `Meta.note`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn table_with_meta_note_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = warn; } }\nTable T { id uuid [pk]; Meta { note = \"what this table is for\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+// --- requireFieldNote --------------------------------------------------------
+
+#[test]
+fn field_without_note_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireFieldNote = warn; } }\nTable T { id int [pk] { note = \"primary key\"; } name string; }\n";
+    let (_, diags) = analyze_src(src);
+    let msgs = messages(&diags);
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("field `name` has no `note`")),
+        "{diags:#?}"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("field `id` has no `note`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn field_without_note_severity_error_is_respected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireFieldNote = error; } }\nTable T { id int [pk] { note = \"primary key\"; } name string; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("field `name` has no `note`"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn field_with_note_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireFieldNote = warn; } }\nTable T { id uuid [pk] { note = \"primary key\"; } name varchar(80) { note = \"the customer's name\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn partial_field_without_note_is_flagged_even_when_unused_by_any_table() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireFieldNote = warn; } }\nPartial P { description string; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("field `description` has no `note`")),
+        "a `Partial`'s own fields are checked directly, not only through a \
+         `Table` that `use`s it: {diags:#?}"
+    );
+}
+
+#[test]
+fn enum_is_unaffected_by_either_note_rule() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = warn; requireFieldNote = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { id uuid [pk] { note = \"pk\"; } status Status { note = \"current status\"; } Meta { note = \"a table\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}

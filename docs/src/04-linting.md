@@ -45,6 +45,10 @@ Naming style itself is a project decision, not a language rule — skema accepts
 |---|---|
 | `danglingRef` | a reference (for example, in a `Group`) pointing at a nonexistent declaration |
 | `unusedImport` | an `import` whose namespace is never referenced |
+| `requirePrimaryKey` | a `Table` with no `pk` field |
+| `requireForeignKeyIndex` | a foreign key column (`>`/`-`) with no covering `[unique]`/`[pk]` or leading `Index` entry |
+| `requireTableNote` | a `Table` with no `Meta.note` |
+| `requireFieldNote` | a `Table`/`Partial` field with no `note` |
 
 Severity values (`warn`, `error`) are shown above; a full rule catalog and a syntax for overriding severity per rule are not finalized — see [Reference → Known limitations](13-reference.md#known-limitations).
 

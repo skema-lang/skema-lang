@@ -1,4 +1,6 @@
-//! `Lint`: naming conventions and `unusedImport` – both only in effect under
+//! `Lint`: naming conventions and the opt-in modeling-quality rules
+//! (`unusedImport`, `requirePrimaryKey`, `requireForeignKeyIndex`,
+//! `requireTableNote`, `requireFieldNote`) – all only in effect under
 //! `mode = strict` (`docs/04`).
 //!
 //! A rule only applies when it's **written in the `Lint` block** – "makes
@@ -13,11 +15,13 @@ use skema_syntax::ast::{self, BlockKind, ValueKind};
 
 use super::project::read_word;
 use super::{Ctx, Mode, ProjectSettings};
+use crate::model;
 use crate::{Diagnostic, FileId};
 
 pub(crate) fn check(
     ctx: &Ctx<'_>,
     project: Option<&ProjectSettings<'_>>,
+    tables: &[model::Table],
     diags: &mut Vec<Diagnostic>,
 ) {
     let Some(project) = project else { return };
@@ -44,6 +48,35 @@ pub(crate) fn check(
     );
     check_field_naming(ctx, project.file, lint, diags);
     check_unused_imports(ctx, project.file, lint, diags);
+    check_require_primary_key(project.file, lint, tables, diags);
+    check_require_foreign_key_index(project.file, lint, tables, diags);
+    check_require_table_note(ctx, project.file, lint, diags);
+    check_require_field_note(ctx, project.file, lint, diags);
+}
+
+/// Reads a `key = warn|error;` severity setting, rejecting any other word
+/// the same way `unusedImport` already does – shared by every opt-in
+/// boolean `Lint` rule (`unusedImport`, `danglingRef`, and the
+/// `require*`/note rules below).
+fn read_severity(
+    project_file: FileId,
+    lint: &ast::Block,
+    key: &str,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<Severity> {
+    let (word, span) = read_word(lint, key)?;
+    match word {
+        "warn" => Some(Severity::Warning),
+        "error" => Some(Severity::Error),
+        other => {
+            diags.push(Diagnostic::error(
+                project_file,
+                span,
+                format!("unknown severity `{other}` – allowed: warn, error"),
+            ));
+            None
+        }
+    }
 }
 
 // ===========================================================================
@@ -175,20 +208,8 @@ fn check_unused_imports(
     lint: &ast::Block,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let Some((severity_word, severity_span)) = read_word(lint, "unusedImport") else {
+    let Some(severity) = read_severity(project_file, lint, "unusedImport", diags) else {
         return;
-    };
-    let severity = match severity_word {
-        "warn" => Severity::Warning,
-        "error" => Severity::Error,
-        other => {
-            diags.push(Diagnostic::error(
-                project_file,
-                severity_span,
-                format!("unknown severity `{other}` – allowed: warn, error"),
-            ));
-            return;
-        }
     };
 
     for file in &ctx.facts {
@@ -285,4 +306,159 @@ fn walk_items<'a>(items: &'a [ast::Item], used: &mut HashSet<&'a str>) {
             _ => {}
         }
     }
+}
+
+// ===========================================================================
+// requirePrimaryKey / requireForeignKeyIndex / requireTableNote / requireFieldNote
+// ===========================================================================
+
+fn check_require_primary_key(
+    project_file: FileId,
+    lint: &ast::Block,
+    tables: &[model::Table],
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Some(severity) = read_severity(project_file, lint, "requirePrimaryKey", diags) else {
+        return;
+    };
+    for table in tables {
+        // `table.fields` already has `use Partial` inlined, so an inherited
+        // `pk` counts.
+        if table.fields.iter().any(|f| f.flags.contains_key("pk")) {
+            continue;
+        }
+        diags.push(Diagnostic::new(
+            table.file,
+            severity,
+            table.span,
+            format!(
+                "table `{}` has no primary key (Lint.requirePrimaryKey)",
+                table.name
+            ),
+        ));
+    }
+}
+
+/// Every relation op except `<` (`ManyToOne`, the backreference side)
+/// creates a column (`docs/07`, "Not every relationship creates a column").
+fn check_require_foreign_key_index(
+    project_file: FileId,
+    lint: &ast::Block,
+    tables: &[model::Table],
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Some(severity) = read_severity(project_file, lint, "requireForeignKeyIndex", diags) else {
+        return;
+    };
+    for table in tables {
+        for field in &table.fields {
+            let Some(relation) = &field.relation else {
+                continue;
+            };
+            if relation.kind == model::RelationKind::ManyToOne {
+                continue;
+            }
+            // Covering index: the field's own flag, or the leading column
+            // of some `Index` entry – column order is significant (`docs/10`).
+            let covered = field.flags.contains_key("unique")
+                || field.flags.contains_key("pk")
+                || table
+                    .indexes
+                    .iter()
+                    .any(|index| index.columns.first().is_some_and(|c| c == &field.name));
+            if covered {
+                continue;
+            }
+            diags.push(Diagnostic::new(
+                field.file,
+                severity,
+                field.span,
+                format!(
+                    "foreign key `{}` has no covering index – add `[unique]`/`[pk]` or make it \
+                     the leading column of an `Index` (Lint.requireForeignKeyIndex)",
+                    field.name
+                ),
+            ));
+        }
+    }
+}
+
+fn check_require_table_note(
+    ctx: &Ctx<'_>,
+    project_file: FileId,
+    lint: &ast::Block,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Some(severity) = read_severity(project_file, lint, "requireTableNote", diags) else {
+        return;
+    };
+    for file in &ctx.facts {
+        for decl in file.declarations.values() {
+            if decl.kind != BlockKind::Table {
+                continue;
+            }
+            let has_note = decl
+                .block
+                .child(BlockKind::Meta)
+                .is_some_and(|meta| has_note_setting(&meta.items));
+            if has_note {
+                continue;
+            }
+            diags.push(Diagnostic::new(
+                file.id,
+                severity,
+                decl.item_span,
+                "table has no `Meta.note` (Lint.requireTableNote)",
+            ));
+        }
+    }
+}
+
+fn check_require_field_note(
+    ctx: &Ctx<'_>,
+    project_file: FileId,
+    lint: &ast::Block,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Some(severity) = read_severity(project_file, lint, "requireFieldNote", diags) else {
+        return;
+    };
+    for file in &ctx.facts {
+        for decl in file.declarations.values() {
+            if !matches!(decl.kind, BlockKind::Table | BlockKind::Partial) {
+                continue;
+            }
+            for item in &decl.block.items {
+                let ast::ItemKind::Field(f) = &item.kind else {
+                    continue;
+                };
+                if has_note_setting(&f.items) {
+                    continue;
+                }
+                diags.push(Diagnostic::new(
+                    file.id,
+                    severity,
+                    f.name.span,
+                    format!(
+                        "field `{}` has no `note` (Lint.requireFieldNote)",
+                        f.name.text
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// A `note = "…";` setting directly inside `items` – shared by
+/// `requireTableNote` (a `Meta` child's items) and `requireFieldNote` (a
+/// field's own body).
+fn has_note_setting(items: &[ast::Item]) -> bool {
+    items.iter().any(|item| {
+        matches!(
+            &item.kind,
+            ast::ItemKind::Setting(a)
+                if a.key.text == "note"
+                    && matches!(a.value.as_ref().map(|v| &v.kind), Some(ValueKind::Str(_)))
+        )
+    })
 }

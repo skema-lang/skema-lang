@@ -100,7 +100,7 @@ pub(crate) fn run(
     let groups = group::check(&ctx, project.as_ref(), &mut links, &mut diags);
     let (tables, enums) = resolve::run(&ctx, project.as_ref(), &mut links, &mut diags);
 
-    lint::check(&ctx, project.as_ref(), &mut diags);
+    lint::check(&ctx, project.as_ref(), &tables, &mut diags);
 
     diags.sort_by_key(|d| (d.span.start, d.span.end));
 
