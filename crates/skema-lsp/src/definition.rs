@@ -21,7 +21,7 @@
 
 use std::path::Path;
 
-use skema_syntax::legacy_ast::{Item, ItemKind};
+use skema_syntax::ast::{AstNode, Item, ItemKind};
 
 use crate::analysis::{Analysis, display_path};
 use crate::convert;
@@ -57,10 +57,10 @@ pub fn definition(analysis: &Analysis, path: &Path, offset: u32) -> Option<lsp_t
 pub(crate) fn imports<'a>(
     analysis: &'a Analysis,
     from: &'a skema_loader::LoadedFile,
-) -> impl Iterator<Item = (&'a Item, Option<&'a skema_loader::LoadedFile>)> {
+) -> impl Iterator<Item = (Item, Option<&'a skema_loader::LoadedFile>)> {
     let mut resolved = from.import_targets.iter();
-    from.ast.items.iter().filter_map(move |item| {
-        if !matches!(item.kind, ItemKind::Import(_)) {
+    from.ast.items().filter_map(move |item| {
+        if !matches!(item.kind(), ItemKind::Import(_)) {
             return None;
         }
         let id = (*resolved.next()?)?;
@@ -75,8 +75,10 @@ fn import_target(
     from: &skema_loader::LoadedFile,
     offset: u32,
 ) -> Option<lsp_types::Location> {
-    let (_, target) = imports(analysis, from)
-        .find(|(item, _)| item.span.start <= offset && offset < item.span.end)?;
+    let (_, target) = imports(analysis, from).find(|(item, _)| {
+        let span = item.span();
+        span.start <= offset && offset < span.end
+    })?;
     Some(lsp_types::Location {
         uri: convert::url_of(&target?.path)?,
         // The top of the file: an import names a file, not a place in it.

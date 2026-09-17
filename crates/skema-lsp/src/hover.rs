@@ -17,7 +17,7 @@ use skema_api::{
     ExportedField, ExportedFlag, ExportedModel, ExportedTable, FlagValue, RelationKind, Span,
     block_reference_markdown, flag_reference,
 };
-use skema_syntax::legacy_ast::{Attr, BlockKind, Item, ItemKind};
+use skema_syntax::ast::{Attr, BlockKind, Item, ItemKind};
 
 use crate::analysis::Analysis;
 use crate::convert;
@@ -33,14 +33,14 @@ pub fn hover(analysis: &Analysis, display_path: &str, offset: u32) -> Option<lsp
         .find(|f| crate::analysis::display_path(f) == display_path)?;
 
     let model_hit = describe(&analysis.model, display_path, offset);
-    let keyword_hit = keyword_at(&file.ast.items, offset).map(|(kind, span)| {
+    let keyword_hit = keyword_at(file.ast.items(), offset).map(|(kind, span)| {
         (
             block_reference_markdown(kind, &skema_api::builtins()),
             Span::from(span),
         )
     });
-    let flag_hit = attr_at(&file.ast.items, offset)
-        .and_then(|(name, span)| Some((flag_reference(name)?.to_owned(), Span::from(span))));
+    let flag_hit = attr_at(file.ast.items(), offset)
+        .and_then(|(name, span)| Some((flag_reference(&name)?.to_owned(), Span::from(span))));
 
     // All three can cover the same offset - a flag's span sits inside its
     // field's, whose span sits inside its table's. The narrowest one is what
@@ -70,18 +70,22 @@ pub fn hover(analysis: &Analysis, display_path: &str, offset: u32) -> Option<lsp
 /// from the syntax tree rather than the model: `Document`, `Meta`,
 /// `Project` and the other settings blocks carry no schema meaning of their
 /// own, so they never appear in [`ExportedModel`] at all.
-fn keyword_at(items: &[Item], offset: u32) -> Option<(BlockKind, skema_syntax::Span)> {
+fn keyword_at(
+    items: impl Iterator<Item = Item>,
+    offset: u32,
+) -> Option<(BlockKind, skema_syntax::Span)> {
     for item in items {
-        let ItemKind::Block(block) = &item.kind else {
+        let ItemKind::Block(block) = item.kind() else {
             continue;
         };
+        let keyword_span = block.keyword().span();
         // `Other` is a name the language doesn't recognize (`postgres`
         // inside `Dialect`) - nothing in the reference to say about it, so
         // it is not a hit, but its children may still contain real ones.
-        if block.kind != BlockKind::Other && syntax_contains(block.keyword.span, offset) {
-            return Some((block.kind, block.keyword.span));
+        if block.kind() != BlockKind::Other && syntax_contains(keyword_span, offset) {
+            return Some((block.kind(), keyword_span));
         }
-        if let Some(found) = keyword_at(&block.items, offset) {
+        if let Some(found) = keyword_at(block.items(), offset) {
             return Some(found);
         }
     }
@@ -96,31 +100,36 @@ const fn syntax_contains(span: skema_syntax::Span, offset: u32) -> bool {
 /// tree the same way `keyword_at` walks it for block keywords: a `Field`'s
 /// or `IndexEntry`'s `flags` are `Attr`s with their own span, so no new
 /// span-tracking is needed.
-fn attr_at(items: &[Item], offset: u32) -> Option<(&str, skema_syntax::Span)> {
+fn attr_at(items: impl Iterator<Item = Item>, offset: u32) -> Option<(String, skema_syntax::Span)> {
     for item in items {
-        let flags = match &item.kind {
-            ItemKind::Field(field) => &field.flags,
-            ItemKind::IndexEntry(entry) => &entry.flags,
-            ItemKind::Block(block) => {
-                if let Some(found) = attr_at(&block.items, offset) {
+        match item.kind() {
+            ItemKind::Field(field) => {
+                if let Some(found) = attr_in(field.flags(), offset) {
                     return Some(found);
                 }
-                continue;
             }
-            _ => continue,
-        };
-        if let Some(found) = attr_in(flags, offset) {
-            return Some(found);
+            ItemKind::IndexEntry(entry) => {
+                if let Some(found) = attr_in(entry.flags(), offset) {
+                    return Some(found);
+                }
+            }
+            ItemKind::Block(block) => {
+                if let Some(found) = attr_at(block.items(), offset) {
+                    return Some(found);
+                }
+            }
+            _ => {}
         }
     }
     None
 }
 
-fn attr_in(flags: &[Attr], offset: u32) -> Option<(&str, skema_syntax::Span)> {
-    flags
-        .iter()
-        .find(|attr| syntax_contains(attr.key.span, offset))
-        .map(|attr| (attr.key.text.as_str(), attr.key.span))
+fn attr_in(
+    mut flags: impl Iterator<Item = Attr>,
+    offset: u32,
+) -> Option<(String, skema_syntax::Span)> {
+    let attr = flags.find(|attr| syntax_contains(attr.key().span(), offset))?;
+    Some((attr.key().text(), attr.key().span()))
 }
 
 /// Innermost match wins: a field's span sits inside its table's, and the

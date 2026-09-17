@@ -127,9 +127,10 @@ impl Roots {
         }
         found.retain(|path| {
             read(path).is_ok_and(|src| {
-                let (file, _) = skema_syntax::parse(&src);
+                let (parsed, _) = skema_syntax::parse(&src);
+                let file = parsed.syntax();
                 file.blocks()
-                    .any(|b| b.kind == skema_syntax::legacy_ast::BlockKind::Project)
+                    .any(|b| b.kind() == skema_syntax::ast::BlockKind::Project)
             })
         });
         found.sort();

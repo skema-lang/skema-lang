@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use skema_syntax::ast::AstNode;
 use skema_syntax::{Span, TokenKind, tokenize};
 
 use crate::analysis::Analysis;
@@ -18,7 +19,7 @@ pub fn document_links(analysis: &Analysis, path: &Path) -> Vec<lsp_types::Docume
     definition::imports(analysis, file)
         .filter_map(|(item, target)| {
             let target = target?;
-            let path_span = path_literal_span(&file.src, item.span)?;
+            let path_span = path_literal_span(&file.src, item.span())?;
             Some(lsp_types::DocumentLink {
                 range: convert::range_of(&file.src, path_span),
                 target: convert::url_of(&target.path),

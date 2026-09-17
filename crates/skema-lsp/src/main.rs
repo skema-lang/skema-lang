@@ -407,7 +407,8 @@ impl Server {
     ) -> Option<lsp_types::DocumentSymbolResponse> {
         let path = convert::path_of(&params.text_document.uri)?;
         let source = self.source_of(&path)?;
-        let (ast, _) = skema_syntax::parse(&source);
+        let (parsed, _) = skema_syntax::parse(&source);
+        let ast = parsed.syntax();
         let symbols = symbols::declarations(&ast)
             .iter()
             .map(|decl| symbol_of(decl, &source))
@@ -436,7 +437,8 @@ impl Server {
         // Purely syntactic, like `document_symbols` - works without a
         // project, and for a file that has parse errors elsewhere.
         let source = self.source_of(&path)?;
-        let (ast, _) = skema_syntax::parse(&source);
+        let (parsed, _) = skema_syntax::parse(&source);
+        let ast = parsed.syntax();
         Some(folding::folding_ranges(&source, &ast))
     }
 

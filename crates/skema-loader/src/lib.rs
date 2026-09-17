@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 use std::{fmt, io};
 
 use skema_hir::FileId;
-use skema_syntax::legacy_ast::SourceFile;
+use skema_syntax::ast::SourceFile;
 
 #[derive(Debug)]
 pub struct LoadedFile {
@@ -41,10 +41,6 @@ pub struct LoadedFile {
     /// core knows only byte offsets (see `skema_syntax::Span`).
     pub src: String,
     pub ast: SourceFile,
-    /// The same parse, as the typed view – what `input_files` hands
-    /// `skema_hir::InputFile`. `ast`'s other consumers (`skema-lsp`) stay on
-    /// the owned AST until they migrate too (task 92d).
-    view: skema_syntax::ast::SourceFile,
     pub parse_diagnostics: Vec<skema_syntax::Diagnostic>,
     /// In the same order as `ast.imports()`.
     pub import_targets: Vec<Option<FileId>>,
@@ -66,7 +62,7 @@ impl Project {
             .map(|(i, f)| skema_hir::InputFile {
                 id: FileId(i as u32),
                 display_path: f.path.display().to_string(),
-                ast: &f.view,
+                ast: &f.ast,
                 import_targets: f.import_targets.clone(),
             })
             .collect()
@@ -111,24 +107,23 @@ pub fn load_with(
             path: path.clone(),
             source,
         })?;
-        let (ast, parse_diagnostics) = skema_syntax::parse(&src);
+        let (parsed, parse_diagnostics) = skema_syntax::parse(&src);
+        let ast = parsed.syntax();
 
         let import_targets: Vec<Option<FileId>> = ast
             .imports()
             .map(|import| {
-                let rel = import.path.as_ref()?;
+                let rel = import.path()?;
                 let joined = path.parent()?.join(rel);
                 let target = canonicalize(&joined).ok()?;
                 Some(intern(target, &mut ids, &mut queue))
             })
             .collect();
 
-        let view = ast.syntax();
         files.push(LoadedFile {
             path,
             src,
             ast,
-            view,
             parse_diagnostics,
             import_targets,
         });

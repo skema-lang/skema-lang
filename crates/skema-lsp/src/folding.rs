@@ -11,28 +11,28 @@
 
 use lsp_types::{FoldingRange, FoldingRangeKind};
 use skema_syntax::Span;
-use skema_syntax::legacy_ast::{Item, ItemKind, SourceFile};
+use skema_syntax::ast::{AstNode, Item, ItemKind, SourceFile};
 
 use crate::convert;
 
 pub fn folding_ranges(source: &str, file: &SourceFile) -> Vec<FoldingRange> {
     let mut ranges = Vec::new();
-    collect(&file.items, source, &mut ranges);
+    collect(file.items(), source, &mut ranges);
     ranges
 }
 
-fn collect(items: &[Item], source: &str, ranges: &mut Vec<FoldingRange>) {
+fn collect(items: impl Iterator<Item = Item>, source: &str, ranges: &mut Vec<FoldingRange>) {
     for item in items {
-        match &item.kind {
+        match item.kind() {
             ItemKind::Block(block) => {
-                push(source, item.span, ranges);
-                collect(&block.items, source, ranges);
+                push(source, item.span(), ranges);
+                collect(block.items(), source, ranges);
             }
             // A field's own `{ … }` body is not a `Block` node - `Field`
             // holds its body items directly - but is exactly as foldable.
-            ItemKind::Field(field) if !field.items.is_empty() => {
-                push(source, item.span, ranges);
-                collect(&field.items, source, ranges);
+            ItemKind::Field(field) if field.items().next().is_some() => {
+                push(source, item.span(), ranges);
+                collect(field.items(), source, ranges);
             }
             _ => {}
         }
@@ -63,7 +63,8 @@ mod tests {
     use super::*;
 
     fn ranges(source: &str) -> Vec<(u32, u32)> {
-        let (file, _) = skema_syntax::parse(source);
+        let (parsed, _) = skema_syntax::parse(source);
+        let file = parsed.syntax();
         folding_ranges(source, &file)
             .iter()
             .map(|r| (r.start_line, r.end_line))
@@ -135,7 +136,8 @@ mod tests {
         // in skema-syntax), but its own braces stay balanced, so the
         // enclosing `Table` is still a clean multi-line block.
         let source = "Table Bad {\n  Meta { = ; }\n  id int;\n}";
-        let (file, messages) = skema_syntax::parse(source);
+        let (parsed, messages) = skema_syntax::parse(source);
+        let file = parsed.syntax();
         assert!(!messages.is_empty(), "the fixture must contain an error");
         assert_eq!(folding_ranges(source, &file).len(), 1);
         assert_eq!(ranges(source), vec![(0, 3)]);

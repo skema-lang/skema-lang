@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 use skema_api::{ExportedField, FlagValue, RelationKind};
-use skema_syntax::legacy_ast::{self as ast, BlockKind, ItemKind};
+use skema_syntax::ast::{self, AstNode, BlockKind, ItemKind};
 
 use crate::analysis::{Analysis, display_path};
 use crate::convert;
@@ -113,30 +113,30 @@ fn use_line_hints(
     src: &str,
 ) -> Vec<lsp_types::InlayHint> {
     let mut hints = Vec::new();
-    for item in &file.ast.items {
-        let ItemKind::Block(table_block) = &item.kind else {
+    for item in file.ast.items() {
+        let ItemKind::Block(table_block) = item.kind() else {
             continue;
         };
-        if table_block.kind != BlockKind::Table {
+        if table_block.kind() != BlockKind::Table {
             continue;
         }
-        let Some(table_name) = table_block.name.as_ref().and_then(|p| p.as_ident()) else {
+        let Some(table_name) = table_block.name().and_then(|p| p.as_ident()) else {
             continue;
         };
         let Some(table) = analysis
             .model
             .tables
             .iter()
-            .find(|t| t.file == from && t.name == table_name.text)
+            .find(|t| t.file == from && t.name == table_name.text())
         else {
             continue;
         };
 
-        for use_item in &table_block.items {
-            if !matches!(use_item.kind, ItemKind::Use(_)) {
+        for use_item in table_block.items() {
+            if !matches!(use_item.kind(), ItemKind::Use(_)) {
                 continue;
             }
-            let Some(hint) = use_hint(analysis, from, src, table, use_item) else {
+            let Some(hint) = use_hint(analysis, from, src, table, &use_item) else {
                 continue;
             };
             hints.push(hint);
@@ -158,7 +158,7 @@ fn use_hint(
     let link = analysis
         .references
         .iter()
-        .find(|r| r.from_file == from && span_contains(use_item.span, r.from_span))?;
+        .find(|r| r.from_file == from && span_contains(use_item.span(), r.from_span))?;
     let target_file = analysis
         .project
         .files
@@ -172,7 +172,7 @@ fn use_hint(
     collect_partial_fields(
         analysis,
         target_file,
-        target_block,
+        &target_block,
         name,
         &mut visited,
         &mut reachable,
@@ -190,7 +190,7 @@ fn use_hint(
 
     Some(end_of_line_hint(
         src,
-        use_item.span.end,
+        use_item.span().end,
         format!("→ {}", field_names.join(", ")),
     ))
 }
@@ -214,16 +214,17 @@ fn collect_partial_fields(
     if !visited.insert((owner_path.clone(), name.to_owned())) {
         return;
     }
-    for item in &block.items {
-        match &item.kind {
+    for item in block.items() {
+        match item.kind() {
             ItemKind::Field(_) => {
-                out.insert((owner_path.clone(), item.span.start, item.span.end));
+                let span = item.span();
+                out.insert((owner_path.clone(), span.start, span.end));
             }
             ItemKind::Use(_) => {
                 let Some(link) = analysis
                     .references
                     .iter()
-                    .find(|r| r.from_file == owner_path && span_contains(item.span, r.from_span))
+                    .find(|r| r.from_file == owner_path && span_contains(item.span(), r.from_span))
                 else {
                     continue;
                 };
@@ -241,7 +242,7 @@ fn collect_partial_fields(
                 else {
                     continue;
                 };
-                collect_partial_fields(analysis, target, nested_block, nested_name, visited, out);
+                collect_partial_fields(analysis, target, &nested_block, nested_name, visited, out);
             }
             _ => {}
         }
@@ -259,17 +260,18 @@ fn partial_field_hints(
     src: &str,
 ) -> Vec<lsp_types::InlayHint> {
     let mut hints = Vec::new();
-    for item in &file.ast.items {
-        let ItemKind::Block(block) = &item.kind else {
+    for item in file.ast.items() {
+        let ItemKind::Block(block) = item.kind() else {
             continue;
         };
-        if block.kind != BlockKind::Partial {
+        if block.kind() != BlockKind::Partial {
             continue;
         }
-        for field_item in &block.items {
-            if !matches!(field_item.kind, ItemKind::Field(_)) {
+        for field_item in block.items() {
+            if !matches!(field_item.kind(), ItemKind::Field(_)) {
                 continue;
             }
+            let field_span = field_item.span();
             // `analysis.model.tables` is already sorted by (namespace,
             // name) — the deterministic order this hint lists tables in.
             let table_names: Vec<&str> = analysis
@@ -279,8 +281,8 @@ fn partial_field_hints(
                 .filter(|t| {
                     t.fields.iter().any(|f| {
                         f.file == from
-                            && f.span.start == field_item.span.start
-                            && f.span.end == field_item.span.end
+                            && f.span.start == field_span.start
+                            && f.span.end == field_span.end
                     })
                 })
                 .map(|t| t.name.as_str())
@@ -290,7 +292,7 @@ fn partial_field_hints(
             }
             hints.push(end_of_line_hint(
                 src,
-                field_item.span.end,
+                field_span.end,
                 format!("← {}", table_names.join(", ")),
             ));
         }
