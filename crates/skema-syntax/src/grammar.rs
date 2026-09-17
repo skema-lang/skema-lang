@@ -715,14 +715,15 @@ pub(crate) fn unquote(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::{self, AstNode};
     use crate::parse;
 
     /// Parses and asserts that there were no messages.
-    fn ok(src: &str) -> SourceFile {
+    fn ok(src: &str) -> ast::SourceFile {
         let (file, messages) = parse(src);
         let text: Vec<_> = messages.iter().map(|d| d.message.clone()).collect();
         assert!(text.is_empty(), "unexpected messages in {src:?}: {text:#?}");
-        file
+        file.syntax()
     }
 
     /// Parses and returns the message texts.
@@ -731,17 +732,17 @@ mod tests {
     }
 
     /// The first block of the file.
-    fn block(src: &str) -> Block {
+    fn block(src: &str) -> ast::Block {
         let file = ok(src);
-        file.blocks().next().cloned().expect("a block")
+        file.blocks().next().expect("a block")
     }
 
     // -- Structure ------------------------------------------------------------
 
     #[test]
     fn empty_file_is_valid() {
-        assert_eq!(ok("").items.len(), 0);
-        assert_eq!(ok("# nur ein Kommentar\n").items.len(), 0);
+        assert_eq!(ok("").items().count(), 0);
+        assert_eq!(ok("# nur ein Kommentar\n").items().count(), 0);
     }
 
     #[test]
@@ -751,11 +752,11 @@ mod tests {
             import "./common.skema";
             import "./de/common.skema" as de;
         "#);
-        assert_eq!(file.spec().and_then(|s| s.version), Some(1));
+        assert_eq!(file.spec().and_then(|s| s.version()), Some(1));
 
         let imports: Vec<_> = file
             .imports()
-            .map(|i| (i.path.clone(), i.alias.as_ref().map(|a| a.text.clone())))
+            .map(|i| (i.path(), i.alias().map(|a| a.text().to_owned())))
             .collect();
         assert_eq!(
             imports,
@@ -778,17 +779,16 @@ mod tests {
             }
         "#,
         );
-        assert_eq!(project.kind, BlockKind::Project);
-        assert!(project.name.is_none(), "Project has no name");
+        assert_eq!(project.kind(), BlockKind::Project);
+        assert!(project.name().is_none(), "Project has no name");
 
         let inner: Vec<_> = project
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Block(b) => Some((
-                    b.kind,
-                    b.selector.as_ref().map(|s| s.text.clone()),
-                    b.name.as_ref().map(|n| n.to_dotted()),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Block(b) => Some((
+                    b.kind(),
+                    b.selector().map(|s| s.text().to_owned()),
+                    b.name().map(|n| n.to_dotted()),
                 )),
                 _ => None,
             })
@@ -823,29 +823,26 @@ mod tests {
         "#,
         );
         let example = table
-            .items
-            .iter()
-            .find_map(|i| match &i.kind {
-                ItemKind::Block(b) if b.kind == BlockKind::Example => Some(b),
+            .items()
+            .find_map(|item| match item.kind() {
+                ast::ItemKind::Block(b) if b.kind() == BlockKind::Example => Some(b),
                 _ => None,
             })
             .expect("Table has an Example block");
 
         let records: Vec<_> = example
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Block(b) if b.kind == BlockKind::Record => Some(b),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Block(b) if b.kind() == BlockKind::Record => Some(b),
                 _ => None,
             })
             .collect();
         assert_eq!(records.len(), 2);
 
         let keys: Vec<_> = records[0]
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Setting(a) => Some(a.key.text.as_str()),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Setting(a) => Some(a.key().text()),
                 _ => None,
             })
             .collect();
@@ -858,8 +855,8 @@ mod tests {
     fn block_words_may_serve_as_names() {
         for name in ["Group", "File", "Document", "Index", "Enum"] {
             let b = block(&format!("Table {name} {{ id int [pk]; }}"));
-            assert_eq!(b.kind, BlockKind::Table);
-            assert_eq!(b.name.map(|n| n.to_dotted()).as_deref(), Some(name));
+            assert_eq!(b.kind(), BlockKind::Table);
+            assert_eq!(b.name().map(|n| n.to_dotted()).as_deref(), Some(name));
         }
     }
 
@@ -868,21 +865,21 @@ mod tests {
         // `Dialect { postgres { … } }` – the sub-blocks are named after
         // the dialect, not after a keyword of the language.
         let d = block("Dialect { postgres { tablespace = \"fast_ssd\"; } }");
-        assert_eq!(d.kind, BlockKind::Dialect);
-        assert!(matches!(&d.items[0].kind, ItemKind::Field(f) if f.name.text == "postgres"));
+        assert_eq!(d.kind(), BlockKind::Dialect);
+        let first = d.items().next().expect("an item");
+        assert!(matches!(first.kind(), ast::ItemKind::Field(f) if f.name().text() == "postgres"));
     }
 
     /// `docs/06`: "Parameters are declared like fields — name, then type."
     #[test]
     fn datatype_parameters_carry_a_type() {
         let dt = block("Datatype decimal(precision int, scale int) { Field { type = float; } }");
-        let names: Vec<_> = dt.params.iter().map(|p| p.name.text.as_str()).collect();
-        assert_eq!(names, ["precision", "scale"]);
-        let types: Vec<_> = dt
-            .params
-            .iter()
-            .map(|p| p.ty.as_ref().map(|t| t.to_dotted()))
+        let names: Vec<_> = dt
+            .params()
+            .map(|p| p.name().map(|n| n.text().to_owned()).unwrap_or_default())
             .collect();
+        assert_eq!(names, ["precision", "scale"]);
+        let types: Vec<_> = dt.params().map(|p| p.ty().map(|t| t.to_dotted())).collect();
         assert_eq!(types, [Some("int".to_owned()), Some("int".to_owned())]);
     }
 
@@ -899,22 +896,24 @@ mod tests {
             }
         "#,
         );
-        let ItemKind::IndexEntry(e) = &t.items.last().expect("index entry").kind else {
+        let items: Vec<_> = t.items().collect();
+        let ast::ItemKind::IndexEntry(e) = items.last().expect("index entry").kind() else {
             panic!("expected an index entry");
         };
         assert_eq!(
-            e.name.as_ref().map(|n| n.text.as_str()),
-            Some("ix_customer_order_date")
+            e.name().map(|n| n.text().to_owned()),
+            Some("ix_customer_order_date".to_owned())
         );
-        let columns: Vec<_> = e.columns.iter().map(|c| c.text.as_str()).collect();
+        let columns: Vec<_> = e.columns().map(|c| c.text().to_owned()).collect();
         assert_eq!(columns, ["customer", "order_date"]);
 
         // The unnamed form stays valid.
         let t2 = block("Table T { email varchar; (email) [unique]; }");
-        let ItemKind::IndexEntry(e2) = &t2.items.last().expect("index entry").kind else {
+        let items2: Vec<_> = t2.items().collect();
+        let ast::ItemKind::IndexEntry(e2) = items2.last().expect("index entry").kind() else {
             panic!("expected an index entry");
         };
-        assert!(e2.name.is_none());
+        assert!(e2.name().is_none());
     }
 
     // -- Fields ---------------------------------------------------------------
@@ -938,11 +937,11 @@ mod tests {
         "#,
         );
 
-        let names: Vec<_> = t
-            .items
+        let items: Vec<_> = t.items().collect();
+        let names: Vec<_> = items
             .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Field(f) => Some(f.name.text.as_str()),
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Field(f) => Some(f.name().text().to_owned()),
                 _ => None,
             })
             .collect();
@@ -954,14 +953,14 @@ mod tests {
         );
 
         // `use` is its own statement, not a field.
-        assert!(matches!(&t.items[0].kind, ItemKind::Use(_)));
+        assert!(matches!(items[0].kind(), ast::ItemKind::Use(_)));
         // So is the index entry.
-        let ItemKind::IndexEntry(idx) = &t.items.last().expect("index").kind else {
+        let ast::ItemKind::IndexEntry(idx) = items.last().expect("index").kind() else {
             panic!("expected an index entry");
         };
-        let columns: Vec<_> = idx.columns.iter().map(|c| c.text.as_str()).collect();
+        let columns: Vec<_> = idx.columns().map(|c| c.text().to_owned()).collect();
         assert_eq!(columns, ["email", "angelegt"]);
-        assert_eq!(idx.flags[0].key.text, "unique");
+        assert_eq!(idx.flags().next().expect("a flag").key().text(), "unique");
     }
 
     #[test]
@@ -976,14 +975,13 @@ mod tests {
         "#,
         );
         let ops: Vec<_> = t
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Field(f) => f.ty.as_ref(),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Field(f) => f.ty(),
                 _ => None,
             })
-            .filter_map(|ty| match &ty.kind {
-                FieldTypeKind::Relation { op, .. } => Some(*op),
+            .filter_map(|ty| match ty.kind() {
+                Some(ast::FieldTypeKind::Relation { op, .. }) => Some(op),
                 _ => None,
             })
             .collect();
@@ -1020,19 +1018,22 @@ mod tests {
         "#,
         );
         let values: Vec<_> = e
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Field(f) => Some((f.name.text.as_str(), f.ty.is_some(), f.items.len())),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Field(f) => Some((
+                    f.name().text().to_owned(),
+                    f.ty().is_some(),
+                    f.items().count(),
+                )),
                 _ => None,
             })
             .collect();
         assert_eq!(
             values,
             [
-                ("draft", false, 1),
-                ("paid", false, 1),
-                ("cancelled", false, 0)
+                ("draft".to_owned(), false, 1),
+                ("paid".to_owned(), false, 1),
+                ("cancelled".to_owned(), false, 0)
             ]
         );
     }
@@ -1043,22 +1044,21 @@ mod tests {
     #[test]
     fn type_with_arguments_as_a_value() {
         let m = block("Datatype Money { Field { type = decimal(10); } }");
-        let ItemKind::Block(field) = &m.items[0].kind else {
+        let ast::ItemKind::Block(field) = m.items().next().expect("an item").kind() else {
             panic!("expected a Field block");
         };
-        let ItemKind::Setting(attr) = &field.items[0].kind else {
+        let ast::ItemKind::Setting(attr) = field.items().next().expect("an item").kind() else {
             panic!("expected an assignment");
         };
-        let Some(Value {
-            kind: ValueKind::Type { path, args },
-            ..
-        }) = &attr.value
-        else {
-            panic!("expected a type with arguments, found {:?}", attr.value);
+        let Some(ast::ValueKind::Type { path, args }) = attr.value().and_then(|v| v.kind()) else {
+            panic!(
+                "expected a type with arguments, found {:?}",
+                attr.value().and_then(|v| v.kind())
+            );
         };
         assert_eq!(path.to_dotted(), "decimal");
         assert_eq!(args.len(), 1);
-        assert_eq!(args[0].kind, ValueKind::Int(10));
+        assert_eq!(args[0].kind(), Some(ast::ValueKind::Int(10)));
     }
 
     // -- Values -----------------------------------------------------------------
@@ -1081,34 +1081,44 @@ mod tests {
         );
 
         let values: Vec<_> = m
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Setting(a) => Some((a.key.text.clone(), a.key.quoted, a.value.clone())),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Setting(a) => Some((a.key().text(), a.key().quoted(), a.value())),
                 _ => None,
             })
-            .map(|(k, q, v)| (k, q, v.map(|v| v.kind)))
+            .map(|(k, q, v)| (k, q, v.and_then(|v| v.kind())))
             .collect();
 
         assert_eq!(
             values[0],
-            ("text".into(), false, Some(ValueKind::Str("hallo".into())))
+            (
+                "text".into(),
+                false,
+                Some(ast::ValueKind::Str("hallo".into()))
+            )
         );
-        assert_eq!(values[1], ("zahl".into(), false, Some(ValueKind::Int(12))));
+        assert_eq!(
+            values[1],
+            ("zahl".into(), false, Some(ast::ValueKind::Int(12)))
+        );
         assert_eq!(
             values[2],
-            ("komma".into(), false, Some(ValueKind::Float(2.5)))
+            ("komma".into(), false, Some(ast::ValueKind::Float(2.5)))
         );
         assert_eq!(
             values[3],
-            ("negativ".into(), false, Some(ValueKind::Int(-1)))
+            ("negativ".into(), false, Some(ast::ValueKind::Int(-1)))
         );
-        assert!(matches!(values[4].2, Some(ValueKind::Path(_))));
+        assert!(matches!(values[4].2, Some(ast::ValueKind::Path(_))));
         assert_eq!(
             values[5],
-            ("roh".into(), false, Some(ValueKind::Raw("now()".into())))
+            (
+                "roh".into(),
+                false,
+                Some(ast::ValueKind::Raw("now()".into()))
+            )
         );
-        assert!(matches!(&values[6].2, Some(ValueKind::List(l)) if l.len() == 2));
+        assert!(matches!(&values[6].2, Some(ast::ValueKind::List(l)) if l.len() == 2));
         // Custom keys must be quoted — the parser only records that; only
         // the checking phase evaluates it.
         assert_eq!(values[7].0, "x-jira");
@@ -1118,12 +1128,12 @@ mod tests {
     #[test]
     fn escapes_in_strings() {
         let m = block(r#"Meta { note = "Zeile\nmit \"Zitat\""; }"#);
-        let ItemKind::Setting(a) = &m.items[0].kind else {
+        let ast::ItemKind::Setting(a) = m.items().next().expect("an item").kind() else {
             panic!("expected an assignment");
         };
         assert_eq!(
-            a.value.as_ref().map(|v| &v.kind),
-            Some(&ValueKind::Str("Zeile\nmit \"Zitat\"".to_owned()))
+            a.value().and_then(|v| v.kind()),
+            Some(ast::ValueKind::Str("Zeile\nmit \"Zitat\"".to_owned()))
         );
     }
 
@@ -1147,10 +1157,10 @@ mod tests {
     fn severity_override_captured_on_a_setting() {
         let text = |src: &str| {
             let b = block(src);
-            let ItemKind::Setting(a) = &b.items[0].kind else {
+            let ast::ItemKind::Setting(a) = b.items().next().expect("an item").kind() else {
                 panic!("expected an assignment");
             };
-            a.severity_override.as_ref().map(|i| i.text.clone())
+            a.severity_override().map(|i| i.text().to_owned())
         };
         assert_eq!(
             text("Lint { fieldNaming = snake_case [error]; }"),
@@ -1165,10 +1175,10 @@ mod tests {
     #[test]
     fn severity_override_absent_without_brackets() {
         let b = block("Meta { author = \"anna\"; }");
-        let ItemKind::Setting(a) = &b.items[0].kind else {
+        let ast::ItemKind::Setting(a) = b.items().next().expect("an item").kind() else {
             panic!("expected an assignment");
         };
-        assert!(a.severity_override.is_none());
+        assert!(a.severity_override().is_none());
     }
 
     /// A field's `[flags]` and an index entry's `[flags]` are a different
@@ -1184,16 +1194,29 @@ mod tests {
             }
         "#,
         );
-        let ItemKind::Field(f) = &t.items[0].kind else {
+        let items: Vec<_> = t.items().collect();
+        let ast::ItemKind::Field(f) = items[0].kind() else {
             panic!("expected a field");
         };
-        assert!(f.flags[0].severity_override.is_none());
-        assert_eq!(f.flags[0].key.text, "unique");
+        assert!(
+            f.flags()
+                .next()
+                .expect("a flag")
+                .severity_override()
+                .is_none()
+        );
+        assert_eq!(f.flags().next().expect("a flag").key().text(), "unique");
 
-        let ItemKind::IndexEntry(idx) = &t.items[1].kind else {
+        let ast::ItemKind::IndexEntry(idx) = items[1].kind() else {
             panic!("expected an index entry");
         };
-        assert!(idx.flags[0].severity_override.is_none());
+        assert!(
+            idx.flags()
+                .next()
+                .expect("a flag")
+                .severity_override()
+                .is_none()
+        );
     }
 
     #[test]
@@ -1203,14 +1226,15 @@ mod tests {
             "Lint { fieldNaming = snake_case [a, b]; }",
             "Lint { fieldNaming = snake_case [1]; }",
         ] {
-            let (file, messages) = parse(src);
+            let (parsed, messages) = parse(src);
             assert!(!messages.is_empty(), "{src:?} should be reported");
+            let file = parsed.syntax();
             let lint = file.blocks().next().expect("Lint block");
-            let ItemKind::Setting(a) = &lint.items[0].kind else {
+            let ast::ItemKind::Setting(a) = lint.items().next().expect("an item").kind() else {
                 panic!("expected an assignment in {src:?}");
             };
             assert!(
-                a.severity_override.is_none(),
+                a.severity_override().is_none(),
                 "malformed override must not be captured in {src:?}"
             );
         }
@@ -1219,7 +1243,7 @@ mod tests {
     /// An unterminated `[` must not swallow the next, well-formed setting.
     #[test]
     fn unterminated_severity_override_does_not_swallow_the_next_setting() {
-        let (file, messages) = parse(
+        let (parsed, messages) = parse(
             r#"
             Lint {
               fieldNaming = snake_case [
@@ -1231,20 +1255,21 @@ mod tests {
             !messages.is_empty(),
             "the unterminated `[` must be reported"
         );
+        let file = parsed.syntax();
         let lint = file.blocks().next().expect("Lint block");
-        let keys: Vec<_> = lint
-            .items
+        let items: Vec<_> = lint.items().collect();
+        let keys: Vec<_> = items
             .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Setting(a) => Some(a.key.text.as_str()),
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Setting(a) => Some(a.key().text()),
                 _ => None,
             })
             .collect();
         assert_eq!(keys, ["fieldNaming", "tableNaming"]);
-        let ItemKind::Setting(second) = &lint.items[1].kind else {
+        let ast::ItemKind::Setting(second) = items[1].kind() else {
             panic!("expected the second setting");
         };
-        assert!(second.value.is_some(), "tableNaming must keep its value");
+        assert!(second.value().is_some(), "tableNaming must keep its value");
     }
 
     // -- Error handling -----------------------------------------------------
@@ -1253,7 +1278,7 @@ mod tests {
     /// neighbors down with it.
     #[test]
     fn a_broken_field_stays_local() {
-        let (file, messages) = parse(
+        let (parsed, messages) = parse(
             r#"
             Table Customer {
               id    int [pk];
@@ -1264,21 +1289,21 @@ mod tests {
         "#,
         );
         assert!(!messages.is_empty(), "the garbage must be reported");
+        let file = parsed.syntax();
 
         // Both tables are still there …
         let names: Vec<_> = file
             .blocks()
-            .filter_map(|b| b.name.as_ref().map(|n| n.to_dotted()))
+            .filter_map(|b| b.name().map(|n| n.to_dotted()))
             .collect();
         assert_eq!(names, ["Customer", "Order"]);
 
         // … and so are both fields of the first one.
         let customer = file.blocks().next().expect("Customer");
         let fields: Vec<_> = customer
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Field(f) => Some(f.name.text.as_str()),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Field(f) => Some(f.name().text().to_owned()),
                 _ => None,
             })
             .collect();
@@ -1304,11 +1329,12 @@ mod tests {
     #[test]
     fn missing_brace_at_end_of_file() {
         // The normal case while typing: the block isn't closed yet.
-        let (file, messages) = parse("Table A { id int [pk];");
+        let (parsed, messages) = parse("Table A { id int [pk];");
         assert_eq!(messages.len(), 1);
         // The tree is still usable — the basis for autocompletion.
+        let file = parsed.syntax();
         let a = file.blocks().next().expect("Table A");
-        assert_eq!(a.items.len(), 1);
+        assert_eq!(a.items().count(), 1);
     }
 
     #[test]
@@ -1349,12 +1375,14 @@ mod tests {
         let file = ok(src);
         let t = file.blocks().next().expect("Table");
 
-        assert_eq!(file.items[0].span.text(src), src);
-        assert_eq!(t.items[0].span.text(src), "email varchar;");
-        let ItemKind::Field(f) = &t.items[0].kind else {
+        let file_items: Vec<_> = file.items().collect();
+        assert_eq!(file_items[0].span().text(src), src);
+        let t_items: Vec<_> = t.items().collect();
+        assert_eq!(t_items[0].span().text(src), "email varchar;");
+        let ast::ItemKind::Field(f) = t_items[0].kind() else {
             panic!("expected a field");
         };
-        assert_eq!(f.name.span.text(src), "email");
-        assert_eq!(f.ty.as_ref().map(|ty| ty.span.text(src)), Some("varchar"));
+        assert_eq!(f.name().span().text(src), "email");
+        assert_eq!(f.ty().map(|ty| ty.span().text(src)), Some("varchar"));
     }
 }

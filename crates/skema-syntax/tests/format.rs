@@ -5,7 +5,7 @@
 //! `src/format.rs` itself; what belongs here is the invariants that only
 //! mean something over a large, varied body of real text.
 
-use skema_syntax::legacy_ast::{BlockKind, Path};
+use skema_syntax::ast::BlockKind;
 use skema_syntax::{TokenKind, format, parse, reorder, tokenize};
 
 const EXAMPLE: &str = include_str!("../../../examples/myexample.skema");
@@ -189,15 +189,16 @@ fn canonical_slot(kind: BlockKind) -> usize {
 
 /// `(BlockKind, name)` for every top-level declaration, in file order.
 fn declaration_signature(src: &str) -> Vec<(BlockKind, Option<String>)> {
-    let (file, _) = parse(src);
-    file.blocks()
+    let (parsed, _) = parse(src);
+    parsed
+        .syntax()
+        .blocks()
         .map(|b| {
             (
-                b.kind,
-                b.name
-                    .as_ref()
-                    .and_then(Path::as_ident)
-                    .map(|i| i.text.clone()),
+                b.kind(),
+                b.name()
+                    .and_then(|path| path.as_ident())
+                    .map(|i| i.text().to_owned()),
             )
         })
         .collect()

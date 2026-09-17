@@ -36,10 +36,10 @@ fn main() -> ExitCode {
         }
     };
 
-    let (file, messages) = skema_syntax::parse(&source);
+    let (parsed, messages) = skema_syntax::parse(&source);
 
     println!("── Syntax tree {}", "─".repeat(50));
-    print!("{}", skema_syntax::dump(&file));
+    print!("{}", skema_syntax::dump(&parsed.syntax()));
 
     if messages.is_empty() {
         println!("\n✓ no messages");

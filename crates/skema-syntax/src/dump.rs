@@ -1,13 +1,13 @@
-//! Print the AST as indented text — readable where `{:#?}` is not.
+//! Print the syntax tree as indented text — readable where `{:#?}` is not.
 //! See `examples/dump_ast.rs`.
 
-use crate::legacy_ast::*;
+use crate::ast::{self, BlockKind, FieldTypeKind, ItemKind, ValueKind};
 use std::fmt::Write as _;
 
 /// The whole tree as readable text.
-pub fn dump(file: &SourceFile) -> String {
+pub fn dump(file: &ast::SourceFile) -> String {
     let mut out = String::new();
-    for item in &file.items {
+    for item in file.items() {
         item.write(&mut out, 0);
     }
     out
@@ -30,44 +30,45 @@ trait Dump {
     fn write(&self, out: &mut String, depth: usize);
 }
 
-impl Dump for Item {
+impl Dump for ast::Item {
     fn write(&self, out: &mut String, depth: usize) {
-        match &self.kind {
+        match self.kind() {
             ItemKind::Spec(s) => line(
                 out,
                 depth,
-                &format!("spec {}", opt(s.version.map(|v| v.to_string()))),
+                &format!("spec {}", opt(s.version().map(|v| v.to_string()))),
             ),
             ItemKind::Import(i) => {
-                let alias = match &i.alias {
-                    Some(a) => format!(" as {}", a.text),
+                let alias = match i.alias() {
+                    Some(a) => format!(" as {}", a.text()),
                     None => String::new(),
                 };
                 line(
                     out,
                     depth,
-                    &format!("import {:?}{alias}", i.path.as_deref().unwrap_or("?")),
+                    &format!("import {:?}{alias}", i.path().as_deref().unwrap_or("?")),
                 );
             }
-            ItemKind::Use(u) => line(out, depth, &format!("use {}", u.target.to_dotted())),
-            ItemKind::Setting(a) => line(out, depth, &format!("setting {}", attr(a))),
+            ItemKind::Use(u) => line(out, depth, &format!("use {}", u.target().to_dotted())),
+            ItemKind::Setting(a) => line(out, depth, &format!("setting {}", attr(&a))),
             ItemKind::Field(f) => f.write(out, depth),
             ItemKind::Block(b) => b.write(out, depth),
             ItemKind::Ref(r) => line(
                 out,
                 depth,
-                &format!("ref {} {}", r.kind.as_str(), r.path.to_dotted()),
+                &format!("ref {} {}", r.kind().as_str(), r.path().to_dotted()),
             ),
             ItemKind::IndexEntry(e) => {
-                let columns: Vec<_> = e.columns.iter().map(|c| c.text.as_str()).collect();
-                let name = match &e.name {
-                    Some(n) => format!("{} ", n.text),
+                let columns: Vec<_> = e.columns().map(|c| c.text().to_owned()).collect();
+                let name = match e.name() {
+                    Some(n) => format!("{} ", n.text()),
                     None => String::new(),
                 };
+                let flags: Vec<_> = e.flags().collect();
                 line(
                     out,
                     depth,
-                    &format!("index {name}({}){}", columns.join(", "), flags(&e.flags)),
+                    &format!("index {name}({}){}", columns.join(", "), flags_text(&flags)),
                 );
             }
             ItemKind::Error => line(out, depth, "<broken section>"),
@@ -75,38 +76,40 @@ impl Dump for Item {
     }
 }
 
-impl Dump for Block {
+impl Dump for ast::Block {
     fn write(&self, out: &mut String, depth: usize) {
-        let mut head = format!("Block {}", self.kind.as_str());
-        if self.kind == BlockKind::Other {
-            let _ = write!(head, "({})", self.keyword.text);
+        let mut head = format!("Block {}", self.kind().as_str());
+        if self.kind() == BlockKind::Other {
+            let _ = write!(head, "({})", self.keyword().text());
         }
-        if let Some(s) = &self.selector {
-            let _ = write!(head, " @{}", s.text);
+        if let Some(s) = self.selector() {
+            let _ = write!(head, " @{}", s.text());
         }
-        if let Some(n) = &self.name {
+        if let Some(n) = self.name() {
             let _ = write!(head, " {}", n.to_dotted());
         }
-        if !self.params.is_empty() {
-            let p: Vec<_> = self.params.iter().map(param).collect();
+        let params: Vec<_> = self.params().collect();
+        if !params.is_empty() {
+            let p: Vec<_> = params.iter().map(param).collect();
             let _ = write!(head, "({})", p.join(", "));
         }
         line(out, depth, &head);
-        for item in &self.items {
+        for item in self.items() {
             item.write(out, depth + 1);
         }
     }
 }
 
-impl Dump for Field {
+impl Dump for ast::Field {
     fn write(&self, out: &mut String, depth: usize) {
-        let mut head = format!("Field {}", self.name.text);
-        if let Some(t) = &self.ty {
-            let _ = write!(head, ": {}", field_type(t));
+        let mut head = format!("Field {}", self.name().text());
+        if let Some(t) = self.ty() {
+            let _ = write!(head, ": {}", field_type(&t));
         }
-        let _ = write!(head, "{}", flags(&self.flags));
+        let flags: Vec<_> = self.flags().collect();
+        let _ = write!(head, "{}", flags_text(&flags));
         line(out, depth, &head);
-        for item in &self.items {
+        for item in self.items() {
             item.write(out, depth + 1);
         }
     }
@@ -114,27 +117,29 @@ impl Dump for Field {
 
 // -- Small pieces as one-liners ----------------------------------------------
 
-fn field_type(t: &FieldType) -> String {
-    match &t.kind {
-        FieldTypeKind::Named { path, args } if args.is_empty() => path.to_dotted(),
-        FieldTypeKind::Named { path, args } => {
+fn field_type(t: &ast::FieldType) -> String {
+    match t.kind() {
+        Some(FieldTypeKind::Named { path, args }) if args.is_empty() => path.to_dotted(),
+        Some(FieldTypeKind::Named { path, args }) => {
             let a: Vec<_> = args.iter().map(value).collect();
             format!("{}({})", path.to_dotted(), a.join(", "))
         }
-        FieldTypeKind::Relation { op, target } => {
+        Some(FieldTypeKind::Relation { op, target }) => {
             format!("{}{}", op.as_str(), target.to_dotted())
         }
+        None => String::new(),
     }
 }
 
-fn param(p: &Param) -> String {
-    match &p.ty {
-        Some(ty) => format!("{}: {}", p.name.text, ty.to_dotted()),
-        None => p.name.text.clone(),
+fn param(p: &ast::Param) -> String {
+    let name = p.name().map(|n| n.text().to_owned()).unwrap_or_default();
+    match p.ty() {
+        Some(ty) => format!("{}: {}", name, ty.to_dotted()),
+        None => name,
     }
 }
 
-fn flags(flags: &[Attr]) -> String {
+fn flags_text(flags: &[ast::Attr]) -> String {
     if flags.is_empty() {
         return String::new();
     }
@@ -142,33 +147,35 @@ fn flags(flags: &[Attr]) -> String {
     format!(" [{}]", f.join(", "))
 }
 
-fn attr(a: &Attr) -> String {
-    let key_text = if a.key.quoted {
-        format!("{:?}", a.key.text)
+fn attr(a: &ast::Attr) -> String {
+    let key = a.key();
+    let key_text = if key.quoted() {
+        format!("{:?}", key.text())
     } else {
-        a.key.text.clone()
+        key.text()
     };
-    match &a.value {
-        Some(v) => format!("{key_text} = {}", value(v)),
+    match a.value() {
+        Some(v) => format!("{key_text} = {}", value(&v)),
         None => key_text,
     }
 }
 
-fn value(v: &Value) -> String {
-    match &v.kind {
-        ValueKind::Path(p) => p.to_dotted(),
-        ValueKind::Str(s) => format!("{s:?}"),
-        ValueKind::Int(n) => n.to_string(),
-        ValueKind::Float(f) => f.to_string(),
-        ValueKind::Raw(r) => format!("`{r}`"),
-        ValueKind::List(items) => {
+fn value(v: &ast::Value) -> String {
+    match v.kind() {
+        Some(ValueKind::Path(p)) => p.to_dotted(),
+        Some(ValueKind::Str(s)) => format!("{s:?}"),
+        Some(ValueKind::Int(n)) => n.to_string(),
+        Some(ValueKind::Float(f)) => f.to_string(),
+        Some(ValueKind::Raw(r)) => format!("`{r}`"),
+        Some(ValueKind::List(items)) => {
             let i: Vec<_> = items.iter().map(value).collect();
             format!("[{}]", i.join(", "))
         }
-        ValueKind::Type { path, args } => {
+        Some(ValueKind::Type { path, args }) => {
             let a: Vec<_> = args.iter().map(value).collect();
             format!("{}({})", path.to_dotted(), a.join(", "))
         }
+        None => String::new(),
     }
 }
 

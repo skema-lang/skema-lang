@@ -19,7 +19,7 @@
 //! conceptually untouched (the caller never even sees a rewritten string)
 //! rather than take a guess.
 
-use crate::legacy_ast::{BlockKind, ItemKind, Path};
+use crate::ast::{self, AstNode, BlockKind};
 use crate::token::{Token, TokenKind};
 use crate::{Span, parse};
 
@@ -46,13 +46,14 @@ pub struct Reordered {
 /// the result through [`crate::format`] so `--sort` output is indented
 /// too. See the module docs for what makes this refuse rather than guess.
 pub fn reorder(src: &str) -> Result<Reordered, String> {
-    let (file, diagnostics) = parse(src);
+    let (parsed, diagnostics) = parse(src);
     if !diagnostics.is_empty() {
         return Err(format!(
             "{} syntax error(s) — fix them first (`skema check`) before sorting",
             diagnostics.len()
         ));
     }
+    let file = parsed.syntax();
 
     let all_tokens = crate::lexer::tokenize(src);
     let comments_removed = all_tokens
@@ -66,53 +67,53 @@ pub fn reorder(src: &str) -> Result<Reordered, String> {
     let mut document: Option<String> = None;
     let mut declarations: Vec<(usize, String, String)> = Vec::new();
 
-    for item in &file.items {
-        match &item.kind {
-            ItemKind::Spec(_) => {
+    for item in file.items() {
+        match item.kind() {
+            ast::ItemKind::Spec(_) => {
                 if spec.is_some() {
                     return Err("more than one `spec` directive".to_string());
                 }
-                spec = Some(strip_comments(src, &all_tokens, item.span));
+                spec = Some(strip_comments(src, &all_tokens, item.span()));
             }
-            ItemKind::Import(import) => {
-                let key = import.path.clone().unwrap_or_default();
-                imports.push((key, strip_comments(src, &all_tokens, item.span)));
+            ast::ItemKind::Import(import) => {
+                let key = import.path().unwrap_or_default();
+                imports.push((key, strip_comments(src, &all_tokens, item.span())));
             }
-            ItemKind::Block(block) if block.kind == BlockKind::Project => {
+            ast::ItemKind::Block(block) if block.kind() == BlockKind::Project => {
                 if project.is_some() {
                     return Err("more than one `Project` block".to_string());
                 }
-                project = Some(strip_comments(src, &all_tokens, item.span));
+                project = Some(strip_comments(src, &all_tokens, item.span()));
             }
-            ItemKind::Block(block) if block.kind == BlockKind::Document => {
+            ast::ItemKind::Block(block) if block.kind() == BlockKind::Document => {
                 if document.is_some() {
                     return Err("more than one `Document` block".to_string());
                 }
-                document = Some(strip_comments(src, &all_tokens, item.span));
+                document = Some(strip_comments(src, &all_tokens, item.span()));
             }
-            ItemKind::Block(block) if block.kind.is_declaration() => {
-                let Some(order) = SORTED_KINDS.iter().position(|k| *k == block.kind) else {
+            ast::ItemKind::Block(block) if block.kind().is_declaration() => {
+                let Some(order) = SORTED_KINDS.iter().position(|k| *k == block.kind()) else {
                     return Err(format!(
                         "internal error: {} has no canonical slot",
-                        block.kind.as_str()
+                        block.kind().as_str()
                     ));
                 };
-                let Some(name) = block.name.as_ref().and_then(Path::as_ident) else {
+                let Some(name) = block.name().and_then(|path| path.as_ident()) else {
                     return Err(format!(
                         "a top-level {} has no plain name to sort by",
-                        block.kind.as_str()
+                        block.kind().as_str()
                     ));
                 };
                 declarations.push((
                     order,
-                    name.text.clone(),
-                    strip_comments(src, &all_tokens, item.span),
+                    name.text().to_owned(),
+                    strip_comments(src, &all_tokens, item.span()),
                 ));
             }
             _ => {
                 return Err(format!(
                     "a top-level item at {:?} is neither spec, import, nor a declaration",
-                    item.span
+                    item.span()
                 ));
             }
         }
@@ -188,16 +189,16 @@ import \"./b.skema\";
 spec 1;
 ";
         let out = sorted(src).text;
-        let (file, diagnostics) = parse(&out);
+        let (parsed, diagnostics) = parse(&out);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let file = parsed.syntax();
 
         let kinds: Vec<_> = file
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Spec(_) => Some("spec".to_string()),
-                ItemKind::Import(_) => Some("import".to_string()),
-                ItemKind::Block(b) => Some(b.kind.as_str().to_string()),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Spec(_) => Some("spec".to_string()),
+                ast::ItemKind::Import(_) => Some("import".to_string()),
+                ast::ItemKind::Block(b) => Some(b.kind().as_str().to_string()),
                 _ => None,
             })
             .collect();
@@ -221,17 +222,16 @@ import \"./z.skema\";
 import \"./a.skema\";
 ";
         let out = sorted(src).text;
-        let (file, _) = parse(&out);
+        let (parsed, _) = parse(&out);
+        let file = parsed.syntax();
         let names: Vec<_> = file
-            .items
-            .iter()
-            .filter_map(|i| match &i.kind {
-                ItemKind::Import(im) => im.path.clone(),
-                ItemKind::Block(b) => b
-                    .name
-                    .as_ref()
-                    .and_then(Path::as_ident)
-                    .map(|i| i.text.clone()),
+            .items()
+            .filter_map(|item| match item.kind() {
+                ast::ItemKind::Import(im) => im.path(),
+                ast::ItemKind::Block(b) => b
+                    .name()
+                    .and_then(|path| path.as_ident())
+                    .map(|i| i.text().to_owned()),
                 _ => None,
             })
             .collect();
@@ -330,16 +330,17 @@ import \"./a.skema\";
         let (before, before_diag) = parse(example);
         let (after, after_diag) = parse(&out);
         assert_eq!(before_diag.len(), after_diag.len());
+        let before = before.syntax();
+        let after = after.syntax();
 
         let mut before_decls: Vec<_> = before
             .blocks()
             .map(|b| {
                 (
-                    b.kind,
-                    b.name
-                        .as_ref()
-                        .and_then(Path::as_ident)
-                        .map(|i| i.text.clone()),
+                    b.kind(),
+                    b.name()
+                        .and_then(|path| path.as_ident())
+                        .map(|i| i.text().to_owned()),
                 )
             })
             .collect();
@@ -347,11 +348,10 @@ import \"./a.skema\";
             .blocks()
             .map(|b| {
                 (
-                    b.kind,
-                    b.name
-                        .as_ref()
-                        .and_then(Path::as_ident)
-                        .map(|i| i.text.clone()),
+                    b.kind(),
+                    b.name()
+                        .and_then(|path| path.as_ident())
+                        .map(|i| i.text().to_owned()),
                 )
             })
             .collect();

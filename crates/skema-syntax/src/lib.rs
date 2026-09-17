@@ -19,7 +19,7 @@
 //! | `span` | positions — byte offsets, nothing else |
 //! | `token` | the language's token kinds |
 //! | `lexer` | characters → tokens, lossless and panic-free |
-//! | [`ast`] | the syntax tree's nodes |
+//! | [`ast`] | the syntax tree's typed view — the primary API |
 //! | `parser` | cursor, error handling, recovery (*how*) |
 //! | `grammar` | the language's rules (*what*) |
 //! | `diagnostic` | messages with a location |
@@ -39,10 +39,14 @@
 //!
 //! # Example
 //!
-//! ```
-//! use skema_syntax::{legacy_ast::BlockKind, parse};
+//! [`parse`] returns the owned AST; [`legacy_ast::SourceFile::syntax`] gives
+//! the lossless typed view ([`ast`]) over the same parse — the API every
+//! consumer outside this crate is on.
 //!
-//! let (file, diagnostics) = parse(r#"
+//! ```
+//! use skema_syntax::{ast::BlockKind, parse};
+//!
+//! let (parsed, diagnostics) = parse(r#"
 //!     spec 1;
 //!     Table Customer {
 //!       id    int     [pk];
@@ -52,9 +56,10 @@
 //!
 //! assert!(diagnostics.is_empty());
 //!
+//! let file = parsed.syntax();
 //! let table = file.blocks().next().expect("a declaration");
-//! assert_eq!(table.kind, BlockKind::Table);
-//! assert_eq!(table.items.len(), 2);
+//! assert_eq!(table.kind(), BlockKind::Table);
+//! assert_eq!(table.items().count(), 2);
 //! ```
 
 pub mod ast;
@@ -62,6 +67,8 @@ mod diagnostic;
 mod dump;
 mod format;
 mod grammar;
+// `parse` still builds this alongside `ast` (dual output, task 92); every
+// other consumer is on `ast` and this stays only until the parser drops it.
 pub mod legacy_ast;
 mod lexer;
 mod parser;
