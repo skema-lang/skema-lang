@@ -13,9 +13,6 @@
 //!   presence (`Some`/`None`) is compared.
 //! - A column that changes name reports as one drop + one add; there is no
 //!   column-rename marker (unlike tables' `movedFrom`).
-//! - A whole `Enum` added or dropped produces no entry of its own – only
-//!   entries *within* an enum matched on both sides are compared, mirroring
-//!   how entries are matched by name only, with no `movedFrom` equivalent.
 //! - A relation field's `ExportedTypeRef` is a synthetic
 //!   `TargetTable.targetField` reference, not a real column type
 //!   (`skema-hir`'s `resolve_field`) – so `ColumnTypeChanged` is never
@@ -130,6 +127,8 @@ pub struct EnumDiff {
 #[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum EnumChange {
+    Added,
+    Dropped,
     EntryAdded { entry: String },
     EntryRemoved { entry: String },
 }
@@ -183,7 +182,10 @@ fn is_table_change_breaking(
 }
 
 fn is_enum_change_breaking(change: &EnumChange) -> bool {
-    matches!(change, EnumChange::EntryRemoved { .. })
+    matches!(
+        change,
+        EnumChange::Dropped | EnumChange::EntryRemoved { .. }
+    )
 }
 
 fn diff_tables(old: &[ExportedTable], new: &[ExportedTable]) -> Vec<TableDiff> {
@@ -428,11 +430,21 @@ fn diff_enums(old: &[ExportedEnum], new: &[ExportedEnum]) -> Vec<EnumDiff> {
         old.iter().map(|e| (enum_key(e), e)).collect();
 
     let mut entries = Vec::new();
+    let mut consumed_old: Vec<EnumKey> = Vec::new();
+
     for new_enum in new {
-        let Some(old_enum) = old_by_key.get(&enum_key(new_enum)) else {
-            continue; // whole-enum add: out of scope, see module doc
+        let key = enum_key(new_enum);
+        let Some(old_enum) = old_by_key.get(&key) else {
+            entries.push(EnumDiff {
+                namespace: new_enum.namespace.clone(),
+                name: new_enum.name.clone(),
+                change: EnumChange::Added,
+                breaking: false,
+            });
+            continue;
         };
 
+        consumed_old.push(key);
         let old_names: Vec<&str> = old_enum.entries.iter().map(|e| e.name.as_str()).collect();
         let new_names: Vec<&str> = new_enum.entries.iter().map(|e| e.name.as_str()).collect();
 
@@ -464,6 +476,19 @@ fn diff_enums(old: &[ExportedEnum], new: &[ExportedEnum]) -> Vec<EnumDiff> {
                 });
             }
         }
+    }
+
+    for old_enum in old {
+        let key = enum_key(old_enum);
+        if consumed_old.contains(&key) {
+            continue;
+        }
+        entries.push(EnumDiff {
+            namespace: old_enum.namespace.clone(),
+            name: old_enum.name.clone(),
+            change: EnumChange::Dropped,
+            breaking: true,
+        });
     }
 
     entries.sort_by(|a, b| {
@@ -504,8 +529,10 @@ fn change_rank(change: &EitherChange<'_>) -> u8 {
         EitherChange::Table(TableChange::RelationRemoved { .. }) => 9,
         EitherChange::Table(TableChange::IndexAdded { .. }) => 10,
         EitherChange::Table(TableChange::IndexRemoved { .. }) => 11,
-        EitherChange::Enum(EnumChange::EntryAdded { .. }) => 0,
-        EitherChange::Enum(EnumChange::EntryRemoved { .. }) => 1,
+        EitherChange::Enum(EnumChange::Added) => 0,
+        EitherChange::Enum(EnumChange::Dropped) => 1,
+        EitherChange::Enum(EnumChange::EntryAdded { .. }) => 2,
+        EitherChange::Enum(EnumChange::EntryRemoved { .. }) => 3,
     }
 }
 
@@ -529,6 +556,7 @@ fn table_change_subject(change: &TableChange) -> String {
 
 fn enum_change_subject(change: &EnumChange) -> String {
     match change {
+        EnumChange::Added | EnumChange::Dropped => String::new(),
         EnumChange::EntryAdded { entry } | EnumChange::EntryRemoved { entry } => entry.clone(),
     }
 }
@@ -946,5 +974,42 @@ mod tests {
         assert!(d.tables.is_empty());
         assert!(d.enums.is_empty());
         assert!(!d.has_breaking_changes);
+    }
+
+    #[test]
+    fn a_new_enum_is_added() {
+        let d = diff(
+            "Table T { id int [pk]; }\n",
+            &format!("Table T {{ id int [pk]; }}\n{ENUM_HEADER}  draft;\n}}\n"),
+        );
+        assert_eq!(d.enums.len(), 1);
+        assert!(matches!(&d.enums[0].change, EnumChange::Added));
+        assert!(!d.enums[0].breaking);
+        assert!(!d.has_breaking_changes);
+    }
+
+    #[test]
+    fn a_removed_enum_is_dropped() {
+        let d = diff(
+            &format!("{ENUM_HEADER}  draft;\n}}\n"),
+            "Table T { id int [pk]; }\n",
+        );
+        assert_eq!(d.enums.len(), 1);
+        assert!(matches!(&d.enums[0].change, EnumChange::Dropped));
+        assert!(d.enums[0].breaking);
+        assert!(d.has_breaking_changes);
+    }
+
+    #[test]
+    fn an_enum_present_on_both_sides_still_produces_entry_level_changes() {
+        let old = &format!("{ENUM_HEADER}  draft;\n}}\n");
+        let new = &format!("{ENUM_HEADER}  draft;\n  paid;\n}}\n");
+        let d = diff(old, new);
+        assert_eq!(d.enums.len(), 1);
+        assert!(matches!(
+            &d.enums[0].change,
+            EnumChange::EntryAdded { entry } if entry == "paid"
+        ));
+        assert!(!d.enums[0].breaking);
     }
 }

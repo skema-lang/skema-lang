@@ -24,6 +24,12 @@ Table Order { id int [pk]; }\nTable Shipment { id int [pk]; }\n";
 const NEW_NON_BREAKING: &str = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\n\
 Table Order { id int [pk]; customer_id int [required]; }\nTable Shipment { id int [pk]; }\n";
 
+const ENUM_OLD: &str = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\n\
+Enum Status {\n  Field { type = string; }\n  draft;\n}\n";
+
+const ENUM_DROPPED: &str =
+    "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\n";
+
 const SYNTAX_ERROR: &str = "this is not a valid .skema file {{{";
 
 /// Writes `content` to `<dir>/<name>` and returns its path.
@@ -122,5 +128,44 @@ fn a_syntax_error_on_either_side_fails_without_attempting_a_diff() {
     assert!(
         !stdout.contains("Table") && !stdout.contains("added") && !stdout.contains("dropped"),
         "expected no diff output, got stdout: {stdout}"
+    );
+}
+
+#[test]
+fn a_new_enum_is_added_and_non_breaking() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let old = write_project(dir.path(), "old.skema", ENUM_DROPPED);
+    let new = write_project(dir.path(), "new.skema", ENUM_OLD);
+
+    let output = skema_diff(&[old.to_str().unwrap(), new.to_str().unwrap()]);
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+
+    assert!(output.status.success(), "stderr: {:?}", output.stderr);
+    assert!(
+        stdout.contains("Enum Status: enum added"),
+        "stdout: {stdout}"
+    );
+    // The added enum is non-breaking, so its line carries no marker.
+    assert!(
+        !stdout
+            .lines()
+            .any(|l| l.contains("Status") && l.contains("[BREAKING]")),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+fn a_removed_enum_is_dropped_and_breaking() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let old = write_project(dir.path(), "old.skema", ENUM_OLD);
+    let new = write_project(dir.path(), "new.skema", ENUM_DROPPED);
+
+    let output = skema_diff(&[old.to_str().unwrap(), new.to_str().unwrap()]);
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+
+    assert!(output.status.success(), "stderr: {:?}", output.stderr);
+    assert!(
+        stdout.contains("Enum Status: enum dropped [BREAKING]"),
+        "stdout: {stdout}"
     );
 }

@@ -98,6 +98,8 @@ fn table_change_description(change: &TableChange) -> String {
 
 fn enum_change_description(change: &EnumChange) -> String {
     match change {
+        EnumChange::Added => "enum added".to_string(),
+        EnumChange::Dropped => "enum dropped".to_string(),
         EnumChange::EntryAdded { entry } => format!("entry {entry} added"),
         EnumChange::EntryRemoved { entry } => format!("entry {entry} removed"),
     }
