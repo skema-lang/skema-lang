@@ -127,8 +127,7 @@ impl Roots {
         }
         found.retain(|path| {
             read(path).is_ok_and(|src| {
-                let (parsed, _) = skema_syntax::parse(&src);
-                let file = parsed.syntax();
+                let (file, _) = skema_syntax::parse(&src);
                 file.blocks()
                     .any(|b| b.kind() == skema_syntax::ast::BlockKind::Project)
             })

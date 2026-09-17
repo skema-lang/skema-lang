@@ -200,8 +200,7 @@ fn block_keywords() -> Vec<String> {
 }
 
 fn run_analysis(source: &str, filename: &str) -> (model::Model, Vec<Diagnostic>) {
-    let (parsed, syntax_diagnostics) = skema_syntax::parse(source);
-    let ast = parsed.syntax();
+    let (ast, syntax_diagnostics) = skema_syntax::parse(source);
     let import_targets = vec![None; ast.imports().count()];
     let input = InputFile {
         id: FileId(0),

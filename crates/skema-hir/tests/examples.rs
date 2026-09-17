@@ -38,13 +38,11 @@ fn load(entry: &Path) -> Vec<(PathBuf, SourceFile)> {
             continue;
         }
         let src = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
-        let (parsed, diags) = skema_syntax::parse(&src);
+        let (ast, diags) = skema_syntax::parse(&src);
         assert!(
             diags.is_empty(),
             "parser diagnostics in {path:?}: {diags:#?}"
         );
-        let ast = parsed.syntax();
-
         for import in ast.imports() {
             let Some(rel) = import.path() else { continue };
             let target = path

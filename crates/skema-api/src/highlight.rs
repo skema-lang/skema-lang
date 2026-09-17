@@ -121,7 +121,7 @@ pub fn highlight_tokens(source: &str) -> Vec<u32> {
 pub(crate) fn classified(source: &str) -> Vec<(Class, Span)> {
     let tokens = skema_syntax::tokenize(source);
     let (parsed, _) = skema_syntax::parse(source);
-    let semantic = skema_syntax::classify(&parsed.syntax());
+    let semantic = skema_syntax::classify(&parsed);
 
     let mut out = Vec::with_capacity(tokens.len());
     let mut semantic = semantic.into_iter().peekable();

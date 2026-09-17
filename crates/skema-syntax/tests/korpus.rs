@@ -68,8 +68,7 @@ fn example_model_parses_without_messages() {
 
 #[test]
 fn example_model_contains_the_expected_declarations() {
-    let (parsed, _) = parse(EXAMPLE);
-    let file = parsed.syntax();
+    let (file, _) = parse(EXAMPLE);
 
     let count = |k: BlockKind| file.blocks().filter(|b| b.kind() == k).count();
     assert_eq!(count(BlockKind::Project), 1);
@@ -90,8 +89,7 @@ fn example_model_contains_the_expected_declarations() {
 
 #[test]
 fn table_order_is_fully_broken_down() {
-    let (parsed, _) = parse(EXAMPLE);
-    let file = parsed.syntax();
+    let (file, _) = parse(EXAMPLE);
 
     let order = file
         .blocks()
@@ -138,8 +136,7 @@ fn table_order_is_fully_broken_down() {
 
 #[test]
 fn group_contains_refs_instead_of_declarations() {
-    let (parsed, _) = parse(EXAMPLE);
-    let file = parsed.syntax();
+    let (file, _) = parse(EXAMPLE);
     let group = file
         .blocks()
         .find(|b| b.kind() == BlockKind::Group)
@@ -169,8 +166,7 @@ fn group_contains_refs_instead_of_declarations() {
 /// a `Field` sub-block, and a `Dialect` sub-block.
 #[test]
 fn datatype_with_parameters_and_sub_blocks() {
-    let (parsed, _) = parse(EXAMPLE);
-    let file = parsed.syntax();
+    let (file, _) = parse(EXAMPLE);
     let dt = file
         .blocks()
         .find(|b| {

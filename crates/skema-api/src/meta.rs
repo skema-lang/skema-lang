@@ -82,8 +82,7 @@ pub struct TableMetas {
 /// `metaBodyStart: undefined` and no entries) – the caller still needs
 /// `tableBodyStart` to add one.
 pub fn table_metas(source: &str) -> TableMetas {
-    let (parsed, _) = skema_syntax::parse(source);
-    let file = parsed.syntax();
+    let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);
     let tables = decl_metas(&file, &offsets, BlockKind::Table)
         .into_iter()
@@ -122,8 +121,7 @@ pub struct EnumMetas {
 /// gets rendered in a diagram and can carry `Meta.styleClasses` (`docs/03`)
 /// just like a `Table` can.
 pub fn enum_metas(source: &str) -> EnumMetas {
-    let (parsed, _) = skema_syntax::parse(source);
-    let file = parsed.syntax();
+    let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);
     let enums = decl_metas(&file, &offsets, BlockKind::Enum)
         .into_iter()
@@ -160,8 +158,7 @@ pub struct GroupMetas {
 /// Every `Group` in `source`, with its `Meta` entries – the same shape as
 /// [`table_metas`].
 pub fn group_metas(source: &str) -> GroupMetas {
-    let (parsed, _) = skema_syntax::parse(source);
-    let file = parsed.syntax();
+    let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);
     let groups = decl_metas(&file, &offsets, BlockKind::Group)
         .into_iter()

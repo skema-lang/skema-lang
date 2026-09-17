@@ -51,8 +51,7 @@ pub struct StyleBlocks {
 /// Single-file, like `tableMetas`: a caller with several files already loops
 /// over them one at a time.
 pub fn style_blocks(source: &str) -> StyleBlocks {
-    let (parsed, _) = skema_syntax::parse(source);
-    let file = parsed.syntax();
+    let (file, _) = skema_syntax::parse(source);
     let offsets = Utf16Offsets::new(source);
 
     let mut blocks = Vec::new();

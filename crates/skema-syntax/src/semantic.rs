@@ -167,7 +167,7 @@ mod tests {
     fn classify_src(src: &str) -> Vec<(Span, SemanticKind)> {
         let (file, diags) = parse(src);
         assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
-        classify(&file.syntax())
+        classify(&file)
     }
 
     fn kinds_at(out: &[(Span, SemanticKind)], src: &str, needle: &str) -> Vec<SemanticKind> {

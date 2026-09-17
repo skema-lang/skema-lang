@@ -1,0 +1,1149 @@
+== myexample
+file 0..2387
+  0..7 Spec Some(1)
+  9..180 Block "Document"@9..17 Document - <"shop"@18..22>@18..22 () Some(23..24)
+    27..123 Block "Meta"@27..31 Meta - - () Some(32..33)
+      38..51 Setting {"version" quoted=false @38..45 = Str ""@48..50 override=-}@38..50
+      56..69 Setting {"author" quoted=false @56..62 = Str ""@66..68 override=-}@56..68
+      74..87 Setting {"note" quoted=false @74..78 = Str ""@84..86 override=-}@74..86
+      92..119 Setting {"styleClasses" quoted=false @92..104 = [<"highlight"@108..117>@108..117@108..117]@107..118 override=-}@92..118
+    127..178 Block "Style"@127..132 Style "document"@134..142 - () Some(143..144)
+      149..174 Setting {"backgroundColor" quoted=false @149..164 = Str "blue"@167..173 override=-}@149..173
+  182..824 Block "Project"@182..189 Project - - () Some(190..191)
+    194..210 Setting {"mode" quoted=false @194..198 = <"draft"@204..209>@204..209@204..209 override=-}@194..209
+    224..242 Setting {"dialect" quoted=false @224..231 = <"generic"@234..241>@234..241@234..241 override=-}@224..241
+    274..370 Block "Meta"@274..278 Meta - - () Some(279..280)
+      285..298 Setting {"version" quoted=false @285..292 = Str ""@295..297 override=-}@285..297
+      303..316 Setting {"author" quoted=false @303..309 = Str ""@313..315 override=-}@303..315
+      321..334 Setting {"note" quoted=false @321..325 = Str ""@331..333 override=-}@321..333
+      339..366 Setting {"styleClasses" quoted=false @339..351 = [<"highlight"@355..364>@355..364@355..364]@354..365 override=-}@339..365
+    374..442 Block "Database"@374..382 Database - - () Some(383..384)
+      389..413 Setting {"database" quoted=false @389..397 = Str "shopsystem"@400..412 override=-}@389..412
+      418..438 Setting {"schema" quoted=false @418..424 = Str "public"@429..437 override=-}@418..437
+    446..541 Block "Lint"@446..450 Lint - - () Some(451..452)
+      457..482 Setting {"fieldNaming" quoted=false @457..468 = <"snake_case"@471..481>@471..481@471..481 override=-}@457..481
+      487..512 Setting {"tableNaming" quoted=false @487..498 = <"PascalCase"@501..511>@501..511@501..511 override=-}@487..511
+      517..537 Setting {"danglingRef" quoted=false @517..528 = <"error"@531..536>@531..536@531..536 override=-}@517..536
+    545..587 Block "Style"@545..550 Style "project"@552..559 - () Some(560..561)
+      566..583 Setting {"fontSize" quoted=false @566..574 = Str "2em"@577..582 override=-}@566..582
+    591..685 Block "Style"@591..596 Style "table"@598..603 - () Some(604..605)
+      610..644 Setting {"headerBackgroundColor" quoted=false @610..631 = Str "#cc0000"@634..643 override=-}@610..643
+      649..681 Setting {"headerTextColor" quoted=false @649..664 = Str "white"@673..680 override=-}@649..680
+    747..822 Block "Style"@747..752 Style - <"highlight"@753..762>@753..762 () Some(763..764)
+      769..793 Setting {"borderColor" quoted=false @769..780 = Str "#cc0000"@783..792 override=-}@769..792
+      798..818 Setting {"borderWidth" quoted=false @798..809 = Str "3px"@812..817 override=-}@798..817
+  826..963 Block "Partial"@826..833 Partial - <"common_base"@834..845>@834..845 () Some(846..847)
+    850..876 Field "id"@850..852 Named <"int"@861..864>@861..864 ()@861..864 [{"pk" quoted=false @872..874 = - override=-}@872..874]
+    879..909 Field "public_id"@879..888 Named <"uuid"@890..894>@890..894 ()@890..894 [{"unique" quoted=false @901..907 = - override=-}@901..907]
+    912..961 Field "created_at"@912..922 Named <"timestamp"@923..932>@923..932 ()@923..932 [{"required" quoted=false @934..942 = - override=-}@934..942, {"default" quoted=false @944..951 = Raw "now()"@952..959 override=-}@944..959]
+  965..1204 Block "Enum"@965..969 Enum - <"OrderStatus"@970..981>@970..981 () Some(982..983)
+    986..1075 Block "Field"@986..991 Field - - () Some(992..993)
+      998..1015 Setting {"type" quoted=false @998..1002 = <"string"@1008..1014>@1008..1014@1008..1014 override=-}@998..1014
+      1020..1035 Setting {"default" quoted=false @1020..1027 = <"paid"@1030..1034>@1030..1034@1030..1034 override=-}@1020..1034
+      1040..1071 Setting {"note" quoted=false @1040..1044 = Str "States of an order"@1050..1070 override=-}@1040..1070
+    1079..1109 Field "draft"@1079..1084 - []
+      1091..1107 Setting {"label" quoted=false @1091..1096 = Str "Draft"@1099..1106 override=-}@1091..1106
+    1112..1141 Field "paid"@1112..1116 - []
+      1124..1139 Setting {"label" quoted=false @1124..1129 = Str "Paid"@1132..1138 override=-}@1124..1138
+    1144..1189 Field "shipped"@1144..1151 - []
+      1156..1174 Setting {"label" quoted=false @1156..1161 = Str "Shipped"@1164..1173 override=-}@1156..1173
+      1175..1187 Setting {"value" quoted=false @1175..1180 = Str "S"@1183..1186 override=-}@1175..1186
+    1192..1202 Field "cancelled"@1192..1201 - []
+  1206..1400 Block "Table"@1206..1211 Table - <"Customer"@1212..1220>@1212..1220 () Some(1221..1222)
+    1225..1241 Use <"common_base"@1229..1240>@1229..1240
+    1245..1282 Field "email"@1245..1250 Named <"Email"@1253..1258>@1253..1258 ()@1253..1258 [{"required" quoted=false @1272..1280 = - override=-}@1272..1280]
+    1285..1343 Field "country"@1285..1292 Named <"varchar"@1293..1300>@1293..1300 (Int 2@1301..1302)@1293..1303 []
+      1313..1341 Setting {"note" quoted=false @1313..1317 = Str "ISO 3166-1 alpha-2"@1320..1340 override=-}@1313..1340
+    1347..1398 Block "Index"@1347..1352 Index - - () Some(1353..1354)
+      1359..1394 IndexEntry "ix_customer_email"@1359..1376 ("email"@1378..1383) [{"unique" quoted=false @1386..1392 = - override=-}@1386..1392]
+  1402..1796 Block "Table"@1402..1407 Table - <"Order"@1408..1413>@1408..1413 () Some(1414..1415)
+    1418..1434 Use <"common_base"@1422..1433>@1422..1433
+    1438..1493 Field "customer"@1438..1446 Relation OneToMany <"Customer"@1452..1460, "id"@1461..1463>@1452..1463@1451..1463 [{"required" quoted=false @1465..1473 = - override=-}@1465..1473, {"onDelete" quoted=false @1475..1483 = <"cascade"@1484..1491>@1484..1491@1484..1491 override=-}@1475..1491]
+    1496..1521 Field "order_status"@1496..1508 Named <"OrderStatus"@1509..1520>@1509..1520 ()@1509..1520 []
+    1525..1646 Field "sum"@1525..1528 Named <"float"@1529..1534>@1529..1534 ()@1529..1534 [{"required" quoted=false @1536..1544 = - override=-}@1536..1544]
+      1552..1583 Setting {"note" quoted=false @1552..1556 = Str "The full Sum"@1568..1582 override=-}@1552..1582
+      1588..1612 Setting {"exampleValue" quoted=false @1588..1600 = Str "19.99"@1604..1611 override=-}@1588..1611
+      1617..1642 Setting {"x-customkey" quoted=true @1617..1630 = Str "Foobar"@1633..1641 override=-}@1617..1641
+    1650..1675 Field "gross_sum"@1650..1659 Named <"decimal"@1660..1667>@1660..1667 (Int 10@1668..1670, Int 2@1672..1673)@1660..1674 []
+    1679..1714 Block "Database"@1679..1687 Database - - () Some(1688..1689)
+      1694..1710 Setting {"table" quoted=false @1694..1699 = Str "order"@1702..1709 override=-}@1694..1709
+    1718..1794 Block "Meta"@1718..1722 Meta - - () Some(1723..1724)
+      1729..1741 Setting {"author" quoted=false @1729..1735 = Str ""@1738..1740 override=-}@1729..1740
+      1746..1758 Setting {"note" quoted=false @1746..1750 = Str ""@1755..1757 override=-}@1746..1757
+      1763..1790 Setting {"styleClasses" quoted=false @1763..1775 = [<"highlight"@1779..1788>@1779..1788@1779..1788]@1778..1789 override=-}@1763..1789
+  1798..1866 Block "Group"@1798..1803 Group - <"Shop"@1804..1808>@1804..1808 () Some(1809..1810)
+    1813..1828 Ref "Table"@1813..1818 Table <"Customer"@1819..1827>@1819..1827
+    1831..1843 Ref "Table"@1831..1836 Table <"Order"@1837..1842>@1837..1842
+    1846..1864 Ref "Enum"@1846..1850 Enum <"OrderStatus"@1852..1863>@1852..1863
+  1868..2010 Block "Datatype"@1868..1876 Datatype - <"Email"@1877..1882>@1877..1882 () Some(1883..1884)
+    1887..2008 Block "Field"@1887..1892 Field - - () Some(1893..1894)
+      1899..1914 Setting {"type" quoted=false @1899..1903 = <"string"@1907..1913>@1907..1913@1907..1913 override=-}@1899..1913
+      1919..1943 Setting {"regex" quoted=false @1919..1924 = Str "^[^@]+@[^@]+$"@1927..1942 override=-}@1919..1942
+      1948..2004 Setting {"note" quoted=false @1948..1952 = Str "Email address, not checked for deliverability"@1956..2003 override=-}@1948..2003
+  2012..2387 Block "Datatype"@2012..2020 Datatype - <"decimal"@2021..2028>@2021..2028 ("precision"@2029..2038 <"int"@2039..2042>@2039..2042 2029..2042, "scale"@2044..2049 <"int"@2050..2053>@2050..2053 2044..2053) Some(2055..2056)
+    2059..2105 Field "precision"@2059..2068 - []
+      2071..2103 Setting {"note" quoted=false @2071..2075 = Str "Total number of digits"@2078..2102 override=-}@2071..2102
+    2108..2175 Field "scale"@2108..2113 - []
+      2120..2160 Setting {"note" quoted=false @2120..2124 = Str "Number of fixed decimal places"@2127..2159 override=-}@2120..2159
+      2161..2173 Setting {"default" quoted=false @2161..2168 = Int 2@2171..2172 override=-}@2161..2172
+    2179..2258 Block "Field"@2179..2184 Field - - () Some(2185..2186)
+      2191..2204 Setting {"type" quoted=false @2191..2195 = <"float"@2198..2203>@2198..2203@2198..2203 override=-}@2191..2203
+      2209..2254 Setting {"note" quoted=false @2209..2213 = Str "Decimal number with fixed precision"@2216..2253 override=-}@2209..2253
+    2262..2322 Block "Dialect"@2262..2269 Dialect "postgres"@2271..2279 - () Some(2280..2281)
+      2282..2320 Setting {"sql" quoted=false @2282..2285 = Str "numeric({precision}, {scale})"@2288..2319 override=-}@2282..2319
+    2325..2385 Block "Dialect"@2325..2332 Dialect "mysql"@2334..2339 - () Some(2343..2344)
+      2345..2383 Setting {"sql" quoted=false @2345..2348 = Str "DECIMAL({precision}, {scale})"@2351..2382 override=-}@2345..2382
+== generic/catalog
+file 0..1834
+  0..7 Spec Some(1)
+  91..317 Block "Document"@91..99 Document - <"catalog"@100..107>@100..107 () Some(108..109)
+    112..173 Block "Meta"@112..116 Meta - - () Some(117..118)
+      123..169 Setting {"note" quoted=false @123..127 = Str "Works, editions, and physical copies"@130..168 override=-}@123..168
+    277..315 Block "Database"@277..285 Database - - () Some(286..287)
+      292..311 Setting {"schema" quoted=false @292..298 = Str "catalog"@301..310 override=-}@292..310
+  319..342 Import Some("./types.skema") -
+  344..636 Block "Enum"@344..348 Enum - <"CopyState"@349..358>@349..358 () Some(359..360)
+    363..463 Block "Field"@363..368 Field - - () Some(369..370)
+      375..392 Setting {"type" quoted=false @375..379 = <"string"@385..391>@385..391@385..391 override=-}@375..391
+      397..417 Setting {"default" quoted=false @397..404 = <"available"@407..416>@407..416@407..416 override=-}@397..416
+      422..459 Setting {"note" quoted=false @422..426 = Str "State of a physical copy"@432..458 override=-}@422..458
+    467..503 Field "available"@467..476 - []
+      481..501 Setting {"label" quoted=false @481..486 = Str "Available"@489..500 override=-}@481..500
+    506..537 Field "lent"@506..510 - []
+      520..535 Setting {"label" quoted=false @520..525 = Str "Lent"@528..534 override=-}@520..534
+    540..574 Field "damaged"@540..547 - []
+      554..572 Setting {"label" quoted=false @554..559 = Str "Damaged"@562..571 override=-}@554..571
+    577..621 Field "lost"@577..581 - []
+      591..606 Setting {"label" quoted=false @591..596 = Str "Lost"@599..605 override=-}@591..605
+      607..619 Setting {"value" quoted=false @607..612 = Str "X"@615..618 override=-}@607..618
+    624..634 Field "withdrawn"@624..633 - []
+  638..937 Block "Table"@638..643 Table - <"Author"@644..650>@644..650 () Some(651..652)
+    655..670 Use <"types"@659..664, "Base"@665..669>@659..669
+    674..709 Field "name"@674..678 Named <"varchar"@685..692>@685..692 (Int 120@693..696)@685..697 [{"required" quoted=false @699..707 = - override=-}@699..707]
+    712..727 Field "birth_year"@712..722 Named <"int"@723..726>@723..726 ()@723..726 []
+    793..812 Field "books"@793..798 Relation ManyToOne <"Book"@800..804, "author"@805..811>@800..811@799..811 []
+    816..854 Block "Index"@816..821 Index - - () Some(822..823)
+      828..850 IndexEntry "ix_author_name"@828..842 ("name"@844..848) []
+    858..935 Block "Meta"@858..862 Meta - - () Some(863..864)
+      869..904 Setting {"note" quoted=false @869..873 = Str "Creator of a work"@884..903 override=-}@869..903
+      909..931 Setting {"styleClasses" quoted=false @909..921 = [<"core"@925..929>@925..929@925..929]@924..930 override=-}@909..930
+  939..1429 Block "Table"@939..944 Table - <"Book"@945..949>@945..949 () Some(950..951)
+    954..969 Use <"types"@958..963, "Base"@964..968>@958..968
+    973..1015 Field "isbn"@973..977 Named <"types"@983..988, "Isbn"@989..993>@983..993 ()@983..993 [{"required" quoted=false @997..1005 = - override=-}@997..1005, {"unique" quoted=false @1007..1013 = - override=-}@1007..1013]
+    1018..1052 Field "title"@1018..1023 Named <"varchar"@1028..1035>@1028..1035 (Int 200@1036..1039)@1028..1040 [{"required" quoted=false @1042..1050 = - override=-}@1042..1050]
+    1055..1108 Field "author"@1055..1061 Relation OneToMany <"Author"@1066..1072, "id"@1073..1075>@1066..1075@1065..1075 [{"required" quoted=false @1079..1087 = - override=-}@1079..1087, {"onDelete" quoted=false @1089..1097 = <"restrict"@1098..1106>@1098..1106@1098..1106 override=-}@1089..1106]
+    1111..1133 Field "price"@1111..1116 Named <"types"@1121..1126, "Money"@1127..1132>@1121..1132 ()@1121..1132 []
+    1136..1151 Field "blurb"@1136..1141 Named <"text"@1146..1150>@1146..1150 ()@1146..1150 []
+    1155..1173 Field "copies"@1155..1161 Relation ManyToOne <"Copy"@1163..1167, "book"@1168..1172>@1163..1172@1162..1172 []
+    1177..1257 Block "Index"@1177..1182 Index - - () Some(1183..1184)
+      1189..1211 IndexEntry "ix_book_title"@1189..1202 ("title"@1204..1209) []
+      1216..1253 IndexEntry "ix_book_author_title"@1216..1236 ("author"@1238..1244, "title"@1246..1251) []
+    1261..1427 Block "Meta"@1261..1265 Meta - - () Some(1266..1267)
+      1272..1297 Setting {"author" quoted=false @1272..1278 = Str "example"@1287..1296 override=-}@1272..1296
+      1302..1366 Setting {"note" quoted=false @1302..1306 = Str "Bibliographic edition, not the individual copy"@1317..1365 override=-}@1302..1365
+      1371..1393 Setting {"styleClasses" quoted=false @1371..1383 = [<"core"@1387..1391>@1387..1391@1387..1391]@1386..1392 override=-}@1371..1392
+      1398..1423 Setting {"x-domain" quoted=true @1398..1408 = Str "catalog"@1413..1422 override=-}@1398..1422
+  1431..1752 Block "Table"@1431..1436 Table - <"Copy"@1437..1441>@1437..1441 () Some(1442..1443)
+    1446..1461 Use <"types"@1450..1455, "Base"@1456..1460>@1450..1460
+    1465..1512 Field "book"@1465..1469 Relation OneToMany <"Book"@1475..1479, "id"@1480..1482>@1475..1482@1474..1482 [{"required" quoted=false @1484..1492 = - override=-}@1484..1492, {"onDelete" quoted=false @1494..1502 = <"cascade"@1503..1510>@1503..1510@1503..1510 override=-}@1494..1510]
+    1515..1555 Field "barcode"@1515..1522 Named <"varchar"@1524..1531>@1524..1531 (Int 32@1532..1534)@1524..1535 [{"required" quoted=false @1537..1545 = - override=-}@1537..1545, {"unique" quoted=false @1547..1553 = - override=-}@1547..1553]
+    1558..1577 Field "state"@1558..1563 Named <"CopyState"@1567..1576>@1567..1576 ()@1567..1576 []
+    1580..1601 Field "shelf"@1580..1585 Named <"varchar"@1589..1596>@1589..1596 (Int 16@1597..1599)@1589..1600 []
+    1659..1698 Block "Database"@1659..1667 Database - - () Some(1668..1669)
+      1674..1694 Setting {"table" quoted=false @1674..1679 = Str "book_copy"@1682..1693 override=-}@1674..1693
+    1702..1750 Block "Meta"@1702..1706 Meta - - () Some(1707..1708)
+      1713..1746 Setting {"note" quoted=false @1713..1717 = Str "A single, loanable item"@1720..1745 override=-}@1713..1745
+  1754..1834 Block "Group"@1754..1759 Group - <"Catalog"@1760..1767>@1760..1767 () Some(1768..1769)
+    1772..1785 Ref "Table"@1772..1777 Table <"Author"@1778..1784>@1778..1784
+    1788..1799 Ref "Table"@1788..1793 Table <"Book"@1794..1798>@1794..1798
+    1802..1813 Ref "Table"@1802..1807 Table <"Copy"@1808..1812>@1808..1812
+    1816..1832 Ref "Enum"@1816..1820 Enum <"CopyState"@1822..1831>@1822..1831
+== generic/lending
+file 0..1680
+  0..7 Spec Some(1)
+  96..215 Block "Document"@96..104 Document - <"lending"@105..112>@105..112 () Some(113..114)
+    117..171 Block "Meta"@117..121 Meta - - () Some(122..123)
+      128..167 Setting {"note" quoted=false @128..132 = Str "Members and loan transactions"@135..166 override=-}@128..166
+    175..213 Block "Database"@175..183 Database - - () Some(184..185)
+      190..209 Setting {"schema" quoted=false @190..196 = Str "lending"@199..208 override=-}@190..208
+  217..240 Import Some("./types.skema") -
+  241..273 Import Some("./catalog.skema") "cat"@269..272
+  309..631 Block "Table"@309..314 Table - <"Member"@315..321>@315..321 () Some(322..323)
+    326..341 Use <"types"@330..335, "Base"@336..340>@330..340
+    345..388 Field "email"@345..350 Named <"types"@356..361, "Email"@362..367>@356..367 ()@356..367 [{"required" quoted=false @370..378 = - override=-}@370..378, {"unique" quoted=false @380..386 = - override=-}@380..386]
+    391..426 Field "name"@391..395 Named <"varchar"@402..409>@402..409 (Int 120@410..413)@402..414 [{"required" quoted=false @416..424 = - override=-}@416..424]
+    429..464 Field "joined_on"@429..438 Named <"date"@440..444>@440..444 ()@440..444 [{"required" quoted=false @454..462 = - override=-}@454..462]
+    468..487 Field "loans"@468..473 Relation ManyToOne <"Loan"@475..479, "member"@480..486>@475..486@474..486 []
+    491..540 Block "Index"@491..496 Index - - () Some(497..498)
+      503..536 IndexEntry "ix_member_email"@503..518 ("email"@520..525) [{"unique" quoted=false @528..534 = - override=-}@528..534]
+    544..629 Block "Meta"@544..548 Meta - - () Some(549..550)
+      555..598 Setting {"note" quoted=false @555..559 = Str "Person entitled to borrow"@570..597 override=-}@555..597
+      603..625 Setting {"styleClasses" quoted=false @603..615 = [<"core"@619..623>@619..623@619..623]@618..624 override=-}@603..624
+  858..1291 Block "Table"@858..863 Table - <"Loan"@864..868>@864..868 () Some(869..870)
+    873..888 Use <"types"@877..882, "Base"@883..887>@877..887
+    892..949 Field "member"@892..898 Relation OneToMany <"Member"@905..911, "id"@912..914>@905..914@904..914 [{"required" quoted=false @920..928 = - override=-}@920..928, {"onDelete" quoted=false @930..938 = <"restrict"@939..947>@939..947@939..947 override=-}@930..947]
+    952..1009 Field "copy"@952..956 Relation OneToMany <"cat"@965..968, "Copy"@969..973, "id"@974..976>@965..976@964..976 [{"required" quoted=false @980..988 = - override=-}@980..988, {"onDelete" quoted=false @990..998 = <"restrict"@999..1007>@999..1007@999..1007 override=-}@990..1007]
+    1012..1067 Field "lent_on"@1012..1019 Named <"date"@1024..1028>@1024..1028 ()@1024..1028 [{"required" quoted=false @1040..1048 = - override=-}@1040..1048, {"default" quoted=false @1050..1057 = Raw "now()"@1058..1065 override=-}@1050..1065]
+    1070..1108 Field "due_on"@1070..1076 Named <"date"@1082..1086>@1082..1086 ()@1082..1086 [{"required" quoted=false @1098..1106 = - override=-}@1098..1106]
+    1111..1133 Field "returned_at"@1111..1122 Named <"timestamp"@1123..1132>@1123..1132 ()@1123..1132 []
+    1137..1206 Block "Index"@1137..1142 Index - - () Some(1143..1144)
+      1149..1173 IndexEntry "ix_loan_member"@1149..1163 ("member"@1165..1171) []
+      1178..1202 IndexEntry "ix_loan_due"@1178..1189 ("due_on"@1194..1200) []
+    1210..1289 Block "Meta"@1210..1214 Meta - - () Some(1215..1216)
+      1221..1285 Setting {"note" quoted=false @1221..1225 = Str "A loan transaction. returned_at empty = still ongoing."@1228..1284 override=-}@1221..1284
+  1293..1610 Block "Table"@1293..1298 Table - <"LoanArchive"@1299..1310>@1299..1310 () Some(1311..1312)
+    1315..1334 Use <"types"@1319..1324, "Identity"@1325..1333>@1319..1333
+    1338..1371 Field "member_public_id"@1338..1354 Named <"uuid"@1355..1359>@1355..1359 ()@1355..1359 [{"required" quoted=false @1361..1369 = - override=-}@1361..1369]
+    1374..1414 Field "copy_barcode"@1374..1386 Named <"varchar"@1391..1398>@1391..1398 (Int 32@1399..1401)@1391..1402 [{"required" quoted=false @1404..1412 = - override=-}@1404..1412]
+    1417..1450 Field "lent_on"@1417..1424 Named <"date"@1434..1438>@1434..1438 ()@1434..1438 [{"required" quoted=false @1440..1448 = - override=-}@1440..1448]
+    1453..1491 Field "returned_at"@1453..1464 Named <"timestamp"@1470..1479>@1470..1479 ()@1470..1479 [{"required" quoted=false @1481..1489 = - override=-}@1481..1489]
+    1495..1608 Block "Meta"@1495..1499 Meta - - () Some(1500..1501)
+      1506..1571 Setting {"note" quoted=false @1506..1510 = Str "Decoupled history, survives deletion of members"@1521..1570 override=-}@1506..1570
+      1576..1604 Setting {"styleClasses" quoted=false @1576..1588 = [<"historical"@1592..1602>@1592..1602@1592..1602]@1591..1603 override=-}@1576..1603
+  1612..1680 Block "Group"@1612..1617 Group - <"Lending"@1618..1625>@1618..1625 () Some(1626..1627)
+    1630..1643 Ref "Table"@1630..1635 Table <"Member"@1636..1642>@1636..1642
+    1646..1657 Ref "Table"@1646..1651 Table <"Loan"@1652..1656>@1652..1656
+    1660..1678 Ref "Table"@1660..1665 Table <"LoanArchive"@1666..1677>@1666..1677
+== generic/project
+file 0..1269
+  0..7 Spec Some(1)
+  242..381 Block "Document"@242..250 Document - <"library"@251..258>@251..258 () Some(259..260)
+    263..379 Block "Meta"@263..267 Meta - - () Some(268..269)
+      274..292 Setting {"version" quoted=false @274..281 = Str "1.0.0"@284..291 override=-}@274..291
+      297..317 Setting {"author" quoted=false @297..303 = Str "example"@307..316 override=-}@297..316
+      322..375 Setting {"note" quoted=false @322..326 = Str "Library management - catalog and lending"@332..374 override=-}@322..374
+  383..406 Import Some("./types.skema") -
+  407..432 Import Some("./catalog.skema") -
+  433..458 Import Some("./lending.skema") -
+  460..1269 Block "Project"@460..467 Project - - () Some(468..469)
+    472..488 Setting {"mode" quoted=false @472..476 = <"draft"@482..487>@482..487@482..487 override=-}@472..487
+    513..531 Setting {"dialect" quoted=false @513..520 = <"generic"@523..530>@523..530@523..530 override=-}@513..530
+    578..643 Block "Database"@578..586 Database - - () Some(587..588)
+      593..614 Setting {"database" quoted=false @593..601 = Str "library"@604..613 override=-}@593..613
+      619..639 Setting {"schema" quoted=false @619..625 = Str "public"@630..638 override=-}@619..638
+    647..772 Block "Lint"@647..651 Lint - - () Some(652..653)
+      658..683 Setting {"fieldNaming" quoted=false @658..669 = <"snake_case"@672..682>@672..682@672..682 override=-}@658..682
+      688..713 Setting {"tableNaming" quoted=false @688..699 = <"PascalCase"@702..712>@702..712@702..712 override=-}@688..712
+      718..743 Setting {"enumNaming" quoted=false @718..728 = <"PascalCase"@732..742>@732..742@732..742 override=-}@718..742
+      748..768 Setting {"danglingRef" quoted=false @748..759 = <"error"@762..767>@762..767@762..767 override=-}@748..767
+    776..871 Block "Meta"@776..780 Meta - - () Some(781..782)
+      787..842 Setting {"note" quoted=false @787..791 = Str "Example model demonstrating the language"@799..841 override=-}@787..841
+      847..867 Setting {"x-jira" quoted=true @847..855 = Str "DOC-1"@859..866 override=-}@847..866
+    875..919 Block "Style"@875..880 Style "project"@882..889 - () Some(890..891)
+      896..915 Setting {"fontSize" quoted=false @896..904 = Str "1.1em"@907..914 override=-}@896..914
+    923..1017 Block "Style"@923..928 Style "table"@930..935 - () Some(936..937)
+      942..976 Setting {"headerBackgroundColor" quoted=false @942..963 = Str "#1f4e79"@966..975 override=-}@942..975
+      981..1013 Setting {"headerTextColor" quoted=false @981..996 = Str "white"@1005..1012 override=-}@981..1012
+    1021..1069 Block "Style"@1021..1026 Style "relation"@1028..1036 - () Some(1037..1038)
+      1043..1065 Setting {"lineColor" quoted=false @1043..1052 = Str "#888888"@1055..1064 override=-}@1043..1064
+    1138..1208 Block "Style"@1138..1143 Style - <"core"@1144..1148>@1144..1148 () Some(1149..1150)
+      1155..1179 Setting {"borderColor" quoted=false @1155..1166 = Str "#1f4e79"@1169..1178 override=-}@1155..1178
+      1184..1204 Setting {"borderWidth" quoted=false @1184..1195 = Str "3px"@1198..1203 override=-}@1184..1203
+    1212..1267 Block "Style"@1212..1217 Style - <"historical"@1218..1228>@1218..1228 () Some(1229..1230)
+      1235..1263 Setting {"backgroundColor" quoted=false @1235..1250 = Str "#f0f0f0"@1253..1262 override=-}@1235..1262
+== generic/types
+file 0..1576
+  0..7 Spec Some(1)
+  100..186 Block "Document"@100..108 Document - <"types"@109..114>@109..114 () Some(115..116)
+    119..184 Block "Meta"@119..123 Meta - - () Some(124..125)
+      130..180 Setting {"note" quoted=false @130..134 = Str "Project-wide data types and field groups"@137..179 override=-}@130..179
+  322..448 Block "Datatype"@322..330 Datatype - <"Isbn"@331..335>@331..335 () Some(336..337)
+    340..446 Block "Field"@340..345 Field - - () Some(346..347)
+      352..367 Setting {"type" quoted=false @352..356 = <"string"@360..366>@360..366@360..366 override=-}@352..366
+      372..400 Setting {"regex" quoted=false @372..377 = Str "^97[89][0-9]{10}$"@380..399 override=-}@372..399
+      405..442 Setting {"note" quoted=false @405..409 = Str "ISBN-13 without separators"@413..441 override=-}@405..441
+  450..577 Block "Datatype"@450..458 Datatype - <"Email"@459..464>@459..464 () Some(465..466)
+    469..575 Block "Field"@469..474 Field - - () Some(475..476)
+      481..496 Setting {"type" quoted=false @481..485 = <"string"@489..495>@489..495@489..495 override=-}@481..495
+      501..525 Setting {"regex" quoted=false @501..506 = Str "^[^@]+@[^@]+$"@509..524 override=-}@501..524
+      530..571 Setting {"note" quoted=false @530..534 = Str "Not checked for deliverability"@538..570 override=-}@530..570
+  648..1036 Block "Datatype"@648..656 Datatype - <"decimal"@657..664>@657..664 ("precision"@665..674 <"int"@675..678>@675..678 665..678, "scale"@680..685 <"int"@686..689>@686..689 680..689) Some(691..692)
+    695..741 Field "precision"@695..704 - []
+      707..739 Setting {"note" quoted=false @707..711 = Str "Total number of digits"@714..738 override=-}@707..738
+    744..801 Field "scale"@744..749 - []
+      756..786 Setting {"note" quoted=false @756..760 = Str "Fixed decimal places"@763..785 override=-}@756..785
+      787..799 Setting {"default" quoted=false @787..794 = Int 2@797..798 override=-}@787..798
+    805..907 Block "Field"@805..810 Field - - () Some(811..812)
+      817..833 Setting {"type" quoted=false @817..821 = <"float"@827..832>@827..832@827..832 override=-}@817..832
+      838..850 Setting {"default" quoted=false @838..845 = Int 0@848..849 override=-}@838..849
+      855..903 Setting {"note" quoted=false @855..859 = Str "Decimal number with fixed precision"@865..902 override=-}@855..902
+    911..971 Block "Dialect"@911..918 Dialect "postgres"@920..928 - () Some(929..930)
+      931..969 Setting {"sql" quoted=false @931..934 = Str "numeric({precision}, {scale})"@937..968 override=-}@931..968
+    974..1034 Block "Dialect"@974..981 Dialect "mysql"@983..988 - () Some(992..993)
+      994..1032 Setting {"sql" quoted=false @994..997 = Str "DECIMAL({precision}, {scale})"@1000..1031 override=-}@994..1031
+  1092..1186 Block "Datatype"@1092..1100 Datatype - <"Money"@1101..1106>@1101..1106 () Some(1107..1108)
+    1111..1184 Block "Field"@1111..1116 Field - - () Some(1117..1118)
+      1123..1142 Setting {"type" quoted=false @1123..1127 = Type <"decimal"@1130..1137>@1130..1137 (Int 10@1138..1140)@1130..1141 override=-}@1123..1141
+      1147..1180 Setting {"note" quoted=false @1147..1151 = Str "Amount in home currency"@1154..1179 override=-}@1147..1179
+  1269..1392 Block "Partial"@1269..1276 Partial - <"Identity"@1277..1285>@1277..1285 () Some(1286..1287)
+    1290..1310 Field "id"@1290..1292 Named <"int"@1300..1303>@1300..1303 ()@1300..1303 [{"pk" quoted=false @1306..1308 = - override=-}@1306..1308]
+    1313..1337 Field "public_id"@1313..1322 Named <"uuid"@1323..1327>@1323..1327 ()@1323..1327 [{"unique" quoted=false @1329..1335 = - override=-}@1329..1335]
+    1341..1390 Block "Meta"@1341..1345 Meta - - () Some(1346..1347)
+      1352..1386 Setting {"note" quoted=false @1352..1356 = Str "Technical and public key"@1359..1385 override=-}@1352..1385
+  1394..1492 Block "Partial"@1394..1401 Partial - <"Timestamps"@1402..1412>@1402..1412 () Some(1413..1414)
+    1417..1466 Field "created_at"@1417..1427 Named <"timestamp"@1428..1437>@1428..1437 ()@1428..1437 [{"required" quoted=false @1439..1447 = - override=-}@1439..1447, {"default" quoted=false @1449..1456 = Raw "now()"@1457..1464 override=-}@1449..1464]
+    1469..1490 Field "updated_at"@1469..1479 Named <"timestamp"@1480..1489>@1480..1489 ()@1480..1489 []
+  1526..1576 Block "Partial"@1526..1533 Partial - <"Base"@1534..1538>@1534..1538 () Some(1539..1540)
+    1543..1556 Use <"Identity"@1547..1555>@1547..1555
+    1559..1574 Use <"Timestamps"@1563..1573>@1563..1573
+== docs#0
+file 0..479
+  0..7 Spec Some(1)
+  80..112 Import Some("./common.skema") "base"@107..111
+  150..161 Block "Project"@150..157 Project - - () Some(158..159)
+  235..252 Block "Document"@235..243 Document - <"shop"@244..248>@244..248 () Some(249..250)
+  355..379 Block "Partial"@355..362 Partial - <"common_base"@364..375>@364..375 () Some(376..377)
+  380..404 Block "Enum"@380..384 Enum - <"OrderStatus"@389..400>@389..400 () Some(401..402)
+  405..429 Block "Table"@405..410 Table - <"Customer"@414..422>@414..422 () Some(426..427)
+  430..454 Block "Group"@430..435 Group - <"Shop"@439..443>@439..443 () Some(451..452)
+  455..479 Block "Datatype"@455..463 Datatype - <"Money"@464..469>@464..469 () Some(476..477)
+== docs#1
+file 0..249
+  0..80 Field "username"@0..8 Named <"regexstring"@10..21>@10..21 (Str "^[a-z0-9_]{3,20}$"@22..41)@10..42 [{"required" quoted=false @45..53 = - override=-}@45..53]
+    58..78 Setting {"note" quoted=false @58..62 = Str "Login name"@65..77 override=-}@58..77
+  91..249 Error
+diag 91..94 Error "unknown character"
+diag 94..97 Error "unknown character"
+diag 97..100 Error "unknown character"
+diag 100..103 Error "unknown character"
+diag 103..106 Error "unknown character"
+diag 106..109 Error "unknown character"
+diag 109..112 Error "unknown character"
+diag 112..115 Error "unknown character"
+diag 115..118 Error "unknown character"
+diag 118..121 Error "unknown character"
+diag 121..124 Error "unknown character"
+diag 124..127 Error "unknown character"
+diag 127..130 Error "unknown character"
+diag 136..139 Error "unknown character"
+diag 139..142 Error "unknown character"
+diag 142..145 Error "unknown character"
+diag 145..148 Error "unknown character"
+diag 148..151 Error "unknown character"
+diag 151..154 Error "unknown character"
+diag 154..157 Error "unknown character"
+diag 157..160 Error "unknown character"
+diag 160..163 Error "unknown character"
+diag 163..166 Error "unknown character"
+diag 166..169 Error "unknown character"
+diag 169..172 Error "unknown character"
+diag 172..175 Error "unknown character"
+diag 175..178 Error "unknown character"
+diag 180..183 Error "unknown character"
+diag 183..186 Error "unknown character"
+diag 193..196 Error "unknown character"
+diag 196..199 Error "unknown character"
+diag 201..204 Error "unknown character"
+diag 204..207 Error "unknown character"
+diag 207..210 Error "unknown character"
+diag 210..213 Error "unknown character"
+diag 213..216 Error "unknown character"
+diag 216..219 Error "unknown character"
+diag 219..222 Error "unknown character"
+diag 228..231 Error "unknown character"
+diag 231..234 Error "unknown character"
+diag 234..237 Error "unknown character"
+diag 237..240 Error "unknown character"
+diag 240..243 Error "unknown character"
+diag 243..246 Error "unknown character"
+diag 246..249 Error "unknown character"
+== docs#2
+file 0..57
+  0..17 Setting {"fontSize" quoted=false @0..8 = Str "2em"@11..16 override=-}@0..16
+  18..57 Field "created_at"@18..28 Named <"timestamp"@29..38>@29..38 ()@29..38 [{"default" quoted=false @40..47 = Raw "now()"@48..55 override=-}@40..55]
+== docs#3
+file 0..0
+== docs#4
+file 0..51
+  0..51 Block "Style"@0..5 Style "table"@7..12 - () Some(13..14)
+    15..49 Setting {"headerBackgroundColor" quoted=false @15..36 = Str "#cc0000"@39..48 override=-}@15..48
+== docs#5
+file 0..48
+  0..48 Setting {"note" quoted=false @0..4 = Str "First line\nSecond line with \"quote\""@7..47 override=-}@0..47
+== docs#6
+file 0..26
+  0..26 Setting {"regex" quoted=false @0..5 = Str "^\\d{4}-\\d{2}$"@8..25 override=-}@0..25
+== docs#7
+file 0..39
+  0..39 Field "created_at"@0..10 Named <"timestamp"@11..20>@11..20 ()@11..20 [{"default" quoted=false @22..29 = Raw "now()"@30..37 override=-}@22..37]
+== docs#8
+file 0..122
+  0..23 Block "Style"@0..5 Style "table"@7..12 - () Some(16..17)
+    18..21 Error
+  50..73 Block "Style"@50..55 Style - <"highlight"@56..65>@56..65 () Some(66..67)
+    68..71 Error
+  97..122 Block "Dialect"@97..104 Dialect "postgres"@106..114 - () Some(115..116)
+    117..120 Error
+diag 18..21 Error "unknown character"
+diag 68..71 Error "unknown character"
+diag 117..120 Error "unknown character"
+== docs#9
+file 0..174
+  0..174 Block "Meta"@0..4 Meta - - () Some(5..6)
+    9..28 Setting {"author" quoted=false @9..15 = Str "anna"@21..27 override=-}@9..27
+    46..69 Setting {"x-jira" quoted=true @46..54 = Str "SHOP-412"@58..68 override=-}@46..68
+    100..119 Setting {"athor" quoted=false @100..105 = Str "anna"@112..118 override=-}@100..118
+== docs#10
+file 0..113
+  0..7 Spec Some(1)
+  9..26 Block "Document"@9..17 Document - <"shop"@18..22>@18..22 () Some(23..24)
+  28..53 Block "Enum"@28..32 Enum - <"OrderStatus"@34..45>@34..45 () Some(46..47)
+    48..51 Error
+  88..113 Block "Table"@88..93 Table - <"Order"@94..99>@94..99 () Some(106..107)
+    108..111 Error
+diag 48..51 Error "unknown character"
+diag 108..111 Error "unknown character"
+== docs#11
+file 0..229
+  0..17 Block "Document"@0..8 Document - <"shop"@9..13>@9..13 () Some(14..15)
+  19..45 Block "Enum"@19..23 Enum - <"OrderStatus"@24..35>@24..35 () Some(36..37)
+    38..43 Field "paid"@38..42 - []
+  47..229 Block "Table"@47..52 Table - <"Order"@53..58>@53..58 () Some(59..60)
+    63..111 Field "status"@63..69 Named <"OrderStatus"@72..83>@72..83 ()@72..83 [{"default" quoted=false @85..92 = <"OrderStatus"@93..104, "paid"@105..109>@93..109@93..109 override=-}@85..109]
+    145..168 Field "currency"@145..153 Named <"base"@154..158, "Currency"@159..167>@154..167 ()@154..167 []
+== docs#12
+file 0..32
+  0..32 Import Some("./common.skema") "base"@27..31
+== docs#13
+file 0..76
+  27..48 Block "Document"@27..35 Document - <"customer"@36..44>@36..44 () Some(45..46)
+  49..76 Block "Table"@49..54 Table - <"User"@55..59>@55..59 () Some(60..61)
+    62..74 Field "id"@62..64 Named <"int"@65..68>@65..68 ()@65..68 [{"pk" quoted=false @70..72 = - override=-}@70..72]
+== docs#14
+file 0..150
+  24..41 Block "Document"@24..32 Document - <"shop"@33..37>@33..37 () Some(38..39)
+  43..69 Import Some("./customer.skema") -
+  116..150 Import Some("./customer.skema") "user"@145..149
+== docs#15
+file 0..89
+  0..27 Import Some("./de/common.skema") -
+  56..89 Import Some("./en/common.skema") "en"@86..88
+== docs#16
+file 0..225
+  24..41 Block "Document"@24..32 Document - <"shop"@33..37>@33..37 () Some(38..39)
+  42..68 Import Some("./customer.skema") -
+  69..109 Block "Table"@69..74 Table - <"Order"@75..80>@75..80 () Some(81..82)
+    83..107 Field "buyer"@83..88 Relation OneToMany <"customer"@90..98, "User"@99..103, "id"@104..106>@90..106@89..106 []
+  138..159 Block "Document"@138..146 Document - <"customer"@147..155>@147..155 () Some(156..157)
+  160..183 Import Some("./order.skema") -
+  184..225 Block "Table"@184..189 Table - <"User"@190..194>@190..194 () Some(195..196)
+    197..223 Field "last_order"@197..207 Relation OneToMany <"shop"@209..213, "Order"@214..219, "id"@220..222>@209..222@208..222 []
+== docs#17
+file 0..172
+  0..172 Block "Project"@0..7 Project - - () Some(8..9)
+    12..28 Setting {"mode" quoted=false @12..16 = <"draft"@22..27>@22..27@22..27 override=-}@12..27
+    53..71 Setting {"dialect" quoted=false @53..60 = <"generic"@63..70>@63..70@63..70 override=-}@53..70
+    118..131 Block "Meta"@118..122 Meta - - () Some(124..125)
+      126..129 Error
+    134..154 Block "Style"@134..139 Style "table"@141..146 - () Some(147..148)
+      149..152 Error
+    157..170 Block "Lint"@157..161 Lint - - () Some(163..164)
+      165..168 Error
+diag 126..129 Error "unknown character"
+diag 149..152 Error "unknown character"
+diag 165..168 Error "unknown character"
+== docs#18
+file 0..221
+  0..221 Block "Table"@0..5 Table - <"Customer"@6..14>@6..14 () Some(15..16)
+    19..31 Field "id"@19..21 Named <"int"@22..25>@22..25 ()@22..25 [{"pk" quoted=false @27..29 = - override=-}@27..29]
+    35..219 Block "Meta"@35..39 Meta - - () Some(40..41)
+      46..68 Setting {"author" quoted=false @46..52 = Str "anna"@61..67 override=-}@46..67
+      73..126 Setting {"note" quoted=false @73..77 = Str "Customer master data, GDPR-relevant"@88..125 override=-}@73..125
+      131..152 Setting {"version" quoted=false @131..138 = Str "1.2"@146..151 override=-}@131..151
+      157..184 Setting {"styleClasses" quoted=false @157..169 = [<"highlight"@173..182>@173..182@173..182]@172..183 override=-}@157..183
+      189..215 Setting {"x-jira" quoted=true @189..197 = Str "SHOP-412"@204..214 override=-}@189..214
+== docs#19
+file 0..83
+  0..22 Block "Style"@0..5 Style "table"@7..12 - () Some(15..16)
+    17..20 Error
+  60..83 Block "Style"@60..65 Style - <"highlight"@66..75>@66..75 () Some(76..77)
+    78..81 Error
+diag 17..20 Error "unknown character"
+diag 78..81 Error "unknown character"
+== docs#20
+file 0..243
+  0..187 Block "Project"@0..7 Project - - () Some(8..9)
+    12..106 Block "Style"@12..17 Style "table"@19..24 - () Some(25..26)
+      31..65 Setting {"headerBackgroundColor" quoted=false @31..52 = Str "#cc0000"@55..64 override=-}@31..64
+      70..102 Setting {"headerTextColor" quoted=false @70..85 = Str "white"@94..101 override=-}@70..101
+    110..185 Block "Style"@110..115 Style - <"highlight"@116..125>@116..125 () Some(126..127)
+      132..156 Setting {"borderColor" quoted=false @132..143 = Str "#cc0000"@146..155 override=-}@132..155
+      161..181 Setting {"borderWidth" quoted=false @161..172 = Str "3px"@175..180 override=-}@161..180
+  189..243 Block "Table"@189..194 Table - <"Order"@195..200>@195..200 () Some(201..202)
+    205..241 Block "Meta"@205..209 Meta - - () Some(210..211)
+      212..239 Setting {"styleClasses" quoted=false @212..224 = [<"highlight"@228..237>@228..237@228..237]@227..238 override=-}@212..238
+== docs#21
+file 0..595
+  0..170 Block "Project"@0..7 Project - - () Some(8..9)
+    12..94 Block "Style"@12..17 Style "table"@19..24 - () Some(25..26)
+      31..59 Setting {"backgroundColor" quoted=false @31..46 = Str "#ffffff"@49..58 override=-}@31..58
+    98..168 Block "Style"@98..103 Style - <"exception"@104..113>@104..113 () Some(114..115)
+      120..148 Setting {"backgroundColor" quoted=false @120..135 = Str "#ffffcc"@138..147 override=-}@120..147
+  172..595 Block "Document"@172..180 Document - <"archive"@181..188>@181..188 () Some(189..190)
+    193..310 Block "Style"@193..198 Style "document"@200..208 - () Some(209..210)
+      215..243 Setting {"backgroundColor" quoted=false @215..230 = Str "#f0f0f0"@233..242 override=-}@215..242
+    371..416 Block "Table"@371..376 Table - <"HistoricalRecord"@377..393>@377..393 () Some(394..395)
+      400..412 Field "id"@400..402 Named <"int"@403..406>@403..406 ()@403..406 [{"pk" quoted=false @408..410 = - override=-}@408..410]
+    515..593 Block "Table"@515..520 Table - <"AuditLog"@521..529>@521..529 () Some(530..531)
+      536..548 Field "id"@536..538 Named <"int"@539..542>@539..542 ()@539..542 [{"pk" quoted=false @544..546 = - override=-}@544..546]
+      553..589 Block "Meta"@553..557 Meta - - () Some(558..559)
+        560..587 Setting {"styleClasses" quoted=false @560..572 = [<"exception"@576..585>@576..585@576..585]@575..586 override=-}@560..586
+== docs#22
+file 0..171
+  0..171 Block "Style"@0..5 Style "table"@7..12 - () Some(13..14)
+    17..51 Setting {"headerBackgroundColor" quoted=false @17..38 = Str "#cc0000"@41..50 override=-}@17..50
+    96..132 Setting {"x-mermaidClass" quoted=true @96..112 = Str "important"@120..131 override=-}@96..131
+== docs#23
+file 0..486
+  0..371 Block "Project"@0..7 Project - - () Some(8..9)
+    12..51 Block "Style"@12..17 Style "project"@19..26 - () Some(28..29)
+      30..49 Setting {"fontSize" quoted=false @30..38 = Str "1.1em"@41..48 override=-}@30..48
+    54..135 Block "Style"@54..59 Style "table"@61..66 - () Some(70..71)
+      72..106 Setting {"headerBackgroundColor" quoted=false @72..93 = Str "#1f4e79"@96..105 override=-}@72..105
+      107..133 Setting {"headerTextColor" quoted=false @107..122 = Str "white"@125..132 override=-}@107..132
+    138..180 Block "Style"@138..143 Style "relation"@145..153 - () Some(154..155)
+      156..178 Setting {"lineColor" quoted=false @156..165 = Str "#888888"@168..177 override=-}@156..177
+    251..317 Block "Style"@251..256 Style - <"core"@257..261>@257..261 () Some(268..269)
+      270..294 Setting {"borderColor" quoted=false @270..281 = Str "#1f4e79"@284..293 override=-}@270..293
+      295..315 Setting {"borderWidth" quoted=false @295..306 = Str "3px"@309..314 override=-}@295..314
+    320..369 Block "Style"@320..325 Style - <"historical"@326..336>@326..336 () Some(337..338)
+      339..367 Setting {"backgroundColor" quoted=false @339..354 = Str "#f0f0f0"@357..366 override=-}@339..366
+  373..423 Block "Table"@373..378 Table - <"Author"@379..385>@379..385 () Some(386..387)
+    390..421 Block "Meta"@390..394 Meta - - () Some(395..396)
+      397..419 Setting {"styleClasses" quoted=false @397..409 = [<"core"@413..417>@413..417@413..417]@412..418 override=-}@397..418
+  425..486 Block "Table"@425..430 Table - <"LoanArchive"@431..442>@431..442 () Some(443..444)
+    447..484 Block "Meta"@447..451 Meta - - () Some(452..453)
+      454..482 Setting {"styleClasses" quoted=false @454..466 = [<"historical"@470..480>@470..480@470..480]@469..481 override=-}@454..481
+== docs#24
+file 0..184
+  0..184 Block "Project"@0..7 Project - - () Some(8..9)
+    12..26 Setting {"mode" quoted=false @12..16 = <"strict"@19..25>@19..25@19..25 override=-}@12..25
+    30..182 Block "Lint"@30..34 Lint - - () Some(35..36)
+      41..66 Setting {"fieldNaming" quoted=false @41..52 = <"snake_case"@55..65>@55..65@55..65 override=-}@41..65
+      71..96 Setting {"tableNaming" quoted=false @71..82 = <"PascalCase"@85..95>@85..95@85..95 override=-}@71..95
+      101..126 Setting {"enumNaming" quoted=false @101..111 = <"PascalCase"@115..125>@115..125@115..125 override=-}@101..125
+      132..152 Setting {"unusedImport" quoted=false @132..144 = <"warn"@147..151>@147..151@147..151 override=-}@132..151
+      157..178 Setting {"danglingRef" quoted=false @157..168 = <"error"@172..177>@172..177@172..177 override=-}@157..177
+== docs#25
+file 0..33
+  0..33 Setting {"fieldNaming" quoted=false @0..11 = <"snake_case"@14..24>@14..24@14..24 override="error"@26..31}@0..24
+== docs#26
+file 0..74
+  0..74 Block "Table"@0..5 Table - <"Post"@6..10>@6..10 () Some(11..12)
+    15..39 Field "id"@15..17 Named <"int"@21..24>@21..24 ()@21..24 [{"pk" quoted=false @35..37 = - override=-}@35..37]
+    42..72 Field "title"@42..47 Named <"varchar"@48..55>@48..55 (Int 200@56..59)@48..60 [{"required" quoted=false @62..70 = - override=-}@62..70]
+== docs#27
+file 0..249
+  0..80 Field "username"@0..8 Named <"regexstring"@10..21>@10..21 (Str "^[a-z0-9_]{3,20}$"@22..41)@10..42 [{"required" quoted=false @45..53 = - override=-}@45..53]
+    58..78 Setting {"note" quoted=false @58..62 = Str "Login name"@65..77 override=-}@58..77
+  91..249 Error
+diag 91..94 Error "unknown character"
+diag 94..97 Error "unknown character"
+diag 97..100 Error "unknown character"
+diag 100..103 Error "unknown character"
+diag 103..106 Error "unknown character"
+diag 106..109 Error "unknown character"
+diag 109..112 Error "unknown character"
+diag 112..115 Error "unknown character"
+diag 115..118 Error "unknown character"
+diag 118..121 Error "unknown character"
+diag 121..124 Error "unknown character"
+diag 124..127 Error "unknown character"
+diag 127..130 Error "unknown character"
+diag 136..139 Error "unknown character"
+diag 139..142 Error "unknown character"
+diag 142..145 Error "unknown character"
+diag 145..148 Error "unknown character"
+diag 148..151 Error "unknown character"
+diag 151..154 Error "unknown character"
+diag 154..157 Error "unknown character"
+diag 157..160 Error "unknown character"
+diag 160..163 Error "unknown character"
+diag 163..166 Error "unknown character"
+diag 166..169 Error "unknown character"
+diag 169..172 Error "unknown character"
+diag 172..175 Error "unknown character"
+diag 175..178 Error "unknown character"
+diag 180..183 Error "unknown character"
+diag 183..186 Error "unknown character"
+diag 193..196 Error "unknown character"
+diag 196..199 Error "unknown character"
+diag 201..204 Error "unknown character"
+diag 204..207 Error "unknown character"
+diag 207..210 Error "unknown character"
+diag 210..213 Error "unknown character"
+diag 213..216 Error "unknown character"
+diag 216..219 Error "unknown character"
+diag 219..222 Error "unknown character"
+diag 228..231 Error "unknown character"
+diag 231..234 Error "unknown character"
+diag 234..237 Error "unknown character"
+diag 237..240 Error "unknown character"
+diag 240..243 Error "unknown character"
+diag 243..246 Error "unknown character"
+diag 246..249 Error "unknown character"
+== docs#28
+file 0..92
+  0..25 Field "gross_sum"@0..9 Named <"decimal"@10..17>@10..17 (Int 10@18..20, Int 2@22..23)@10..24 []
+  26..48 Field "name"@26..30 Named <"varchar"@36..43>@36..43 (Int 80@44..46)@36..47 []
+  49..92 Field "username"@49..57 Named <"regexstring"@59..70>@59..70 (Str "^[a-z0-9_]{3,20}$"@71..90)@59..91 []
+== docs#29
+file 0..26
+  0..26 Setting {"regex" quoted=false @0..5 = Str "^\\d{4}-\\d{2}$"@8..25 override=-}@0..25
+== docs#30
+file 0..169
+  8..52 Field "username"@8..16 Named <"varchar"@17..24>@17..24 ()@17..24 []
+    27..50 Setting {"regex" quoted=false @27..32 = Str "^[a-z0-9_]+$"@35..49 override=-}@27..49
+  62..134 Block "Datatype"@62..70 Datatype - <"Username"@71..79>@71..79 () Some(80..81)
+    84..132 Block "Field"@84..89 Field - - () Some(90..91)
+      92..106 Setting {"type" quoted=false @92..96 = <"string"@99..105>@99..105@99..105 override=-}@92..105
+      107..130 Setting {"regex" quoted=false @107..112 = Str "^[a-z0-9_]+$"@115..129 override=-}@107..129
+  136..169 Block "Table"@136..141 Table - <"User"@142..146>@142..146 () Some(147..148)
+    149..167 Field "username"@149..157 Named <"Username"@158..166>@158..166 ()@158..166 []
+== docs#31
+file 0..176
+  0..19 Field "id"@0..2 Named <"int"@9..12>@9..12 ()@9..12 [{"pk" quoted=false @15..17 = - override=-}@15..17]
+  20..43 Field "publicId"@20..28 Named <"uuid"@29..33>@29..33 ()@29..33 [{"unique" quoted=false @35..41 = - override=-}@35..41]
+  44..96 Field "email"@44..49 Named <"varchar"@53..60>@53..60 ()@53..60 [{"required" quoted=false @62..70 = - override=-}@62..70, {"column" quoted=false @72..78 = Str "email_address"@79..94 override=-}@72..94]
+  97..138 Field "customer"@97..105 Relation OneToMany <"Customer"@107..115, "id"@116..118>@107..118@106..118 [{"onDelete" quoted=false @120..128 = <"cascade"@129..136>@129..136@129..136 override=-}@120..136]
+  139..176 Field "created"@139..146 Named <"timestamp"@148..157>@148..157 ()@148..157 [{"default" quoted=false @159..166 = Raw "now()"@167..174 override=-}@159..174]
+== docs#32
+file 0..121
+  0..31 Field "name"@0..4 Named <"varchar"@8..15>@8..15 (Int 80@16..18)@8..19 [{"required" quoted=false @21..29 = - override=-}@21..29]
+  45..61 Field "comment"@45..52 Named <"varchar"@53..60>@53..60 ()@53..60 []
+  94..121 Field "comment"@94..101 Named <"varchar"@102..109>@102..109 ()@102..109 [{"optional" quoted=false @111..119 = - override=-}@111..119]
+== docs#33
+file 0..138
+  0..138 Field "sum"@0..3 Named <"float"@4..9>@4..9 ()@4..9 [{"required" quoted=false @11..19 = - override=-}@11..19]
+    25..56 Setting {"note" quoted=false @25..29 = Str "The full sum"@41..55 override=-}@25..55
+    59..83 Setting {"exampleValue" quoted=false @59..71 = Str "19.99"@75..82 override=-}@59..82
+    86..108 Setting {"label" quoted=false @86..91 = Str "Sum"@102..107 override=-}@86..107
+    111..136 Setting {"x-customkey" quoted=true @111..124 = Str "Foobar"@127..135 override=-}@111..135
+== docs#34
+file 0..28
+  0..28 Field "sum"@0..3 Named <"float"@4..9>@4..9 ()@4..9 []
+    12..26 Setting {"label" quoted=false @12..17 = Str "Sum"@20..25 override=-}@12..25
+== docs#35
+file 0..267
+  0..267 Block "Table"@0..5 Table - <"Post"@6..10>@6..10 () Some(11..12)
+    15..39 Field "id"@15..17 Named <"int"@21..24>@21..24 ()@21..24 [{"pk" quoted=false @35..37 = - override=-}@35..37]
+    42..72 Field "title"@42..47 Named <"varchar"@48..55>@48..55 (Int 200@56..59)@48..60 [{"required" quoted=false @62..70 = - override=-}@62..70]
+    75..86 Field "body"@75..79 Named <"text"@81..85>@81..85 ()@81..85 []
+    90..265 Block "Example"@90..97 Example - - () Some(98..99)
+      104..195 Block "Record"@104..110 Record - - () Some(111..112)
+        119..129 Setting {"id" quoted=false @119..121 = Int 1@127..128 override=-}@119..128
+        136..158 Setting {"title" quoted=false @136..141 = Str "Hello World"@144..157 override=-}@136..157
+        165..189 Setting {"body" quoted=false @165..169 = Str "My first post"@173..188 override=-}@165..188
+      201..261 Block "Record"@201..207 Record - - () Some(208..209)
+        216..226 Setting {"id" quoted=false @216..218 = Int 2@224..225 override=-}@216..225
+        233..255 Setting {"title" quoted=false @233..238 = Str "Second post"@241..254 override=-}@233..254
+== docs#36
+file 0..539
+  0..137 Block "Partial"@0..7 Partial - <"common_base"@8..19>@8..19 () Some(20..21)
+    24..50 Field "id"@24..26 Named <"int"@35..38>@35..38 ()@35..38 [{"pk" quoted=false @46..48 = - override=-}@46..48]
+    53..83 Field "public_id"@53..62 Named <"uuid"@64..68>@64..68 ()@64..68 [{"unique" quoted=false @75..81 = - override=-}@75..81]
+    86..135 Field "created_at"@86..96 Named <"timestamp"@97..106>@97..106 ()@97..106 [{"required" quoted=false @108..116 = - override=-}@108..116, {"default" quoted=false @118..125 = Raw "now()"@126..133 override=-}@118..133]
+  139..539 Block "Table"@139..144 Table - <"Order"@145..150>@145..150 () Some(151..152)
+    155..171 Use <"common_base"@159..170>@159..170
+    175..230 Field "customer"@175..183 Relation OneToMany <"Customer"@189..197, "id"@198..200>@189..200@188..200 [{"required" quoted=false @202..210 = - override=-}@202..210, {"onDelete" quoted=false @212..220 = <"cascade"@221..228>@221..228@221..228 override=-}@212..228]
+    233..258 Field "order_status"@233..245 Named <"OrderStatus"@246..257>@246..257 ()@246..257 []
+    262..351 Field "sum"@262..265 Named <"float"@266..271>@266..271 ()@266..271 [{"required" quoted=false @273..281 = - override=-}@273..281]
+      289..319 Setting {"note" quoted=false @289..293 = Str "The full sum"@304..318 override=-}@289..318
+      324..347 Setting {"exampleValue" quoted=false @324..336 = Str "19.99"@339..346 override=-}@324..346
+    355..380 Field "gross_sum"@355..364 Named <"decimal"@365..372>@365..372 (Int 10@373..375, Int 2@377..378)@365..379 []
+    384..413 Block "Database"@384..392 Database - - () Some(393..394)
+      395..411 Setting {"table" quoted=false @395..400 = Str "order"@403..410 override=-}@395..410
+    417..537 Block "Meta"@417..421 Meta - - () Some(422..423)
+      428..501 Setting {"note" quoted=false @428..432 = Str "One customer order, with its positions in OrderPosition"@443..500 override=-}@428..500
+      506..533 Setting {"styleClasses" quoted=false @506..518 = [<"highlight"@522..531>@522..531@522..531]@521..532 override=-}@506..532
+== docs#37
+file 0..370
+  0..370 Block "Datatype"@0..8 Datatype - <"decimal"@9..16>@9..16 ("precision"@17..26 <"int"@27..30>@27..30 17..30, "scale"@32..37 <"int"@38..41>@38..41 32..41) Some(43..44)
+    47..93 Field "precision"@47..56 - []
+      59..91 Setting {"note" quoted=false @59..63 = Str "Total number of digits"@66..90 override=-}@59..90
+    96..163 Field "scale"@96..101 - []
+      108..148 Setting {"note" quoted=false @108..112 = Str "Fixed number of decimal places"@115..147 override=-}@108..147
+      149..161 Setting {"default" quoted=false @149..156 = Int 2@159..160 override=-}@149..160
+    167..241 Block "Field"@167..172 Field - - () Some(173..174)
+      179..192 Setting {"type" quoted=false @179..183 = <"float"@186..191>@186..191@186..191 override=-}@179..191
+      197..237 Setting {"note" quoted=false @197..201 = Str "Fixed-precision decimal number"@204..236 override=-}@197..236
+    245..305 Block "Dialect"@245..252 Dialect "postgres"@254..262 - () Some(263..264)
+      265..303 Setting {"sql" quoted=false @265..268 = Str "numeric({precision}, {scale})"@271..302 override=-}@265..302
+    308..368 Block "Dialect"@308..315 Dialect "mysql"@317..322 - () Some(326..327)
+      328..366 Setting {"sql" quoted=false @328..331 = Str "DECIMAL({precision}, {scale})"@334..365 override=-}@328..365
+== docs#38
+file 0..50
+  0..50 Block "Datatype"@0..8 Datatype - <"decimal"@9..16>@9..16 ("precision"@17..26 <"int"@27..30>@27..30 17..30, "scale"@32..37 <"int"@38..41>@38..41 32..41) Some(43..44)
+    45..48 Error
+diag 45..48 Error "unknown character"
+== docs#39
+file 0..114
+  0..46 Field "precision"@0..9 - []
+    12..44 Setting {"note" quoted=false @12..16 = Str "Total number of digits"@19..43 override=-}@12..43
+  47..114 Field "scale"@47..52 - []
+    59..99 Setting {"note" quoted=false @59..63 = Str "Fixed number of decimal places"@66..98 override=-}@59..98
+    100..112 Setting {"default" quoted=false @100..107 = Int 2@110..111 override=-}@100..111
+== docs#40
+file 0..161
+  0..161 Block "Datatype"@0..8 Datatype - <"decimal"@9..16>@9..16 ("precision"@17..26 <"int"@27..30>@27..30 17..30, "scale"@32..37 <"int"@38..41>@38..41 32..41) Some(43..44)
+    47..69 Field "scale"@47..52 - []
+      55..67 Setting {"default" quoted=false @55..62 = Int 2@65..66 override=-}@55..66
+    106..128 Block "Field"@106..111 Field - - () Some(112..113)
+      114..126 Setting {"default" quoted=false @114..121 = Int 0@124..125 override=-}@114..125
+== docs#41
+file 0..121
+  0..60 Block "Dialect"@0..7 Dialect "postgres"@9..17 - () Some(18..19)
+    20..58 Setting {"sql" quoted=false @20..23 = Str "numeric({precision}, {scale})"@26..57 override=-}@20..57
+  61..121 Block "Dialect"@61..68 Dialect "mysql"@70..75 - () Some(79..80)
+    81..119 Setting {"sql" quoted=false @81..84 = Str "DECIMAL({precision}, {scale})"@87..118 override=-}@81..118
+== docs#42
+file 0..109
+  0..109 Block "Datatype"@0..8 Datatype - <"ShortCode"@9..18>@9..18 () Some(19..20)
+    23..57 Block "Field"@23..28 Field - - () Some(29..30)
+      31..55 Setting {"regex" quoted=false @31..36 = Str "^[a-z]{3,20}$"@39..54 override=-}@31..54
+== docs#43
+file 0..98
+  0..98 Block "Datatype"@0..8 Datatype - <"Money"@9..14>@9..14 () Some(15..16)
+    19..96 Block "Field"@19..24 Field - - () Some(25..26)
+      31..50 Setting {"type" quoted=false @31..35 = Type <"decimal"@38..45>@38..45 (Int 10@46..48)@38..49 override=-}@31..49
+      55..92 Setting {"note" quoted=false @55..59 = Str "Amount in the home currency"@62..91 override=-}@55..91
+== docs#44
+file 0..153
+  0..153 Block "Datatype"@0..8 Datatype - <"regexstring"@9..20>@9..20 ("pattern"@21..28 <"string"@29..35>@29..35 21..35) Some(37..38)
+    41..91 Field "pattern"@41..48 - []
+      51..89 Setting {"note" quoted=false @51..55 = Str "Pattern the value must match"@58..88 override=-}@51..88
+    95..151 Block "Field"@95..100 Field - - () Some(101..102)
+      107..122 Setting {"type" quoted=false @107..111 = <"string"@115..121>@115..121@115..121 override=-}@107..121
+      127..147 Setting {"regex" quoted=false @127..132 = Str "{pattern}"@135..146 override=-}@127..146
+== docs#45
+file 0..192
+  0..142 Block "Datatype"@0..8 Datatype - <"Email"@9..14>@9..14 () Some(15..16)
+    19..140 Block "Field"@19..24 Field - - () Some(25..26)
+      31..46 Setting {"type" quoted=false @31..35 = <"string"@39..45>@39..45@39..45 override=-}@31..45
+      51..75 Setting {"regex" quoted=false @51..56 = Str "^[^@]+@[^@]+$"@59..74 override=-}@51..74
+      80..136 Setting {"note" quoted=false @80..84 = Str "Email address, not checked for deliverability"@88..135 override=-}@80..135
+  144..192 Block "Table"@144..149 Table - <"User"@150..154>@150..154 () Some(155..156)
+    159..190 Field "email"@159..164 Named <"Email"@165..170>@165..170 ()@165..170 [{"required" quoted=false @172..180 = - override=-}@172..180, {"unique" quoted=false @182..188 = - override=-}@182..188]
+== docs#46
+file 0..59
+  0..59 Block "Table"@0..5 Table - <"Order"@6..11>@6..11 () Some(12..13)
+    16..57 Field "customer"@16..24 Relation OneToMany <"Customer"@26..34, "id"@35..37>@26..37@25..37 [{"onDelete" quoted=false @39..47 = <"cascade"@48..55>@48..55@48..55 override=-}@39..55]
+== docs#47
+file 0..75
+  0..75 Block "Table"@0..5 Table - <"Order"@6..11>@6..11 () Some(12..13)
+    16..38 Field "customer"@16..24 Relation OneToMany <"Customer"@26..34, "id"@35..37>@26..37@25..37 []
+== docs#48
+file 0..99
+  0..99 Block "Table"@0..5 Table - <"OrderPosition"@6..19>@6..19 () Some(20..21)
+    24..42 Field "order"@24..29 Relation OneToMany <"Order"@33..38, "id"@39..41>@33..41@32..41 []
+    45..65 Field "product"@45..52 Relation OneToMany <"Product"@54..61, "id"@62..64>@54..64@53..64 []
+    68..80 Field "amount"@68..74 Named <"int"@76..79>@76..79 ()@76..79 []
+    83..97 Field "price"@83..88 Named <"Money"@91..96>@91..96 ()@91..96 []
+== docs#49
+file 0..147
+  0..77 Block "Table"@0..5 Table - <"Order"@6..11>@6..11 () Some(12..13)
+    16..38 Field "customer"@16..24 Relation OneToMany <"Customer"@26..34, "id"@35..37>@26..37@25..37 []
+  79..147 Block "Table"@79..84 Table - <"Customer"@85..93>@85..93 () Some(94..95)
+    98..123 Field "orders"@98..104 Relation ManyToOne <"Order"@108..113, "customer"@114..122>@108..122@107..122 []
+== docs#50
+file 0..69
+  0..69 Block "Table"@0..5 Table - <"Profile"@6..13>@6..13 () Some(14..15)
+    18..32 Field "user"@18..22 Relation OneToOne <"User"@24..28, "id"@29..31>@24..31@23..31 []
+== docs#51
+file 0..227
+  0..84 Block "Table"@0..5 Table - <"Order"@6..11>@6..11 () Some(12..13)
+    16..57 Field "customer"@16..24 Relation OneToMany <"Customer"@26..34, "id"@35..37>@26..37@25..37 [{"onDelete" quoted=false @39..47 = <"cascade"@48..55>@48..55@48..55 override=-}@39..55]
+  86..227 Block "Table"@86..91 Table - <"Customer"@92..100>@92..100 () Some(101..102)
+    105..128 Field "orders"@105..111 Relation ManyToOne <"Order"@113..118, "customer"@119..127>@113..127@112..127 []
+    173..216 Field "orders"@173..179 Relation ManyToOne <"Order"@181..186, "customer"@187..195>@181..195@180..195 [{"onDelete" quoted=false @197..205 = <"restrict"@206..214>@206..214@206..214 override=-}@197..214]
+== docs#52
+file 0..60
+  0..60 Field "customer"@0..8 Relation OneToMany <"Customer"@10..18, "id"@19..21>@10..21@9..21 [{"onDelete" quoted=false @23..31 = <"cascade"@32..39>@32..39@32..39 override=-}@23..39, {"onUpdate" quoted=false @41..49 = <"restrict"@50..58>@50..58@50..58 override=-}@41..58]
+== docs#53
+file 0..57
+  0..22 Field "customer"@0..8 Relation OneToMany <"Customer"@10..18, "id"@19..21>@10..21@9..21 []
+  38..57 Field "customer"@38..46 Relation OneToMany <"Customer"@48..56>@48..56@47..56 []
+== docs#54
+file 0..360
+  0..56 Block "Table"@0..5 Table - <"Member"@6..12>@6..12 () Some(13..14)
+    17..54 Field "email"@17..22 Named <"types"@23..28, "Email"@29..34>@23..34 ()@23..34 [{"required" quoted=false @36..44 = - override=-}@36..44, {"unique" quoted=false @46..52 = - override=-}@46..52]
+  58..114 Block "Table"@58..63 Table - <"Copy"@64..68>@64..68 () Some(69..70)
+    73..112 Field "barcode"@73..80 Named <"varchar"@81..88>@81..88 (Int 32@89..91)@81..92 [{"required" quoted=false @94..102 = - override=-}@94..102, {"unique" quoted=false @104..110 = - override=-}@104..110]
+  116..360 Block "Table"@116..121 Table - <"Loan"@122..126>@122..126 () Some(127..128)
+    131..184 Field "member"@131..137 Relation OneToMany <"Member"@144..150, "id"@151..153>@144..153@143..153 [{"required" quoted=false @155..163 = - override=-}@155..163, {"onDelete" quoted=false @165..173 = <"restrict"@174..182>@174..182@174..182 override=-}@165..182]
+    187..240 Field "copy"@187..191 Relation OneToMany <"Copy"@200..204, "id"@205..207>@200..207@199..207 [{"required" quoted=false @211..219 = - override=-}@211..219, {"onDelete" quoted=false @221..229 = <"restrict"@230..238>@230..238@230..238 override=-}@221..238]
+    243..295 Field "lent_on"@243..250 Named <"date"@255..259>@255..259 ()@255..259 [{"required" quoted=false @268..276 = - override=-}@268..276, {"default" quoted=false @278..285 = Raw "now()"@286..293 override=-}@278..293]
+    298..333 Field "due_on"@298..304 Named <"date"@310..314>@310..314 ()@310..314 [{"required" quoted=false @323..331 = - override=-}@323..331]
+    336..358 Field "returned_at"@336..347 Named <"timestamp"@348..357>@348..357 ()@348..357 []
+== docs#55
+file 0..128
+  0..128 Block "Table"@0..5 Table - <"Employee"@6..14>@6..14 () Some(15..16)
+    19..36 Field "id"@19..21 Named <"int"@27..30>@27..30 ()@27..30 [{"pk" quoted=false @32..34 = - override=-}@32..34]
+    39..71 Field "manager"@39..46 Relation OneToMany <"Employee"@48..56, "id"@57..59>@48..59@47..59 [{"required" quoted=false @61..69 = - override=-}@61..69]
+== docs#56
+file 0..246
+  0..246 Block "Enum"@0..4 Enum - <"OrderStatus"@5..16>@5..16 () Some(17..18)
+    21..117 Block "Field"@21..26 Field - - () Some(27..28)
+      33..50 Setting {"type" quoted=false @33..37 = <"string"@43..49>@43..49@43..49 override=-}@33..49
+      55..70 Setting {"default" quoted=false @55..62 = <"paid"@65..69>@65..69@65..69 override=-}@55..69
+      75..113 Setting {"note" quoted=false @75..79 = Str "States an order can be in"@85..112 override=-}@75..112
+    121..151 Field "draft"@121..126 - []
+      133..149 Setting {"label" quoted=false @133..138 = Str "Draft"@141..148 override=-}@133..148
+    154..183 Field "paid"@154..158 - []
+      166..181 Setting {"label" quoted=false @166..171 = Str "Paid"@174..180 override=-}@166..180
+    186..231 Field "shipped"@186..193 - []
+      198..216 Setting {"label" quoted=false @198..203 = Str "Shipped"@206..215 override=-}@198..215
+      217..229 Setting {"value" quoted=false @217..222 = Str "S"@225..228 override=-}@217..228
+    234..244 Field "cancelled"@234..243 - []
+== docs#57
+file 0..43
+  0..43 Field "shipped"@0..7 - []
+    10..28 Setting {"label" quoted=false @10..15 = Str "Shipped"@18..27 override=-}@10..27
+    29..41 Setting {"value" quoted=false @29..34 = Str "S"@37..40 override=-}@29..40
+== docs#58
+file 0..162
+  0..162 Block "Table"@0..5 Table - <"Order"@6..11>@6..11 () Some(12..13)
+    16..40 Field "status"@16..22 Named <"OrderStatus"@28..39>@28..39 ()@28..39 []
+    92..144 Field "prev_status"@92..103 Named <"OrderStatus"@104..115>@104..115 ()@104..115 [{"default" quoted=false @117..124 = <"OrderStatus"@125..136, "draft"@137..142>@125..142@125..142 override=-}@117..142]
+== docs#59
+file 0..106
+  0..106 Block "Enum"@0..4 Enum - <"OrderStatus"@5..16>@5..16 () Some(17..18)
+    21..27 Field "draft"@21..26 - []
+    30..35 Field "paid"@30..34 - []
+    39..104 Block "Meta"@39..43 Meta - - () Some(44..45)
+      50..66 Setting {"author" quoted=false @50..56 = Str "anna"@59..65 override=-}@50..65
+      71..100 Setting {"note" quoted=false @71..75 = Str "Agreed with sales"@80..99 override=-}@71..99
+== docs#60
+file 0..204
+  0..137 Block "Partial"@0..7 Partial - <"common_base"@8..19>@8..19 () Some(20..21)
+    24..50 Field "id"@24..26 Named <"int"@35..38>@35..38 ()@35..38 [{"pk" quoted=false @46..48 = - override=-}@46..48]
+    53..83 Field "public_id"@53..62 Named <"uuid"@64..68>@64..68 ()@64..68 [{"unique" quoted=false @75..81 = - override=-}@75..81]
+    86..135 Field "created_at"@86..96 Named <"timestamp"@97..106>@97..106 ()@97..106 [{"required" quoted=false @108..116 = - override=-}@108..116, {"default" quoted=false @118..125 = Raw "now()"@126..133 override=-}@118..133]
+  139..204 Block "Table"@139..144 Table - <"Customer"@145..153>@145..153 () Some(154..155)
+    158..174 Use <"common_base"@162..173>@162..173
+    177..202 Field "email"@177..182 Named <"varchar"@183..190>@183..190 ()@183..190 [{"required" quoted=false @192..200 = - override=-}@192..200]
+== docs#61
+file 0..185
+  0..102 Block "Table"@0..5 Table - <"Customer"@6..14>@6..14 () Some(15..16)
+    19..35 Use <"common_base"@23..34>@23..34
+    71..85 Field "email"@71..76 Named <"varchar"@77..84>@77..84 ()@77..84 []
+  104..185 Block "Table"@104..109 Table - <"Product"@110..117>@110..117 () Some(118..119)
+    122..134 Field "sku"@122..125 Named <"varchar"@126..133>@126..133 ()@126..133 []
+    154..170 Use <"common_base"@158..169>@158..169
+== docs#62
+file 0..21
+  0..21 Use <"types"@4..9, "Timestamps"@10..20>@4..20
+== docs#63
+file 0..141
+  0..36 Block "Partial"@0..7 Partial - <"common_base"@8..19>@8..19 () Some(20..21)
+    22..34 Field "id"@22..24 Named <"int"@25..28>@25..28 ()@25..28 [{"pk" quoted=false @30..32 = - override=-}@30..32]
+  38..141 Block "Table"@38..43 Table - <"Customer"@44..52>@44..52 () Some(53..54)
+    57..73 Use <"common_base"@61..72>@61..72
+    76..89 Field "id"@76..78 Named <"uuid"@79..83>@79..83 ()@79..83 [{"pk" quoted=false @85..87 = - override=-}@85..87]
+== docs#64
+file 0..222
+  0..70 Block "Partial"@0..7 Partial - <"Identity"@8..16>@8..16 () Some(17..18)
+    21..41 Field "id"@21..23 Named <"int"@31..34>@31..34 ()@31..34 [{"pk" quoted=false @37..39 = - override=-}@37..39]
+    44..68 Field "public_id"@44..53 Named <"uuid"@54..58>@54..58 ()@54..58 [{"unique" quoted=false @60..66 = - override=-}@60..66]
+  72..170 Block "Partial"@72..79 Partial - <"Timestamps"@80..90>@80..90 () Some(91..92)
+    95..144 Field "created_at"@95..105 Named <"timestamp"@106..115>@106..115 ()@106..115 [{"required" quoted=false @117..125 = - override=-}@117..125, {"default" quoted=false @127..134 = Raw "now()"@135..142 override=-}@127..142]
+    147..168 Field "updated_at"@147..157 Named <"timestamp"@158..167>@158..167 ()@158..167 []
+  172..222 Block "Partial"@172..179 Partial - <"Base"@180..184>@180..184 () Some(185..186)
+    189..202 Use <"Identity"@193..201>@193..201
+    205..220 Use <"Timestamps"@209..219>@209..219
+== docs#65
+file 0..213
+  0..213 Block "Table"@0..5 Table - <"Order"@6..11>@6..11 () Some(12..13)
+    16..35 Field "order_no"@16..24 Named <"varchar"@27..34>@27..34 ()@27..34 []
+    38..53 Field "customer"@38..46 Named <"int"@49..52>@49..52 ()@49..52 []
+    56..72 Field "order_date"@56..66 Named <"date"@67..71>@67..71 ()@67..71 []
+    76..211 Block "Index"@76..81 Index - - () Some(82..83)
+      88..108 IndexEntry - ("order_no"@89..97) [{"unique" quoted=false @100..106 = - override=-}@100..106]
+      151..197 IndexEntry "ix_customer_order_date"@151..173 ("customer"@175..183, "order_date"@185..195) []
+== docs#66
+file 0..71
+  0..22 IndexEntry - ("column"@1..7) [{"flags" quoted=false @15..20 = - override=-}@15..20]
+  44..71 IndexEntry "name"@44..48 ("column"@50..56) [{"flags" quoted=false @64..69 = - override=-}@64..69]
+diag 9..12 Error "unknown character"
+diag 9..12 Error "expected an identifier, found unknown character"
+diag 9..12 Error "unexpected: unknown character"
+diag 58..61 Error "unknown character"
+diag 58..61 Error "expected an identifier, found unknown character"
+diag 58..61 Error "unexpected: unknown character"
+== docs#67
+file 0..78
+  0..23 Field "publicId"@0..8 Named <"uuid"@9..13>@9..13 ()@9..13 [{"unique" quoted=false @15..21 = - override=-}@15..21]
+  48..78 Block "Index"@48..53 Index - - () Some(54..55)
+    56..76 IndexEntry - ("publicId"@57..65) [{"unique" quoted=false @68..74 = - override=-}@68..74]
+== docs#68
+file 0..234
+  0..234 Block "Table"@0..5 Table - <"Book"@6..10>@6..10 () Some(11..12)
+    15..54 Field "isbn"@15..19 Named <"types"@22..27, "Isbn"@28..32>@22..32 ()@22..32 [{"required" quoted=false @36..44 = - override=-}@36..44, {"unique" quoted=false @46..52 = - override=-}@46..52]
+    57..88 Field "title"@57..62 Named <"varchar"@64..71>@64..71 (Int 200@72..75)@64..76 [{"required" quoted=false @78..86 = - override=-}@78..86]
+    91..141 Field "author"@91..97 Relation OneToMany <"Author"@99..105, "id"@106..108>@99..108@98..108 [{"required" quoted=false @112..120 = - override=-}@112..120, {"onDelete" quoted=false @122..130 = <"restrict"@131..139>@131..139@131..139 override=-}@122..139]
+    145..232 Block "Index"@145..150 Index - - () Some(151..152)
+      157..186 IndexEntry "ix_book_title"@157..170 ("title"@179..184) []
+      191..228 IndexEntry "ix_book_author_title"@191..211 ("author"@213..219, "title"@221..226) []
+== docs#69
+file 0..11
+  0..11 Ref "Table"@0..5 Table <"Order"@6..11>@6..11
+diag 111..111 Error "expected `;`, found end of file"
+== docs#70
+file 0..415
+  26..108 Block "Project"@26..33 Project - - () Some(34..35)
+    38..106 Block "Database"@38..46 Database - - () Some(47..48)
+      53..77 Setting {"database" quoted=false @53..61 = Str "shopsystem"@64..76 override=-}@53..76
+      82..102 Setting {"schema" quoted=false @82..88 = Str "public"@93..101 override=-}@82..101
+  134..226 Block "Document"@134..142 Document - <"shop"@143..147>@143..147 () Some(148..149)
+    152..182 Block "Database"@152..160 Database - - () Some(161..162)
+      163..180 Setting {"schema" quoted=false @163..169 = Str "sales"@172..179 override=-}@163..179
+  228..309 Block "Table"@228..233 Table - <"Order"@234..239>@234..239 () Some(240..241)
+    244..274 Block "Database"@244..252 Database - - () Some(253..254)
+      255..272 Setting {"table" quoted=false @255..260 = Str "orders"@263..271 override=-}@255..271
+  311..399 Block "Table"@311..316 Table - <"Position"@317..325>@317..325 () Some(326..327)
+    330..362 Block "Database"@330..338 Database - - () Some(339..340)
+      341..360 Setting {"schema" quoted=false @341..347 = Str "archive"@350..359 override=-}@341..359
+  401..415 Block "Table"@401..406 Table - <"Note"@407..411>@407..411 () Some(412..413)
+== docs#71
+file 0..60
+  0..60 Block "Table"@0..5 Table - <"Customer"@6..14>@6..14 () Some(15..16)
+    19..58 Field "email"@19..24 Named <"varchar"@25..32>@25..32 ()@25..32 [{"column" quoted=false @34..40 = Str "email_address"@41..56 override=-}@34..56]
+== docs#72
+file 0..172
+  0..172 Block "Table"@0..5 Table - <"Order"@6..11>@6..11 () Some(12..13)
+    16..170 Block "Database"@16..24 Database - - () Some(25..26)
+      31..48 Setting {"table" quoted=false @31..36 = Str "orders"@39..47 override=-}@31..47
+      54..100 Block "Dialect"@54..61 Dialect "postgres"@63..71 - () Some(72..73)
+        74..98 Setting {"tablespace" quoted=false @74..84 = Str "fast_ssd"@87..97 override=-}@74..97
+      105..166 Block "Dialect"@105..112 Dialect "mysql"@114..119 - () Some(123..124)
+        125..143 Setting {"engine" quoted=false @125..131 = Str "InnoDB"@134..142 override=-}@125..142
+        144..164 Setting {"charset" quoted=false @144..151 = Str "utf8mb4"@154..163 override=-}@144..163
+== docs#73
+file 0..128
+  0..128 Block "Project"@0..7 Project - - () Some(8..9)
+    12..29 Setting {"mode" quoted=false @12..16 = <"strict"@22..28>@22..28@22..28 override=-}@12..28
+    32..51 Setting {"dialect" quoted=false @32..39 = <"oracledb"@42..50>@42..50@42..50 override=-}@32..50
+    55..126 Block "Database"@55..63 Database - - () Some(64..65)
+      70..122 Block "Dialect"@70..77 Dialect "oracledb"@79..87 - () Some(88..89)
+        90..120 Setting {"identifierLength" quoted=false @90..106 = Str "extended"@109..119 override=-}@90..119
+== docs#74
+file 0..84
+  0..84 Block "Group"@0..5 Group - <"OrderProcessing"@6..21>@6..21 () Some(22..23)
+    26..38 Ref "Table"@26..31 Table <"Order"@32..37>@32..37
+    41..61 Ref "Table"@41..46 Table <"OrderPosition"@47..60>@47..60
+    64..82 Ref "Enum"@64..68 Enum <"OrderStatus"@70..81>@70..81
+== docs#75
+file 0..11
+  0..11 Ref "Enum"@0..4 Enum <"Order"@5..10>@5..10
+== docs#76
+file 0..60
+  0..60 Block "Group"@0..5 Group - <"Billing"@6..13>@6..13 () Some(14..15)
+    18..32 Ref "Table"@18..23 Table <"Invoice"@24..31>@24..31
+    35..58 Ref "Table"@35..40 Table <"payments"@41..49, "Payment"@50..57>@41..57
+== docs#77
+file 0..73
+  0..36 Block "Group"@0..5 Group - <"MasterData"@6..16>@6..16 () Some(17..18)
+    19..34 Ref "Table"@19..24 Table <"Customer"@25..33>@25..33
+  37..73 Block "Group"@37..42 Group - <"Billing"@43..50>@43..50 () Some(54..55)
+    56..71 Ref "Table"@56..61 Table <"Customer"@62..70>@62..70
+== docs#78
+file 0..166
+  0..166 Block "Group"@0..5 Group - <"OrderProcessing"@6..21>@6..21 () Some(22..23)
+    26..38 Ref "Table"@26..31 Table <"Order"@32..37>@32..37
+    41..61 Ref "Table"@41..46 Table <"OrderPosition"@47..60>@47..60
+    65..164 Block "Meta"@65..69 Meta - - () Some(70..71)
+      76..128 Setting {"note" quoted=false @76..80 = Str "Everything around order processing"@91..127 override=-}@76..127
+      133..160 Setting {"styleClasses" quoted=false @133..145 = [<"highlight"@149..158>@149..158@149..158]@148..159 override=-}@133..159
+== docs#79
+file 0..80
+  0..80 Block "Group"@0..5 Group - <"Catalog"@6..13>@6..13 () Some(14..15)
+    18..31 Ref "Table"@18..23 Table <"Author"@24..30>@24..30
+    34..45 Ref "Table"@34..39 Table <"Book"@40..44>@40..44
+    48..59 Ref "Table"@48..53 Table <"Copy"@54..58>@54..58
+    62..78 Ref "Enum"@62..66 Enum <"CopyState"@68..77>@68..77
+== docs#80
+file 0..102
+  0..7 Spec Some(1)
+  9..26 Block "Document"@9..17 Document - <"blog"@18..22>@18..22 () Some(23..24)
+  28..102 Block "Table"@28..33 Table - <"Post"@34..38>@34..38 () Some(39..40)
+    43..67 Field "id"@43..45 Named <"int"@49..52>@49..52 ()@49..52 [{"pk" quoted=false @63..65 = - override=-}@63..65]
+    70..100 Field "title"@70..75 Named <"varchar"@76..83>@76..83 (Int 200@84..87)@76..88 [{"required" quoted=false @90..98 = - override=-}@90..98]
+== severity#0
+file 0..42
+  0..42 Block "Lint"@0..4 Lint - - () Some(5..6)
+    7..40 Setting {"fieldNaming" quoted=false @7..18 = <"snake_case"@21..31>@21..31@21..31 override="error"@33..38}@7..31
+== severity#1
+file 0..32
+  0..32 Block "Meta"@0..4 Meta - - () Some(5..6)
+    7..30 Setting {"author" quoted=false @7..13 = Str "anna"@16..22 override="warn"@24..28}@7..22
+== severity#2
+file 0..120
+  0..120 Block "Project"@0..7 Project - - () Some(8..9)
+    12..118 Block "Lint"@12..16 Lint - - () Some(17..18)
+      36..71 Setting {"tableNaming" quoted=false @36..47 = <"PascalCase"@50..60>@50..60@50..60 override="error"@63..68}@36..60
+      82..114 Setting {"fieldNaming" quoted=false @82..93 = <"snake_case"@96..106>@96..106@96..106 override="warn"@108..112}@82..106
+== severity#3
+file 0..53
+  0..53 Block "Table"@0..5 Table - <"A"@6..7>@6..7 () Some(8..9)
+    10..33 Field "email"@10..15 Named <"varchar"@16..23>@16..23 ()@16..23 [{"unique" quoted=false @25..31 = - override=-}@25..31]
+    34..51 IndexEntry - ("email"@35..40) [{"unique" quoted=false @43..49 = - override=-}@43..49]
+== broken#0
+file 0..103
+  0..74 Block "Table"@0..5 Table - <"Customer"@6..14>@6..14 () Some(15..16)
+    19..34 Field "id"@19..21 Named <"int"@25..28>@25..28 ()@25..28 [{"pk" quoted=false @30..32 = - override=-}@30..32]
+    37..46 Error
+    49..72 Field "email"@49..54 Named <"varchar"@55..62>@55..62 ()@55..62 [{"unique" quoted=false @64..70 = - override=-}@64..70]
+  75..103 Block "Table"@75..80 Table - <"Order"@81..86>@81..86 () Some(87..88)
+    89..101 Field "id"@89..91 Named <"int"@92..95>@92..95 ()@92..95 [{"pk" quoted=false @97..99 = - override=-}@97..99]
+diag 37..38 Error "unknown character"
+diag 38..39 Error "unknown character"
+diag 39..40 Error "unknown character"
+diag 43..44 Error "unknown character"
+diag 44..45 Error "unknown character"
+diag 45..46 Error "unknown character"
+== broken#1
+file 0..24
+  0..24 Block "Meta"@0..4 Meta - - () Some(5..6)
+    7..22 Setting {"author" quoted=false @7..13 = Str "anna"@15..21 override=-}@7..21
+diag 13..14 Error "assignment here uses `=`, not `:`"
+== broken#2
+file 0..33
+  0..33 Block "Table"@0..5 Table - <"A"@6..7>@6..7 () Some(8..9)
+    10..16 Field "id"@10..12 Named <"int"@13..16>@13..16 ()@13..16 []
+    17..31 Field "email"@17..22 Named <"varchar"@23..30>@23..30 ()@23..30 []
+diag 17..22 Error "expected `;`, found identifier"
+== broken#3
+file 0..22
+  0..22 Block "Table"@0..5 Table - <"A"@6..7>@6..7 () Some(8..9)
+    10..22 Field "id"@10..12 Named <"int"@13..16>@13..16 ()@13..16 [{"pk" quoted=false @18..20 = - override=-}@18..20]
+diag 22..22 Error "expected `}`, found end of file"
+== broken#4
+file 0..12
+  0..12 Block "Meta"@0..4 Meta - - () Some(5..6)
+    7..10 Error
+diag 7..8 Error "unexpected: `=`"
+== broken#5
+file 0..26
+  0..26 Block "Table"@0..5 Table - <"A"@6..7>@6..7 () Some(8..9)
+    10..16 Field "tags"@10..14 - []
+    16..24 Error
+diag 16..17 Error "expected an identifier, found `>`"
+diag 16..17 Error "unexpected: `>`"
+== broken#6
+file 0..32
+  0..32 Block "Meta"@0..4 Meta - - () Some(5..6)
+    7..19 Setting {"author" quoted=false @7..13 = Str "a"@16..19 override=-}@7..19
+    20..30 Setting {"note" quoted=false @20..24 = Str "b"@27..30 override=-}@20..30
+diag 20..24 Error "expected `;`, found identifier"
+== broken#7
+file 0..34
+  0..34 Block "Table"@0..5 Table - <"A"@6..7>@6..7 () Some(8..9)
+    10..21 Field "customer"@10..18 - []
+    22..32 Field "name"@22..26 Named <"text"@27..31>@27..31 ()@27..31 []
+diag 20..21 Error "expected an identifier, found `;`"
+== broken#8
+file 0..27
+  0..27 Block "Table"@0..5 Table - <"A"@6..7>@6..7 () Some(8..9)
+    10..27 Field "x"@10..11 Named <"decimal"@12..19>@12..19 (Int 10@20..22)@12..27 []
+diag 24..25 Error "expected a value, found `;`"
+diag 24..25 Error "unexpected: `;`"
+diag 26..27 Error "unexpected: `}`"
+== broken#9
+file 0..48
+  0..5 Error
+  6..14 Import None -
+  15..21 Spec None
+  22..48 Spec None
+diag 4..5 Error "expected an identifier, found `;`"
+diag 13..14 Error "expected a quoted path"
+diag 20..21 Error "expected an integer, e.g. `spec 1;`"
+diag 27..47 Error "number is too large for 64 bits"
+== broken#10
+file 0..41
+  0..20 Block "Project"@0..7 Project - - () Some(8..9)
+    10..18 Block "Lint"@10..14 Lint - - () Some(15..16)
+  21..41 Block "Table"@21..26 Table - <"A"@27..28>@27..28 () Some(29..30)
+    31..39 Block "Lint"@31..35 Lint - - () Some(36..37)
+== broken#11
+file 0..27
+  0..27 Block "Meta"@0..4 Meta - - () Some(5..6)
+    7..27 Error
+diag 7..27 Error "unterminated string"
+diag 27..27 Error "expected `}`, found end of file"
+== broken#12
+file 0..21
+  0..21 Block "Meta"@0..4 Meta - - () Some(5..6)
+    7..12 Setting {"raw" quoted=false @7..10 = - override=-}@7..12
+    13..21 Error
+diag 13..21 Error "unterminated raw expression"
+diag 13..21 Error "expected a value, found unterminated raw expression"
+diag 21..21 Error "expected `}`, found end of file"
+== broken#13
+file 0..0
+diag 0..27 Error "unterminated comment"
+== broken#14
+file 0..19
+  0..19 Error
+diag 6..8 Error "unknown character"
+diag 6..8 Error "expected `{` or a name"
+== broken#15
+file 0..44
+  0..44 Block "Datatype"@0..8 Datatype - <"decimal"@9..16>@9..16 ("precision"@17..26 <"int"@27..30>@27..30 17..30, "scale"@34..39 - 34..39) Some(41..42)
+diag 32..33 Error "expected an identifier, found `,`"
+== broken#16
+file 0..29
+  0..29 Block "Group"@0..5 Group - <"G"@6..7>@6..7 () Some(8..9)
+    10..17 Error
+    18..27 Ref "Table"@18..23 Table <"a"@24..25>@24..26
+diag 16..17 Error "expected `{` or a name"
+diag 26..27 Error "expected an identifier, found `;`"
+== broken#17
+file 0..38
+  0..11 Block "Style"@0..5 Style - - () Some(8..9)
+  12..38 Block "Style"@12..17 Style "table"@19..24 <"highlight"@25..34>@25..34 () Some(35..36)
+diag 8..9 Error "expected an identifier, found `{`"
+== broken#18
+file 0..21
+  0..21 IndexEntry - ("a"@1..2, "b"@6..7) [{"unique" quoted=false @10..16 = - override=-}@10..16]
+diag 4..5 Error "expected an identifier, found integer"
+diag 4..5 Error "unexpected: integer"
+diag 18..19 Error "expected a key, found `=`"
+diag 18..19 Error "unexpected: `=`"
+== broken#19
+file 0..33
+  0..33 Block "Table"@0..5 Table - <"A"@6..7>@6..7 () Some(8..9)
+    23..30 Field "id"@23..25 Named <"int"@26..29>@26..29 ()@26..29 []
+== broken#20
+file 0..37
+  0..37 Block "Lint"@0..4 Lint - - () Some(5..6)
+    7..35 Setting {"fieldNaming" quoted=false @7..18 = <"snake_case"@21..31>@21..31@21..31 override=-}@7..31
+diag 32..33 Error "expected exactly one identifier, e.g. `[error]`"
+== broken#21
+file 0..41
+  0..41 Block "Lint"@0..4 Lint - - () Some(5..6)
+    7..39 Setting {"fieldNaming" quoted=false @7..18 = <"snake_case"@21..31>@21..31@21..31 override=-}@7..31
+diag 32..37 Error "expected exactly one identifier, e.g. `[error]`"
+== broken#22
+file 0..38
+  0..38 Block "Lint"@0..4 Lint - - () Some(5..6)
+    7..36 Setting {"fieldNaming" quoted=false @7..18 = <"snake_case"@21..31>@21..31@21..31 override=-}@7..31
+diag 32..34 Error "expected exactly one identifier, e.g. `[error]`"
+== broken#23
+file 0..65
+  0..65 Block "Lint"@0..4 Lint - - () Some(5..6)
+    9..35 Setting {"fieldNaming" quoted=false @9..20 = <"snake_case"@23..33>@23..33@23..33 override=-}@9..33
+    38..63 Setting {"tableNaming" quoted=false @38..49 = <"PascalCase"@52..62>@52..62@52..62 override=-}@38..62
+diag 34..35 Error "expected exactly one identifier, e.g. `[error]`"
+== broken#24
+file 0..64
+  0..64 Block "Lint"@0..4 Lint - - () Some(5..6)
+    7..39 Setting {"fieldNaming" quoted=false @7..18 = <"snake_case"@21..31>@21..31@21..31 override=-}@7..31
+    40..62 Setting {"tableNaming" quoted=false @40..51 = <"x"@54..55>@54..55@54..55 override="warn"@57..61}@40..55
+diag 32..38 Error "expected exactly one identifier, e.g. `[error]`"
+== broken#25
+file 0..41
+  0..41 Block "Lint"@0..4 Lint - - () Some(5..6)
+    7..27 Field "fieldNaming"@7..18 - [{"error" quoted=false @20..25 = - override=-}@20..25]
+    28..39 Error
+diag 28..29 Error "unexpected: `=`"
+== garbage fnv1a64=0dd55947b7fb18bb

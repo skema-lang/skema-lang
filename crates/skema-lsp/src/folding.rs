@@ -63,8 +63,7 @@ mod tests {
     use super::*;
 
     fn ranges(source: &str) -> Vec<(u32, u32)> {
-        let (parsed, _) = skema_syntax::parse(source);
-        let file = parsed.syntax();
+        let (file, _) = skema_syntax::parse(source);
         folding_ranges(source, &file)
             .iter()
             .map(|r| (r.start_line, r.end_line))
@@ -136,8 +135,7 @@ mod tests {
         // in skema-syntax), but its own braces stay balanced, so the
         // enclosing `Table` is still a clean multi-line block.
         let source = "Table Bad {\n  Meta { = ; }\n  id int;\n}";
-        let (parsed, messages) = skema_syntax::parse(source);
-        let file = parsed.syntax();
+        let (file, messages) = skema_syntax::parse(source);
         assert!(!messages.is_empty(), "the fixture must contain an error");
         assert_eq!(folding_ranges(source, &file).len(), 1);
         assert_eq!(ranges(source), vec![(0, 3)]);

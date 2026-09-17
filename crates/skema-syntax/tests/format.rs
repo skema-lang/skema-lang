@@ -189,9 +189,8 @@ fn canonical_slot(kind: BlockKind) -> usize {
 
 /// `(BlockKind, name)` for every top-level declaration, in file order.
 fn declaration_signature(src: &str) -> Vec<(BlockKind, Option<String>)> {
-    let (parsed, _) = parse(src);
-    parsed
-        .syntax()
+    parse(src)
+        .0
         .blocks()
         .map(|b| {
             (

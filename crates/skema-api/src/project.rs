@@ -26,7 +26,7 @@ use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 use skema_hir::{FileId, InputFile};
 use skema_syntax::GreenNode;
-use skema_syntax::ast;
+use skema_syntax::ast::{self, AstNode};
 #[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 
@@ -262,8 +262,7 @@ fn load_project<'a>(root: &str, files: &HashMap<&'a str, &'a str>) -> Vec<Parsed
         let Some(&source) = files.get(path.as_str()) else {
             continue;
         };
-        let (parsed_file, syntax_diagnostics) = skema_syntax::parse(source);
-        let view = parsed_file.syntax();
+        let (view, syntax_diagnostics) = skema_syntax::parse(source);
         for import in view.imports() {
             let Some(raw) = import.path() else {
                 continue; // a syntax error, already reported
@@ -277,7 +276,7 @@ fn load_project<'a>(root: &str, files: &HashMap<&'a str, &'a str>) -> Vec<Parsed
         parsed.push(ParsedFile {
             path,
             source,
-            green: parsed_file.green,
+            green: view.syntax().green().into_owned(),
             syntax_diagnostics,
         });
     }

@@ -25,7 +25,7 @@ use crate::diagnostic::Diagnostic;
 use crate::span::Span;
 use crate::syntax_kind::{SkemaLanguage, SyntaxKind};
 use crate::token::{Token, TokenKind};
-use crate::{legacy_ast, tokenize};
+use crate::tokenize;
 
 pub struct Parser<'a> {
     src: &'a str,
@@ -261,21 +261,22 @@ impl<'a> Parser<'a> {
     ///
     /// Covers `[pk, required]`, `(10, 2)` and `[highlight]`; they differ
     /// only in the element parser. A trailing separator (`[a, b,]`) is
-    /// allowed — convenient when editing line by line, and free.
-    pub(crate) fn delimited_list<T>(
+    /// allowed — convenient when editing line by line, and free. Returns
+    /// how many elements `element` reported as read.
+    pub(crate) fn delimited_list(
         &mut self,
         open: TokenKind,
         close: TokenKind,
         sep: TokenKind,
-        mut element: impl FnMut(&mut Self) -> Option<T>,
-    ) -> Vec<T> {
-        let mut out = Vec::new();
+        mut element: impl FnMut(&mut Self) -> bool,
+    ) -> usize {
+        let mut count = 0;
         if !self.expect(open) {
-            return out;
+            return count;
         }
         self.repeat_until(close, |p| {
-            if let Some(x) = element(p) {
-                out.push(x);
+            if element(p) {
+                count += 1;
             }
             // Keep going after a missing separator — a forgotten comma
             // shouldn't make the rest of the list unreadable.
@@ -288,7 +289,7 @@ impl<'a> Parser<'a> {
             }
         });
         self.expect(close);
-        out
+        count
     }
 
     // -- Green tree ---------------------------------------------------------------
@@ -416,18 +417,15 @@ impl<'a> Parser<'a> {
 
     // -- Small helpers for the grammar ---------------------------------------
 
-    /// Reads an identifier. Reports and returns `None` if there isn't one.
-    pub(crate) fn ident(&mut self) -> Option<legacy_ast::Ident> {
+    /// Reads an identifier. Reports and returns `false` if there isn't one.
+    pub(crate) fn ident(&mut self) -> bool {
         if !self.at(TokenKind::Ident) {
             let found = self.current().kind.describe();
             self.error_here(format!("expected an identifier, found {found}"));
-            return None;
+            return false;
         }
-        let t = self.bump();
-        Some(legacy_ast::Ident {
-            text: t.text(self.src).to_owned(),
-            span: t.span,
-        })
+        self.bump();
+        true
     }
 
     /// The text of an arbitrary token.

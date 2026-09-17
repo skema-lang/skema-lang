@@ -107,8 +107,7 @@ pub fn load_with(
             path: path.clone(),
             source,
         })?;
-        let (parsed, parse_diagnostics) = skema_syntax::parse(&src);
-        let ast = parsed.syntax();
+        let (ast, parse_diagnostics) = skema_syntax::parse(&src);
 
         let import_targets: Vec<Option<FileId>> = ast
             .imports()

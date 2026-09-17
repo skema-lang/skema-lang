@@ -193,7 +193,7 @@ mod tests {
     use super::*;
 
     fn parse(source: &str) -> SourceFile {
-        skema_syntax::parse(source).0.syntax()
+        skema_syntax::parse(source).0
     }
 
     #[test]

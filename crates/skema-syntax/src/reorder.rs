@@ -46,14 +46,13 @@ pub struct Reordered {
 /// the result through [`crate::format`] so `--sort` output is indented
 /// too. See the module docs for what makes this refuse rather than guess.
 pub fn reorder(src: &str) -> Result<Reordered, String> {
-    let (parsed, diagnostics) = parse(src);
+    let (file, diagnostics) = parse(src);
     if !diagnostics.is_empty() {
         return Err(format!(
             "{} syntax error(s) — fix them first (`skema check`) before sorting",
             diagnostics.len()
         ));
     }
-    let file = parsed.syntax();
 
     let all_tokens = crate::lexer::tokenize(src);
     let comments_removed = all_tokens
@@ -189,9 +188,8 @@ import \"./b.skema\";
 spec 1;
 ";
         let out = sorted(src).text;
-        let (parsed, diagnostics) = parse(&out);
+        let (file, diagnostics) = parse(&out);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
-        let file = parsed.syntax();
 
         let kinds: Vec<_> = file
             .items()
@@ -222,8 +220,7 @@ import \"./z.skema\";
 import \"./a.skema\";
 ";
         let out = sorted(src).text;
-        let (parsed, _) = parse(&out);
-        let file = parsed.syntax();
+        let (file, _) = parse(&out);
         let names: Vec<_> = file
             .items()
             .filter_map(|item| match item.kind() {
@@ -330,8 +327,6 @@ import \"./a.skema\";
         let (before, before_diag) = parse(example);
         let (after, after_diag) = parse(&out);
         assert_eq!(before_diag.len(), after_diag.len());
-        let before = before.syntax();
-        let after = after.syntax();
 
         let mut before_decls: Vec<_> = before
             .blocks()

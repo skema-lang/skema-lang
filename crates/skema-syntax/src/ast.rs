@@ -46,7 +46,7 @@ pub trait AstNode: Sized {
     fn cast(node: SyntaxNode) -> Option<Self>;
     fn syntax(&self) -> &SyntaxNode;
 
-    /// First to last significant token — the span the owned AST recorded.
+    /// First to last significant token; attached comments are excluded.
     fn span(&self) -> Span {
         significant_span(self.syntax())
     }

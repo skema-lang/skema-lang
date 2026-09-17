@@ -44,25 +44,25 @@
 //! field named `Index` is read wrong; the payoff is that `Table Group { … }`
 //! stays writable, and in an ERP model that is an ordinary table name.
 
-use crate::legacy_ast::*;
+use crate::ast::{BlockKind, SourceFile};
 use crate::parser::Parser;
 use crate::span::Span;
 use crate::syntax_kind::SyntaxKind as S;
 use crate::token::Token;
 use crate::token::TokenKind as T;
 
+/// What [`Parser::parse_setting`] needs to know about an attribute it read.
+struct ParsedAttr {
+    span: Span,
+    has_value: bool,
+}
+
 impl Parser<'_> {
     /// Entry point: reads a whole file.
     pub fn parse_source_file(&mut self) -> SourceFile {
         self.start_root();
-        let mut items = Vec::new();
-        self.repeat_until(T::Eof, |p| items.push(p.parse_item()));
-        let span = Span::new(0, self.prev_span().end);
-        SourceFile {
-            span,
-            items,
-            green: self.finish_root(),
-        }
+        self.repeat_until(T::Eof, Self::parse_item);
+        SourceFile::new_root(self.finish_root())
     }
 
     /// `{ item* }` — the body of every block.
@@ -70,35 +70,28 @@ impl Parser<'_> {
     /// **One** function for all fourteen block kinds. That `Lint` may only
     /// appear inside `Project` is a rule about meaning and is checked
     /// later, not here.
-    fn parse_body(&mut self) -> Vec<Item> {
+    fn parse_body(&mut self) {
         self.in_node(S::Body, |p| {
-            let mut items = Vec::new();
             if !p.expect(T::LBrace) {
-                return items;
+                return;
             }
-            p.repeat_until(T::RBrace, |p| items.push(p.parse_item()));
+            p.repeat_until(T::RBrace, Self::parse_item);
             p.expect(T::RBrace);
-            items
-        })
+        });
     }
 
     // -- Statements -------------------------------------------------------
 
-    /// A single statement, including its span.
-    fn parse_item(&mut self) -> Item {
+    /// A single statement.
+    fn parse_item(&mut self) {
         let checkpoint = self.start_item();
-        let start = self.current().span;
         let kind = self.parse_item_kind();
-        self.finish_item(checkpoint, item_syntax_kind(&kind));
-        Item {
-            kind,
-            span: start.cover(self.prev_span()),
-        }
+        self.finish_item(checkpoint, kind);
     }
 
     /// The dispatch. It looks at at most two tokens — the language doesn't
     /// need more.
-    fn parse_item_kind(&mut self) -> ItemKind {
+    fn parse_item_kind(&mut self) -> S {
         match self.current().kind {
             T::KwSpec => self.parse_spec(),
             T::KwImport => self.parse_import(),
@@ -142,87 +135,80 @@ impl Parser<'_> {
                 if !matches!(t.kind, T::RBrace | T::RBracket | T::RParen) {
                     self.recover_item();
                 }
-                ItemKind::Error
+                S::Error
             }
         }
     }
 
     /// `spec 1;`
-    fn parse_spec(&mut self) -> ItemKind {
+    fn parse_spec(&mut self) -> S {
         self.bump(); // `spec`
-        let version = if self.at(T::Int) {
+        if self.at(T::Int) {
             let t = self.bump();
-            self.int_value(t)
+            self.check_int(t);
         } else {
             self.error_here("expected an integer, e.g. `spec 1;`");
-            None
-        };
+        }
         self.expect_terminator();
-        ItemKind::Spec(Spec { version })
+        S::Spec
     }
 
     /// `import "./common.skema" as base;`
-    fn parse_import(&mut self) -> ItemKind {
+    fn parse_import(&mut self) -> S {
         self.bump(); // `import`
-        let path = if self.at(T::Str) {
-            let t = self.bump();
-            Some(unquote(self.text_of(t)))
-        } else {
+        if !self.eat(T::Str) {
             self.error_here("expected a quoted path");
-            None
-        };
+        }
         // `as` is optional: without an alias, the source file's document
         // name applies.
-        let alias = if self.eat(T::KwAs) {
-            self.ident()
-        } else {
-            None
-        };
+        if self.eat(T::KwAs) {
+            self.ident();
+        }
         self.expect_terminator();
-        ItemKind::Import(Import { path, alias })
+        S::Import
     }
 
     /// `use common_base;`
-    fn parse_use(&mut self) -> ItemKind {
+    fn parse_use(&mut self) -> S {
         self.bump(); // `use`
-        let Some(target) = self.parse_path() else {
+        if !self.parse_path() {
             self.recover_item();
-            return ItemKind::Error;
-        };
+            return S::Error;
+        }
         self.expect_terminator();
-        ItemKind::Use(Use { target })
+        S::Use
     }
 
     /// `mode = draft;`, `fieldNaming = snake_case [error];`
-    fn parse_setting(&mut self) -> ItemKind {
-        let Some(mut attr) = self.parse_attr() else {
+    fn parse_setting(&mut self) -> S {
+        let Some(attr) = self.parse_attr() else {
             self.recover_item();
-            return ItemKind::Error;
+            return S::Error;
         };
-        if attr.value.is_none() {
+        if !attr.has_value {
             self.error(attr.span, "a value is missing here: `key = value;`");
         }
         if self.at(T::LBracket) {
-            attr.severity_override = self.parse_severity_override();
+            self.parse_severity_override();
         }
         self.expect_terminator();
-        ItemKind::Setting(attr)
+        S::Setting
     }
 
     /// `[error]` on a setting — a severity override, not a flag list: one
     /// bare word, no comma (task 67 gives it meaning; here it's grammar
     /// only, legal after any setting in any block, `docs/13`).
-    fn parse_severity_override(&mut self) -> Option<Ident> {
-        self.in_node(S::SeverityOverride, Self::parse_severity_override_inner)
+    fn parse_severity_override(&mut self) {
+        self.in_node(S::SeverityOverride, Self::parse_severity_override_inner);
     }
 
-    fn parse_severity_override_inner(&mut self) -> Option<Ident> {
+    fn parse_severity_override_inner(&mut self) {
         let start = self.current().span;
         self.bump(); // `[`
         if self.at(T::Ident) && self.nth(1) == T::RBracket {
-            let word = self.ident();
+            self.ident();
             self.bump(); // `]`
-            return word;
+            return;
         }
         // Not exactly one bare word: skip to `]`, a safe stopping point, or
         // a fresh line — the same emergency brake as `recover_item`.
@@ -238,117 +224,79 @@ impl Parser<'_> {
             "expected exactly one identifier, e.g. `[error]`",
         );
         self.eat(T::RBracket);
-        None
     }
 
     /// `Table Customer { … }`, `Style @table { … }`, `Table shop.User;`
     ///
     /// Block and reference share everything but the last character —
     /// that's why they share a function too.
-    fn parse_block_or_ref(&mut self) -> ItemKind {
-        let Some(keyword) = self.ident() else {
+    fn parse_block_or_ref(&mut self) -> S {
+        if !self.ident() {
             self.recover_item();
-            return ItemKind::Error;
-        };
-        let kind = BlockKind::from_keyword(&keyword.text).unwrap_or(BlockKind::Other);
+            return S::Error;
+        }
 
         // `@` = built-in element type, no `@` = self-chosen name.
-        let selector = if self.eat(T::At) { self.ident() } else { None };
+        if self.eat(T::At) {
+            self.ident();
+        }
 
-        let name = if self.at(T::Ident) {
-            self.parse_path()
-        } else {
-            None
-        };
+        let named = self.at(T::Ident) && self.parse_path();
 
         // Only `Datatype` has parameters: `Datatype decimal(precision int, scale int)`.
-        let params = if self.at(T::LParen) {
-            self.parse_params()
-        } else {
-            Vec::new()
-        };
+        if self.at(T::LParen) {
+            self.parse_params();
+        }
 
         if self.at(T::LBrace) {
-            let body_brace = self.current().span;
-            let items = self.parse_body();
+            self.parse_body();
             self.eat(T::Semi); // `};` is tolerated, the formatter cleans it up
-            ItemKind::Block(Block {
-                keyword,
-                kind,
-                selector,
-                name,
-                params,
-                body_brace,
-                items,
-            })
-        } else if let Some(path) = name {
+            S::Block
+        } else if named {
             // No body, but a name: a reference like in `Group`.
             self.expect_terminator();
-            ItemKind::Ref(Ref {
-                keyword,
-                kind,
-                path,
-            })
+            S::Ref
         } else {
             self.error_here("expected `{` or a name");
             self.recover_item();
-            ItemKind::Error
+            S::Error
         }
     }
 
     /// `email varchar [unique] { note = "…" };`
-    fn parse_field(&mut self) -> ItemKind {
-        let Some(name) = self.ident() else {
+    fn parse_field(&mut self) -> S {
+        if !self.ident() {
             self.recover_item();
-            return ItemKind::Error;
-        };
-        let ty = self.parse_field_type();
-        let flags = if self.at(T::LBracket) {
-            self.parse_flags()
-        } else {
-            Vec::new()
-        };
+            return S::Error;
+        }
+        self.parse_field_type();
+        if self.at(T::LBracket) {
+            self.parse_flags();
+        }
 
         // If the statement ends with `}`, the `;` is superfluous (docs/01, 1.4).
-        let items = if self.at(T::LBrace) {
-            let items = self.parse_body();
+        if self.at(T::LBrace) {
+            self.parse_body();
             self.eat(T::Semi);
-            items
         } else {
             self.expect_terminator();
-            Vec::new()
-        };
-
-        ItemKind::Field(Field {
-            name,
-            ty,
-            flags,
-            items,
-        })
+        }
+        S::Field
     }
 
     /// `[name] (email, date) [unique];` – the name is optional (`docs/10`).
-    fn parse_index_entry(&mut self) -> ItemKind {
-        let name = if self.at(T::Ident) {
-            self.ident()
-        } else {
-            None
-        };
-        let columns = self.parse_ident_list();
-        if columns.is_empty() {
+    fn parse_index_entry(&mut self) -> S {
+        if self.at(T::Ident) {
+            self.ident();
+        }
+        if self.parse_ident_list() == 0 {
             self.error_here("an index needs at least one column");
         }
-        let flags = if self.at(T::LBracket) {
-            self.parse_flags()
-        } else {
-            Vec::new()
-        };
+        if self.at(T::LBracket) {
+            self.parse_flags();
+        }
         self.expect_terminator();
-        ItemKind::IndexEntry(IndexEntry {
-            name,
-            columns,
-            flags,
-        })
+        S::IndexEntry
     }
 
     /// Ends a statement.
@@ -375,143 +323,101 @@ impl Parser<'_> {
     // -- Components ---------------------------------------------------------
 
     /// What's allowed to follow a field name — or nothing (`cancelled;`).
-    fn parse_field_type(&mut self) -> Option<FieldType> {
+    fn parse_field_type(&mut self) {
         if !self.current().kind.is_relation_op() && !self.at(T::Ident) {
-            return None;
+            return;
         }
-        self.in_node(S::FieldType, Self::parse_field_type_inner)
+        self.in_node(S::FieldType, Self::parse_field_type_inner);
     }
 
-    fn parse_field_type_inner(&mut self) -> Option<FieldType> {
-        let start = self.current().span;
-
+    fn parse_field_type_inner(&mut self) {
         // `customer >Customer.id`
         if self.current().kind.is_relation_op() {
-            let op = match self.bump().kind {
-                T::Gt => RelationOp::OneToMany,
-                T::Lt => RelationOp::ManyToOne,
-                _ => RelationOp::OneToOne,
-            };
-            let target = self.parse_path()?;
-            return Some(FieldType {
-                kind: FieldTypeKind::Relation { op, target },
-                span: start.cover(self.prev_span()),
-            });
+            self.bump();
+            self.parse_path();
+            return;
         }
 
         // `varchar`, `decimal(10, 2)`, `shop.OrderStatus`
-        if self.at(T::Ident) {
-            let path = self.parse_path()?;
-            let args = if self.at(T::LParen) {
-                self.in_node(S::Args, |p| {
-                    p.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_value())
-                })
-            } else {
-                Vec::new()
-            };
-            return Some(FieldType {
-                kind: FieldTypeKind::Named { path, args },
-                span: start.cover(self.prev_span()),
-            });
+        if self.at(T::Ident) && self.parse_path() && self.at(T::LParen) {
+            self.parse_args();
         }
+    }
 
-        None
+    /// `(10, 2)` after a type name.
+    fn parse_args(&mut self) {
+        self.in_node(S::Args, |p| {
+            p.delimited_list(T::LParen, T::RParen, T::Comma, Self::parse_value)
+        });
     }
 
     /// `[pk, required, default=0]`
-    fn parse_flags(&mut self) -> Vec<Attr> {
+    fn parse_flags(&mut self) {
         self.in_node(S::Flags, |p| {
-            p.delimited_list(T::LBracket, T::RBracket, T::Comma, |p| p.parse_attr())
-        })
+            p.delimited_list(T::LBracket, T::RBracket, T::Comma, |p| {
+                p.parse_attr().is_some()
+            })
+        });
     }
 
     /// `(a, b)` — for `Index` columns. `Datatype` parameters additionally
     /// have a type and are therefore read by [`Self::parse_params`].
-    fn parse_ident_list(&mut self) -> Vec<Ident> {
+    /// Returns how many columns were read.
+    fn parse_ident_list(&mut self) -> usize {
         self.in_node(S::Columns, |p| {
-            p.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.ident())
+            p.delimited_list(T::LParen, T::RParen, T::Comma, Self::ident)
         })
     }
 
     /// `(precision int, scale int)` — the parameter list of a `Datatype`.
-    fn parse_params(&mut self) -> Vec<Param> {
+    fn parse_params(&mut self) {
         self.in_node(S::Params, |p| {
-            p.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_param())
-        })
+            p.delimited_list(T::LParen, T::RParen, T::Comma, Self::parse_param)
+        });
     }
 
     /// A single parameter: "declared like a field — name, then type"
     /// (`docs/06`).
-    fn parse_param(&mut self) -> Option<Param> {
+    fn parse_param(&mut self) -> bool {
         if !self.at(T::Ident) {
-            return self.ident().and(None);
+            self.ident();
+            return false;
         }
-        self.in_node(S::Param, Self::parse_param_inner)
-    }
-
-    fn parse_param_inner(&mut self) -> Option<Param> {
-        let name = self.ident()?;
-        let ty = if self.at(T::Ident) {
-            self.parse_path()
-        } else {
-            None
-        };
-        Some(Param {
-            span: name.span.cover(self.prev_span()),
-            name,
-            ty,
-        })
+        self.in_node(S::Param, |p| {
+            p.ident();
+            if p.at(T::Ident) {
+                p.parse_path();
+            }
+        });
+        true
     }
 
     /// `key` or `key = value`.
-    fn parse_attr(&mut self) -> Option<Attr> {
+    fn parse_attr(&mut self) -> Option<ParsedAttr> {
         if !matches!(self.current().kind, T::Ident | T::Str) {
-            return self.parse_key().and(None);
+            self.parse_key();
+            return None;
         }
         self.in_node(S::Attr, Self::parse_attr_inner)
     }
 
-    fn parse_attr_inner(&mut self) -> Option<Attr> {
-        let key = self.parse_key()?;
-        let start = key.span;
-        let value = if self.eat_assign() {
-            self.parse_value()
-        } else {
-            None
-        };
-        Some(Attr {
-            key,
-            value,
-            severity_override: None,
+    fn parse_attr_inner(&mut self) -> Option<ParsedAttr> {
+        let start = self.parse_key()?;
+        let has_value = self.eat_assign() && self.parse_value();
+        Some(ParsedAttr {
             span: start.cover(self.prev_span()),
+            has_value,
         })
     }
 
     /// `author` or `"x-jira"`.
-    fn parse_key(&mut self) -> Option<Key> {
-        match self.current().kind {
-            T::Ident => {
-                let t = self.bump();
-                Some(Key {
-                    text: self.text_of(t).to_owned(),
-                    quoted: false,
-                    span: t.span,
-                })
-            }
-            T::Str => {
-                let t = self.bump();
-                Some(Key {
-                    text: unquote(self.text_of(t)),
-                    quoted: true,
-                    span: t.span,
-                })
-            }
-            _ => {
-                let found = self.current().kind.describe();
-                self.error_here(format!("expected a key, found {found}"));
-                None
-            }
+    fn parse_key(&mut self) -> Option<Span> {
+        if matches!(self.current().kind, T::Ident | T::Str) {
+            return Some(self.bump().span);
         }
+        let found = self.current().kind.describe();
+        self.error_here(format!("expected a key, found {found}"));
+        None
     }
 
     /// Consumes `=`.
@@ -530,7 +436,7 @@ impl Parser<'_> {
     }
 
     /// Any value in the language.
-    fn parse_value(&mut self) -> Option<Value> {
+    fn parse_value(&mut self) -> bool {
         let starts_value = match self.current().kind {
             T::Str | T::Raw | T::Int | T::Float | T::LBracket | T::Ident => true,
             T::Minus => matches!(self.nth(1), T::Int | T::Float),
@@ -539,32 +445,20 @@ impl Parser<'_> {
         if !starts_value {
             let found = self.current().kind.describe();
             self.error_here(format!("expected a value, found {found}"));
-            return None;
+            return false;
         }
-        self.in_node(S::Value, Self::parse_value_inner)
+        self.in_node(S::Value, Self::parse_value_inner);
+        true
     }
 
-    fn parse_value_inner(&mut self) -> Option<Value> {
-        let start = self.current().span;
-
-        let kind = match self.current().kind {
-            T::Str => {
-                let t = self.bump();
-                ValueKind::Str(unquote(self.text_of(t)))
-            }
-            // Strip the backticks: the content is what gets passed through.
-            T::Raw => {
-                let t = self.bump();
-                let text = self.text_of(t);
-                ValueKind::Raw(text[1..text.len().saturating_sub(1)].to_owned())
+    fn parse_value_inner(&mut self) {
+        match self.current().kind {
+            T::Str | T::Raw | T::Float => {
+                self.bump();
             }
             T::Int => {
                 let t = self.bump();
-                ValueKind::Int(self.int_value(t).unwrap_or(0))
-            }
-            T::Float => {
-                let t = self.bump();
-                ValueKind::Float(self.float_value(t))
+                self.check_int(t);
             }
             // `default=-1` – negative numbers are the only "arithmetic" the
             // language has; no expression parser is needed for that.
@@ -572,102 +466,51 @@ impl Parser<'_> {
                 self.bump();
                 let t = self.bump();
                 if t.kind == T::Int {
-                    ValueKind::Int(-self.int_value(t).unwrap_or(0))
-                } else {
-                    ValueKind::Float(-self.float_value(t))
+                    self.check_int(t);
                 }
             }
             T::LBracket => {
-                let values = self.in_node(S::List, |p| {
-                    p.delimited_list(T::LBracket, T::RBracket, T::Comma, |p| p.parse_value())
+                self.in_node(S::List, |p| {
+                    p.delimited_list(T::LBracket, T::RBracket, T::Comma, Self::parse_value)
                 });
-                ValueKind::List(values)
             }
             // `shop.OrderStatus.paid` or, with arguments, `decimal(10)`
             // (`docs/06`, "Layering types" – a type used as the value of
             // `type = …;`).
             T::Ident => {
-                let path = self.parse_path()?;
-                if self.at(T::LParen) {
-                    let args = self.in_node(S::Args, |p| {
-                        p.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_value())
-                    });
-                    ValueKind::Type { path, args }
-                } else {
-                    ValueKind::Path(path)
+                if self.parse_path() && self.at(T::LParen) {
+                    self.parse_args();
                 }
             }
             _ => {
                 let found = self.current().kind.describe();
                 self.error_here(format!("expected a value, found {found}"));
-                return None;
             }
-        };
-
-        Some(Value {
-            kind,
-            span: start.cover(self.prev_span()),
-        })
+        }
     }
 
     /// `shop.OrderStatus.paid`
-    fn parse_path(&mut self) -> Option<Path> {
+    fn parse_path(&mut self) -> bool {
         if !self.at(T::Ident) {
-            return self.ident().and(None);
+            return self.ident();
         }
-        self.in_node(S::Path, Self::parse_path_inner)
-    }
-
-    fn parse_path_inner(&mut self) -> Option<Path> {
-        let first = self.ident()?;
-        let start = first.span;
-        let mut segments = vec![first];
-        while self.eat(T::Dot) {
-            match self.ident() {
-                Some(i) => segments.push(i),
-                // The name is missing after a dot — the normal case while
-                // typing in an editor. The path stays valid, just shorter.
-                None => break,
-            }
-        }
-        Some(Path {
-            span: start.cover(self.prev_span()),
-            segments,
-        })
+        self.in_node(S::Path, |p| {
+            p.ident();
+            // A name missing after a dot is the normal case while typing in
+            // an editor. The path stays valid, just shorter.
+            while p.eat(T::Dot) && p.ident() {}
+        });
+        true
     }
 
     // -- Numbers --------------------------------------------------------------
 
-    /// `1_000` → `1000`. `None` on overflow, with a message.
-    fn int_value(&mut self, token: Token) -> Option<i64> {
+    /// `1_000` must fit in 64 bits; the value itself is read by the view.
+    fn check_int(&mut self, token: Token) {
         let text = self.text_of(token).replace('_', "");
-        match text.parse::<i64>() {
-            Ok(n) => Some(n),
-            Err(_) => {
-                self.error(token.span, "number is too large for 64 bits");
-                None
-            }
+        if text.parse::<i64>().is_err() {
+            self.error(token.span, "number is too large for 64 bits");
         }
-    }
-
-    /// Can't fail: the lexer only lets `digits.digits` through. For
-    /// absurdly large values, Rust yields `inf` instead of an error.
-    fn float_value(&mut self, token: Token) -> f64 {
-        self.text_of(token).replace('_', "").parse().unwrap_or(0.0)
-    }
-}
-
-fn item_syntax_kind(kind: &ItemKind) -> S {
-    match kind {
-        ItemKind::Spec(_) => S::Spec,
-        ItemKind::Import(_) => S::Import,
-        ItemKind::Use(_) => S::Use,
-        ItemKind::Setting(_) => S::Setting,
-        ItemKind::Field(_) => S::Field,
-        ItemKind::Block(_) => S::Block,
-        ItemKind::Ref(_) => S::Ref,
-        ItemKind::IndexEntry(_) => S::IndexEntry,
-        ItemKind::Error => S::Error,
     }
 }
 
@@ -715,7 +558,7 @@ pub(crate) fn unquote(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{self, AstNode};
+    use crate::ast::{self, AstNode, RelationOp};
     use crate::parse;
 
     /// Parses and asserts that there were no messages.
@@ -723,7 +566,7 @@ mod tests {
         let (file, messages) = parse(src);
         let text: Vec<_> = messages.iter().map(|d| d.message.clone()).collect();
         assert!(text.is_empty(), "unexpected messages in {src:?}: {text:#?}");
-        file.syntax()
+        file
     }
 
     /// Parses and returns the message texts.
@@ -1226,9 +1069,8 @@ mod tests {
             "Lint { fieldNaming = snake_case [a, b]; }",
             "Lint { fieldNaming = snake_case [1]; }",
         ] {
-            let (parsed, messages) = parse(src);
+            let (file, messages) = parse(src);
             assert!(!messages.is_empty(), "{src:?} should be reported");
-            let file = parsed.syntax();
             let lint = file.blocks().next().expect("Lint block");
             let ast::ItemKind::Setting(a) = lint.items().next().expect("an item").kind() else {
                 panic!("expected an assignment in {src:?}");
@@ -1243,7 +1085,7 @@ mod tests {
     /// An unterminated `[` must not swallow the next, well-formed setting.
     #[test]
     fn unterminated_severity_override_does_not_swallow_the_next_setting() {
-        let (parsed, messages) = parse(
+        let (file, messages) = parse(
             r#"
             Lint {
               fieldNaming = snake_case [
@@ -1255,7 +1097,6 @@ mod tests {
             !messages.is_empty(),
             "the unterminated `[` must be reported"
         );
-        let file = parsed.syntax();
         let lint = file.blocks().next().expect("Lint block");
         let items: Vec<_> = lint.items().collect();
         let keys: Vec<_> = items
@@ -1278,7 +1119,7 @@ mod tests {
     /// neighbors down with it.
     #[test]
     fn a_broken_field_stays_local() {
-        let (parsed, messages) = parse(
+        let (file, messages) = parse(
             r#"
             Table Customer {
               id    int [pk];
@@ -1289,7 +1130,6 @@ mod tests {
         "#,
         );
         assert!(!messages.is_empty(), "the garbage must be reported");
-        let file = parsed.syntax();
 
         // Both tables are still there …
         let names: Vec<_> = file
@@ -1329,10 +1169,9 @@ mod tests {
     #[test]
     fn missing_brace_at_end_of_file() {
         // The normal case while typing: the block isn't closed yet.
-        let (parsed, messages) = parse("Table A { id int [pk];");
+        let (file, messages) = parse("Table A { id int [pk];");
         assert_eq!(messages.len(), 1);
         // The tree is still usable — the basis for autocompletion.
-        let file = parsed.syntax();
         let a = file.blocks().next().expect("Table A");
         assert_eq!(a.items().count(), 1);
     }

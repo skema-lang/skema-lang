@@ -5,12 +5,11 @@ use skema_hir::model::Model;
 use skema_hir::{Diagnostic, FileId, InputFile, analyze};
 
 fn analyze_src(src: &str) -> (Model, Vec<Diagnostic>) {
-    let (parsed, parse_diags) = skema_syntax::parse(src);
+    let (ast, parse_diags) = skema_syntax::parse(src);
     assert!(
         parse_diags.is_empty(),
         "source already contains parser diagnostics: {src}"
     );
-    let ast = parsed.syntax();
     let import_count = ast.imports().count();
     let file = InputFile {
         id: FileId(0),
@@ -573,8 +572,8 @@ fn use_of_a_namespace_without_a_partial_is_a_hard_error() {
     let imported = "spec 1;\nDocument ns { }\nPartial P { id uuid [pk]; }\n";
     let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nTable T { use ns; other uuid; }\n";
 
-    let ast_imported = skema_syntax::parse(imported).0.syntax();
-    let ast_main = skema_syntax::parse(main).0.syntax();
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
     let files = [
         InputFile {
             id: FileId(0),
@@ -607,8 +606,8 @@ fn use_of_a_namespace_without_a_partial_stays_an_error_under_warn() {
     let imported = "spec 1;\nDocument ns { }\nPartial P { id uuid [pk]; }\n";
     let main = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nimport \"./a.skema\";\nTable T { use ns; other uuid; }\n";
 
-    let ast_imported = skema_syntax::parse(imported).0.syntax();
-    let ast_main = skema_syntax::parse(main).0.syntax();
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
     let files = [
         InputFile {
             id: FileId(0),
@@ -766,8 +765,8 @@ fn relation_target_of_a_namespace_without_a_table_is_rejected() {
     let imported = "spec 1;\nDocument ns { }\nTable Customer { id uuid [pk]; }\n";
     let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nTable Order { customer >ns; }\n";
 
-    let ast_imported = skema_syntax::parse(imported).0.syntax();
-    let ast_main = skema_syntax::parse(main).0.syntax();
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
     let files = [
         InputFile {
             id: FileId(0),
@@ -801,8 +800,8 @@ fn relation_target_of_a_namespace_without_a_table_stays_an_error_under_warn() {
     let imported = "spec 1;\nDocument ns { }\nTable Customer { id uuid [pk]; }\n";
     let main = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nimport \"./a.skema\";\nTable Order { customer >ns; }\n";
 
-    let ast_imported = skema_syntax::parse(imported).0.syntax();
-    let ast_main = skema_syntax::parse(main).0.syntax();
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
     let files = [
         InputFile {
             id: FileId(0),
@@ -1222,9 +1221,9 @@ fn namespace_collision_between_two_imports_is_rejected() {
     let b = "spec 1;\nDocument common { }\n";
     let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nimport \"./b.skema\";\n";
 
-    let ast_a = skema_syntax::parse(a).0.syntax();
-    let ast_b = skema_syntax::parse(b).0.syntax();
-    let ast_main = skema_syntax::parse(main).0.syntax();
+    let ast_a = skema_syntax::parse(a).0;
+    let ast_b = skema_syntax::parse(b).0;
+    let ast_main = skema_syntax::parse(main).0;
 
     let files = [
         InputFile {
@@ -1271,8 +1270,8 @@ import "./base.skema";
 Table T { id int [pk]; }
 "#;
 
-    let ast_base = skema_syntax::parse(base).0.syntax();
-    let ast_main = skema_syntax::parse(main).0.syntax();
+    let ast_base = skema_syntax::parse(base).0;
+    let ast_main = skema_syntax::parse(main).0;
 
     let files = [
         InputFile {

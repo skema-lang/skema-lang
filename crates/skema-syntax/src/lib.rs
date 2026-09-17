@@ -10,8 +10,8 @@
 //! # Structure
 //!
 //! ```text
-//! &str ──[lexer]──► Vec<Token> ──[parser + grammar]──► SourceFile
-//!                                                    + Vec<Diagnostic>
+//! &str ──[lexer]──► Vec<Token> ──[parser + grammar]──► green tree ──► ast::SourceFile
+//!                                                                  + Vec<Diagnostic>
 //! ```
 //!
 //! | Module | Responsibility |
@@ -19,7 +19,7 @@
 //! | `span` | positions — byte offsets, nothing else |
 //! | `token` | the language's token kinds |
 //! | `lexer` | characters → tokens, lossless and panic-free |
-//! | [`ast`] | the syntax tree's typed view — the primary API |
+//! | [`ast`] | typed view over the lossless tree |
 //! | `parser` | cursor, error handling, recovery (*how*) |
 //! | `grammar` | the language's rules (*what*) |
 //! | `diagnostic` | messages with a location |
@@ -31,7 +31,7 @@
 //!
 //! The parser accepts more than the language allows — a `Lint` block inside
 //! a `Table`, an `import` mid-file, an unknown `Meta` key — and all of it
-//! yields valid AST nodes. A file being edited is almost always invalid,
+//! yields valid syntax nodes. A file being edited is almost always invalid,
 //! and a parser that bails out takes completion away exactly when it is
 //! needed. So [`parse`] always returns a tree plus what is wrong with it.
 //!
@@ -39,14 +39,10 @@
 //!
 //! # Example
 //!
-//! [`parse`] returns the owned AST; [`legacy_ast::SourceFile::syntax`] gives
-//! the lossless typed view ([`ast`]) over the same parse — the API every
-//! consumer outside this crate is on.
-//!
 //! ```
 //! use skema_syntax::{ast::BlockKind, parse};
 //!
-//! let (parsed, diagnostics) = parse(r#"
+//! let (file, diagnostics) = parse(r#"
 //!     spec 1;
 //!     Table Customer {
 //!       id    int     [pk];
@@ -56,7 +52,6 @@
 //!
 //! assert!(diagnostics.is_empty());
 //!
-//! let file = parsed.syntax();
 //! let table = file.blocks().next().expect("a declaration");
 //! assert_eq!(table.kind(), BlockKind::Table);
 //! assert_eq!(table.items().count(), 2);
@@ -67,9 +62,6 @@ mod diagnostic;
 mod dump;
 mod format;
 mod grammar;
-// `parse` still builds this alongside `ast` (dual output, task 92); every
-// other consumer is on `ast` and this stays only until the parser drops it.
-pub mod legacy_ast;
 mod lexer;
 mod parser;
 mod reorder;
@@ -92,7 +84,7 @@ pub use span::{Span, TextSize};
 pub use syntax_kind::{SkemaLanguage, SyntaxKind, SyntaxNode, SyntaxToken};
 pub use token::{Token, TokenKind, keyword_from_str};
 
-use legacy_ast::SourceFile;
+use ast::SourceFile;
 
 /// Reads a `.skema` file. An empty diagnostic list means no syntax errors.
 ///
