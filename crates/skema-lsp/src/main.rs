@@ -48,7 +48,7 @@ use lsp_types::notification::{
 };
 use lsp_types::request::{
     Completion, DocumentLinkRequest, DocumentSymbolRequest, FoldingRangeRequest, GotoDefinition,
-    HoverRequest, InlayHintRequest, Request as _, SemanticTokensFullRequest,
+    HoverRequest, InlayHintRequest, References, Request as _, SemanticTokensFullRequest,
     WorkspaceSymbolRequest,
 };
 use lsp_types::{
