@@ -1,6 +1,6 @@
 //! The resolved model – the JSON export for other tools.
 //!
-//! Where [`skema_syntax::legacy_ast`] holds *syntax*, this holds *meaning*: `use`
+//! Where [`skema_syntax::ast`] holds *syntax*, this holds *meaning*: `use`
 //! partials inlined, relationship targets resolved, physical names
 //! cascaded. A field exists here only if the checking phase understood it —
 //! faulty parts are missing, the model is never refused outright.

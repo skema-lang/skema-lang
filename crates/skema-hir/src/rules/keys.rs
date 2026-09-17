@@ -47,7 +47,7 @@ fn known_settings_for(
 
 /// Known keys for the body of an [`ast::Field`] node – depending on whether
 /// it's a table column, a `Datatype` parameter, or an `Enum` entry (all
-/// three share the node type, see `skema_syntax::legacy_ast`).
+/// three share the node type, see `skema_syntax::ast`).
 fn known_field_body_for(enclosing: BlockKind) -> Option<&'static [&'static str]> {
     match enclosing {
         BlockKind::Datatype => Some(PARAM_BODY_KEYS),

@@ -12,7 +12,7 @@ use crate::model;
 use crate::{Diagnostic, FileId};
 
 pub(crate) fn check(
-    project: Option<&ProjectSettings<'_>>,
+    project: Option<&ProjectSettings>,
     tables: &[model::Table],
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -98,7 +98,7 @@ fn physical_column_name(field: &model::Field) -> &str {
 /// `identifierLength` setting (decision 5). An engine outside
 /// [`catalog::DIALECT_ENGINES`] has no decided limit – never flagged
 /// (task 82, "skip those dialects silently").
-fn identifier_limit(project: &ProjectSettings<'_>, engine: &str) -> usize {
+fn identifier_limit(project: &ProjectSettings, engine: &str) -> usize {
     match engine {
         "postgres" => catalog::POSTGRES_IDENTIFIER_LIMIT,
         "mysql" => catalog::MYSQL_IDENTIFIER_LIMIT,

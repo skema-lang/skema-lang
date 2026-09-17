@@ -12,7 +12,8 @@ mod style;
 
 use skema_syntax::Severity;
 use skema_syntax::Span;
-use skema_syntax::legacy_ast as ast;
+use skema_syntax::ast;
+use smol_str::SmolStr;
 
 use crate::model::Model;
 use crate::namespace::{self, Namespaces};
@@ -22,19 +23,19 @@ use crate::{Diagnostic, FileId, InputFile};
 /// The shared state every rule needs: the collected facts of each file plus
 /// the namespace table. Only visible within this crate – from the outside,
 /// only [`crate::analyze`] counts.
-pub(crate) struct Ctx<'a> {
+pub(crate) struct Ctx {
     /// Index = `FileId.0 as usize`; `analyze` requires this of its callers
     /// (see the docs there).
-    pub facts: Vec<FileFacts<'a>>,
+    pub facts: Vec<FileFacts>,
     pub namespaces: Namespaces,
 }
 
-impl<'a> Ctx<'a> {
-    fn file(&self, id: FileId) -> Option<&FileFacts<'a>> {
+impl Ctx {
+    fn file(&self, id: FileId) -> Option<&FileFacts> {
         self.facts.get(id.0 as usize)
     }
 
-    fn lookup_decl(&self, owner: FileId, name: &str) -> Option<&Decl<'a>> {
+    fn lookup_decl(&self, owner: FileId, name: &str) -> Option<&Decl> {
         self.file(owner)?.declarations.get(name)
     }
 
@@ -50,21 +51,30 @@ impl<'a> Ctx<'a> {
     /// a declaration never needs the namespace step, so a `Table` sharing
     /// its name with the enclosing `Document` (or with an import alias)
     /// must still resolve to itself instead of being shadowed by it.
-    fn resolve_decl_path<'p>(
+    fn resolve_decl_path(
         &self,
         file: FileId,
-        path: &'p ast::Path,
-    ) -> Option<(FileId, &'p str, Span, &'p [ast::Ident])> {
-        let (first, rest) = path.segments.split_first()?;
-        if self.lookup_decl(file, &first.text).is_some() {
-            return Some((file, first.text.as_str(), first.span, rest));
+        path: &ast::Path,
+    ) -> Option<(FileId, SmolStr, Span, Vec<ast::Ident>)> {
+        let mut segments = path.segments();
+        let first = segments.next()?;
+        if self.lookup_decl(file, first.text()).is_none() {
+            if let Some(target) = self.namespaces.resolve_namespace(file, first.text()) {
+                let name = segments.next()?;
+                return Some((
+                    target,
+                    SmolStr::new(name.text()),
+                    name.span(),
+                    segments.collect(),
+                ));
+            }
         }
-        if let Some(target) = self.namespaces.resolve_namespace(file, &first.text) {
-            let (name, rest2) = rest.split_first()?;
-            Some((target, name.text.as_str(), name.span, rest2))
-        } else {
-            Some((file, first.text.as_str(), first.span, rest))
-        }
+        Some((
+            file,
+            SmolStr::new(first.text()),
+            first.span(),
+            segments.collect(),
+        ))
     }
 }
 
@@ -74,7 +84,7 @@ pub(crate) fn run(
     let mut diags = Vec::new();
     let mut links = Vec::new();
 
-    let facts: Vec<FileFacts<'_>> = files
+    let facts: Vec<FileFacts> = files
         .iter()
         .enumerate()
         .map(|(i, f)| {
@@ -82,18 +92,22 @@ pub(crate) fn run(
                 f.id.0 as usize, i,
                 "skema_hir::analyze requires contiguous FileIds (0..len), matching the order in `files`"
             );
-            symbols::collect_file_facts(f.id, f.ast, &f.import_targets, &mut diags)
+            symbols::collect_file_facts(
+                f.id,
+                f.ast.syntax(),
+                f.import_targets.clone(),
+                &mut diags,
+            )
         })
         .collect();
 
     let namespaces = namespace::build(&facts, &mut diags);
 
     for file in &facts {
-        let view = file.ast.syntax();
-        placement::check(file.id, &view, &mut diags);
-        keys::check(file.id, &view, &mut diags);
-        dialect::check(file.id, &view, &mut diags);
-        style::check(file.id, &view, &mut diags);
+        placement::check(file.id, &file.ast, &mut diags);
+        keys::check(file.id, &file.ast, &mut diags);
+        dialect::check(file.id, &file.ast, &mut diags);
+        style::check(file.id, &file.ast, &mut diags);
     }
 
     let project = project::check(&facts, &mut diags);
@@ -194,7 +208,7 @@ impl OracleIdentifierLength {
 /// wrong-kind-reference diagnostic in `group` and `resolve` (task 90);
 /// computed once per analysis so they all agree.
 fn dangling_ref_severity(
-    project: Option<&ProjectSettings<'_>>,
+    project: Option<&ProjectSettings>,
     diags: &mut Vec<Diagnostic>,
 ) -> Severity {
     let Some(project) = project else {
@@ -203,13 +217,13 @@ fn dangling_ref_severity(
     if project.mode != Mode::Strict {
         return Severity::Error;
     }
-    let Some(lint) = project.lint else {
+    let Some(lint) = &project.lint else {
         return Severity::Error;
     };
     let Some((word, span)) = project::read_word(lint, "danglingRef") else {
         return Severity::Error;
     };
-    match word {
+    match word.as_str() {
         "warn" => Severity::Warning,
         "error" => Severity::Error,
         other => {
@@ -223,13 +237,13 @@ fn dangling_ref_severity(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ProjectSettings<'a> {
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectSettings {
     /// The file in which the one canonical `Project` block lives.
     pub file: FileId,
     pub mode: Mode,
     pub dialect: Dialect,
-    pub lint: Option<&'a ast::Block>,
-    pub database: Option<&'a ast::Block>,
+    pub lint: Option<ast::Block>,
+    pub database: Option<ast::Block>,
     pub oracle_identifier_length: OracleIdentifierLength,
 }

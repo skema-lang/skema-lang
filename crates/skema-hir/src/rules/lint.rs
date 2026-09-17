@@ -11,7 +11,8 @@
 use std::collections::HashSet;
 
 use skema_syntax::Severity;
-use skema_syntax::legacy_ast::{self as ast, BlockKind, ValueKind};
+use skema_syntax::ast::{self, BlockKind, ValueKind};
+use smol_str::SmolStr;
 
 use super::project::read_word;
 use super::{Ctx, Mode, ProjectSettings};
@@ -19,8 +20,8 @@ use crate::model;
 use crate::{Diagnostic, FileId};
 
 pub(crate) fn check(
-    ctx: &Ctx<'_>,
-    project: Option<&ProjectSettings<'_>>,
+    ctx: &Ctx,
+    project: Option<&ProjectSettings>,
     tables: &[model::Table],
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -28,7 +29,7 @@ pub(crate) fn check(
     if project.mode != Mode::Strict {
         return;
     }
-    let Some(lint) = project.lint else { return };
+    let Some(lint) = &project.lint else { return };
 
     check_naming(
         ctx,
@@ -65,7 +66,7 @@ fn read_severity(
     diags: &mut Vec<Diagnostic>,
 ) -> Option<Severity> {
     let (word, span) = read_word(lint, key)?;
-    let severity = parse_severity(word);
+    let severity = parse_severity(&word);
     if severity.is_none() {
         diags.push(Diagnostic::error(
             project_file,
@@ -87,9 +88,9 @@ fn parse_severity(word: &str) -> Option<Severity> {
 /// The `[word]` after `key = value` in `lint`, if written – `rules::keys`
 /// already confirmed placement (`fieldNaming`/`tableNaming`/`enumNaming`
 /// only), so here it's just read and parsed.
-fn read_severity_override<'a>(lint: &'a ast::Block, key: &str) -> Option<&'a ast::Ident> {
-    lint.items.iter().find_map(|item| match &item.kind {
-        ast::ItemKind::Setting(a) if a.key.text == key => a.severity_override.as_ref(),
+fn read_severity_override(lint: &ast::Block, key: &str) -> Option<ast::Ident> {
+    lint.items().find_map(|item| match item.kind() {
+        ast::ItemKind::Setting(a) if a.key().text() == key => a.severity_override(),
         _ => None,
     })
 }
@@ -145,7 +146,7 @@ fn read_case(
     diags: &mut Vec<Diagnostic>,
 ) -> Option<(Case, Severity)> {
     let (word, span) = read_word(lint, key)?;
-    let case = parse_case(word);
+    let case = parse_case(&word);
     if case.is_none() {
         diags.push(Diagnostic::error(
             project_file,
@@ -159,13 +160,13 @@ fn read_case(
     let case = case?;
 
     let severity = match read_severity_override(lint, key) {
-        Some(ident) => match parse_severity(&ident.text) {
+        Some(ident) => match parse_severity(ident.text()) {
             Some(severity) => severity,
             None => {
                 diags.push(Diagnostic::error(
                     project_file,
-                    ident.span,
-                    format!("unknown severity `{}` – allowed: warn, error", ident.text),
+                    ident.span(),
+                    format!("unknown severity `{}` – allowed: warn, error", ident.text()),
                 ));
                 return None;
             }
@@ -176,7 +177,7 @@ fn read_case(
 }
 
 fn check_naming(
-    ctx: &Ctx<'_>,
+    ctx: &Ctx,
     project_file: FileId,
     lint: &ast::Block,
     key: &str,
@@ -187,7 +188,7 @@ fn check_naming(
         return;
     };
     for file in &ctx.facts {
-        for (&name, decl) in &file.declarations {
+        for (name, decl) in &file.declarations {
             if decl.kind == kind && !matches_case(name, case) {
                 diags.push(Diagnostic::new(
                     file.id,
@@ -201,7 +202,7 @@ fn check_naming(
 }
 
 fn check_field_naming(
-    ctx: &Ctx<'_>,
+    ctx: &Ctx,
     project_file: FileId,
     lint: &ast::Block,
     diags: &mut Vec<Diagnostic>,
@@ -214,18 +215,19 @@ fn check_field_naming(
             if !matches!(decl.kind, BlockKind::Table | BlockKind::Partial) {
                 continue;
             }
-            for item in &decl.block.items {
-                let ast::ItemKind::Field(f) = &item.kind else {
+            for item in decl.block.items() {
+                let ast::ItemKind::Field(f) = item.kind() else {
                     continue;
                 };
-                if !matches_case(&f.name.text, case) {
+                let name = f.name();
+                if !matches_case(name.text(), case) {
                     diags.push(Diagnostic::new(
                         file.id,
                         severity,
-                        f.name.span,
+                        name.span(),
                         format!(
                             "`{}` does not follow the configured `fieldNaming` (Lint)",
-                            f.name.text
+                            name.text()
                         ),
                     ));
                 }
@@ -239,7 +241,7 @@ fn check_field_naming(
 // ===========================================================================
 
 fn check_unused_imports(
-    ctx: &Ctx<'_>,
+    ctx: &Ctx,
     project_file: FileId,
     lint: &ast::Block,
     diags: &mut Vec<Diagnostic>,
@@ -249,7 +251,7 @@ fn check_unused_imports(
     };
 
     for file in &ctx.facts {
-        let used = collect_used_namespaces(file.ast);
+        let used = collect_used_namespaces(&file.ast);
         for record in &ctx.namespaces.imports[file.id.0 as usize] {
             if !used.contains(record.visible_as.as_str()) {
                 diags.push(Diagnostic::new(
@@ -270,75 +272,71 @@ fn check_unused_imports(
 /// search isn't enough for `unusedImport`, because a prefix appears in many
 /// shapes: field type, relationship target, `use`, `Group` reference, any
 /// value (even nested inside lists).
-fn collect_used_namespaces(file: &ast::SourceFile) -> HashSet<&str> {
+fn collect_used_namespaces(file: &ast::SourceFile) -> HashSet<SmolStr> {
     let mut used = HashSet::new();
-    walk_items(&file.items, &mut used);
+    walk_items(file.items(), &mut used);
     used
 }
 
-fn note_path<'a>(path: &'a ast::Path, used: &mut HashSet<&'a str>) {
-    if path.segments.len() >= 2 {
-        used.insert(path.segments[0].text.as_str());
+fn note_path(path: &ast::Path, used: &mut HashSet<SmolStr>) {
+    let mut segments = path.segments();
+    if let (Some(first), Some(_)) = (segments.next(), segments.next()) {
+        used.insert(SmolStr::new(first.text()));
     }
 }
 
-fn note_value<'a>(value: &'a ast::Value, used: &mut HashSet<&'a str>) {
-    match &value.kind {
-        ValueKind::Path(p) => note_path(p, used),
-        ValueKind::Type { path, args } => {
-            note_path(path, used);
+fn note_value(value: &ast::Value, used: &mut HashSet<SmolStr>) {
+    match value.kind() {
+        Some(ValueKind::Path(p)) => note_path(&p, used),
+        Some(ValueKind::Type { path, args }) => {
+            note_path(&path, used);
             args.iter().for_each(|a| note_value(a, used));
         }
-        ValueKind::List(items) => items.iter().for_each(|v| note_value(v, used)),
+        Some(ValueKind::List(items)) => items.iter().for_each(|v| note_value(v, used)),
         _ => {}
     }
 }
 
-fn walk_items<'a>(items: &'a [ast::Item], used: &mut HashSet<&'a str>) {
+fn note_flags(flags: impl Iterator<Item = ast::Attr>, used: &mut HashSet<SmolStr>) {
+    for flag in flags {
+        if let Some(v) = flag.value() {
+            note_value(&v, used);
+        }
+    }
+}
+
+fn walk_items(items: impl Iterator<Item = ast::Item>, used: &mut HashSet<SmolStr>) {
     for item in items {
-        match &item.kind {
-            ast::ItemKind::Use(u) => note_path(&u.target, used),
-            ast::ItemKind::Ref(r) => note_path(&r.path, used),
+        match item.kind() {
+            ast::ItemKind::Use(u) => note_path(&u.target(), used),
+            ast::ItemKind::Ref(r) => note_path(&r.path(), used),
             ast::ItemKind::Setting(a) => {
-                if let Some(v) = &a.value {
-                    note_value(v, used);
+                if let Some(v) = a.value() {
+                    note_value(&v, used);
                 }
             }
             ast::ItemKind::Block(b) => {
-                if let Some(n) = &b.name {
-                    note_path(n, used);
+                if let Some(n) = b.name() {
+                    note_path(&n, used);
                 }
-                for param in &b.params {
-                    if let Some(ty) = &param.ty {
-                        note_path(ty, used);
-                    }
+                for ty in b.params().filter_map(|param| param.ty()) {
+                    note_path(&ty, used);
                 }
-                walk_items(&b.items, used);
+                walk_items(b.items(), used);
             }
             ast::ItemKind::Field(f) => {
-                if let Some(ty) = &f.ty {
-                    match &ty.kind {
-                        ast::FieldTypeKind::Named { path, args } => {
-                            note_path(path, used);
-                            args.iter().for_each(|a| note_value(a, used));
-                        }
-                        ast::FieldTypeKind::Relation { target, .. } => note_path(target, used),
+                match f.ty().and_then(|ty| ty.kind()) {
+                    Some(ast::FieldTypeKind::Named { path, args }) => {
+                        note_path(&path, used);
+                        args.iter().for_each(|a| note_value(a, used));
                     }
+                    Some(ast::FieldTypeKind::Relation { target, .. }) => note_path(&target, used),
+                    None => {}
                 }
-                for flag in &f.flags {
-                    if let Some(v) = &flag.value {
-                        note_value(v, used);
-                    }
-                }
-                walk_items(&f.items, used);
+                note_flags(f.flags(), used);
+                walk_items(f.items(), used);
             }
-            ast::ItemKind::IndexEntry(e) => {
-                for flag in &e.flags {
-                    if let Some(v) = &flag.value {
-                        note_value(v, used);
-                    }
-                }
-            }
+            ast::ItemKind::IndexEntry(e) => note_flags(e.flags(), used),
             _ => {}
         }
     }
@@ -420,7 +418,7 @@ fn check_require_foreign_key_index(
 }
 
 fn check_require_table_note(
-    ctx: &Ctx<'_>,
+    ctx: &Ctx,
     project_file: FileId,
     lint: &ast::Block,
     diags: &mut Vec<Diagnostic>,
@@ -436,7 +434,7 @@ fn check_require_table_note(
             let has_note = decl
                 .block
                 .child(BlockKind::Meta)
-                .is_some_and(|meta| has_note_setting(&meta.items));
+                .is_some_and(|meta| has_note_setting(meta.items()));
             if has_note {
                 continue;
             }
@@ -451,7 +449,7 @@ fn check_require_table_note(
 }
 
 fn check_require_field_note(
-    ctx: &Ctx<'_>,
+    ctx: &Ctx,
     project_file: FileId,
     lint: &ast::Block,
     diags: &mut Vec<Diagnostic>,
@@ -464,20 +462,21 @@ fn check_require_field_note(
             if !matches!(decl.kind, BlockKind::Table | BlockKind::Partial) {
                 continue;
             }
-            for item in &decl.block.items {
-                let ast::ItemKind::Field(f) = &item.kind else {
+            for item in decl.block.items() {
+                let ast::ItemKind::Field(f) = item.kind() else {
                     continue;
                 };
-                if has_note_setting(&f.items) {
+                if has_note_setting(f.items()) {
                     continue;
                 }
+                let name = f.name();
                 diags.push(Diagnostic::new(
                     file.id,
                     severity,
-                    f.name.span,
+                    name.span(),
                     format!(
                         "field `{}` has no `note` (Lint.requireFieldNote)",
-                        f.name.text
+                        name.text()
                     ),
                 ));
             }
@@ -488,13 +487,13 @@ fn check_require_field_note(
 /// A `note = "…";` setting directly inside `items` – shared by
 /// `requireTableNote` (a `Meta` child's items) and `requireFieldNote` (a
 /// field's own body).
-fn has_note_setting(items: &[ast::Item]) -> bool {
-    items.iter().any(|item| {
+fn has_note_setting(mut items: impl Iterator<Item = ast::Item>) -> bool {
+    items.any(|item| {
         matches!(
-            &item.kind,
+            item.kind(),
             ast::ItemKind::Setting(a)
-                if a.key.text == "note"
-                    && matches!(a.value.as_ref().map(|v| &v.kind), Some(ValueKind::Str(_)))
+                if a.key().text() == "note"
+                    && matches!(a.value().and_then(|v| v.kind()), Some(ValueKind::Str(_)))
         )
     })
 }
