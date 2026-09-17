@@ -619,7 +619,25 @@ fn resolve_relation<'a>(
         flags,
         span,
     } = site;
-    let (table_owner, table_name, table_span, rest) = env.ctx.resolve_decl_path(owner, target)?;
+    let Some((table_owner, table_name, table_span, rest)) =
+        env.ctx.resolve_decl_path(owner, target)
+    else {
+        // A namespace with nothing after it (`customer >ns;`) – the only
+        // other `None` case, an empty path, cannot occur here.
+        let namespace = target
+            .segments
+            .first()
+            .map(|s| s.text.as_str())
+            .unwrap_or_default();
+        diags.push(Diagnostic::error(
+            owner,
+            target.span,
+            format!(
+                "a relationship target names a table and a field, not only namespace `{namespace}`"
+            ),
+        ));
+        return None;
+    };
     if rest.len() != 1 {
         diags.push(Diagnostic::error(
             owner,

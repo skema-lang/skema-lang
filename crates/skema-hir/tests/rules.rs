@@ -758,6 +758,79 @@ fn known_relation_action_values_are_accepted() {
 }
 
 #[test]
+fn relation_target_of_a_namespace_without_a_table_is_rejected() {
+    // A relation target naming only a namespace (`customer >ns;`) – the only
+    // other `None` case from `Ctx::resolve_decl_path`, an empty path, cannot
+    // occur here. This is an unconditional error, never governed by `danglingRef`.
+    let imported = "spec 1;\nDocument ns { }\nTable Customer { id uuid [pk]; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nTable Order { customer >ns; }\n";
+
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let errors: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message.contains(
+                "a relationship target names a table and a field, not only namespace `ns`",
+            )
+        })
+        .collect();
+    assert_eq!(errors.len(), 1, "{diags:#?}");
+    assert_eq!(errors[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn relation_target_of_a_namespace_without_a_table_stays_an_error_under_warn() {
+    let imported = "spec 1;\nDocument ns { }\nTable Customer { id uuid [pk]; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nimport \"./a.skema\";\nTable Order { customer >ns; }\n";
+
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let errors: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message.contains(
+                "a relationship target names a table and a field, not only namespace `ns`",
+            )
+        })
+        .collect();
+    assert_eq!(errors.len(), 1, "{diags:#?}");
+    assert_eq!(errors[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
 fn dialect_in_datatype_without_at_sign_is_rejected() {
     let src = format!(
         "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; }} Dialect postgres {{ }} }}\n"
