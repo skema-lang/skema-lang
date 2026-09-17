@@ -21,7 +21,7 @@
 
 use std::path::Path;
 
-use skema_syntax::ast::{Item, ItemKind};
+use skema_syntax::legacy_ast::{Item, ItemKind};
 
 use crate::analysis::{Analysis, display_path};
 use crate::convert;

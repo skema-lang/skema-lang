@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use skema_syntax::Severity;
 use skema_syntax::Span;
-use skema_syntax::ast::{self, BlockKind, RelationOp, ValueKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind, RelationOp, ValueKind};
 
 use super::{Ctx, Dialect, Mode, ProjectSettings};
 use crate::catalog::{

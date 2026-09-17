@@ -43,7 +43,7 @@ mod symbols;
 pub use diagnostic::{Diagnostic, Severity};
 pub use ids::FileId;
 
-use skema_syntax::ast;
+use skema_syntax::legacy_ast as ast;
 
 /// An already-read and parsed file, as handed to this crate.
 #[derive(Debug)]

@@ -40,7 +40,7 @@
 //! # Example
 //!
 //! ```
-//! use skema_syntax::{ast::BlockKind, parse};
+//! use skema_syntax::{legacy_ast::BlockKind, parse};
 //!
 //! let (file, diagnostics) = parse(r#"
 //!     spec 1;
@@ -62,11 +62,13 @@ mod diagnostic;
 mod dump;
 mod format;
 mod grammar;
+pub mod legacy_ast;
 mod lexer;
 mod parser;
 mod reorder;
 mod semantic;
 mod span;
+pub mod syntax_kind;
 mod token;
 
 pub use diagnostic::{Diagnostic, Severity};
@@ -77,9 +79,10 @@ pub use parser::Parser;
 pub use reorder::{Reordered, reorder};
 pub use semantic::{SemanticKind, classify};
 pub use span::{Span, TextSize};
+pub use syntax_kind::{SkemaLanguage, SyntaxKind, SyntaxNode, SyntaxToken};
 pub use token::{Token, TokenKind, keyword_from_str};
 
-use ast::SourceFile;
+use legacy_ast::SourceFile;
 
 /// Reads a `.skema` file. An empty diagnostic list means no syntax errors.
 ///

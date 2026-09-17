@@ -186,7 +186,7 @@ fn dialect_types() -> BTreeMap<String, Vec<String>> {
 /// Derived from `BlockKind`, so a new block keyword reaches completion
 /// without anyone updating a second list.
 fn block_keywords() -> Vec<String> {
-    use skema_syntax::ast::BlockKind::{
+    use skema_syntax::legacy_ast::BlockKind::{
         Database, Datatype, Dialect, Document, Enum, Field, Group, Index, Lint, Meta, Partial,
         Project, Style, Table,
     };

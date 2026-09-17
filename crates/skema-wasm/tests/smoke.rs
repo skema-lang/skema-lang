@@ -318,7 +318,7 @@ fn block_reference_markdown_js_returns_same_text_as_rust_api() {
     assert!(!result.is_empty(), "reference text should not be empty");
     // The result matches what skema_api returns directly
     let expected =
-        skema_api::block_reference_markdown(skema_syntax::ast::BlockKind::Table, &builtins);
+        skema_api::block_reference_markdown(skema_syntax::legacy_ast::BlockKind::Table, &builtins);
     assert_eq!(result, expected);
 }
 

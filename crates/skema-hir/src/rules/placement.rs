@@ -3,7 +3,7 @@
 //! kind (Lint belongs in Project, Index in Table/Partial, Field in
 //! Datatype/Enum, …).
 
-use skema_syntax::ast::{self, BlockKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind};
 
 use crate::{Diagnostic, FileId};
 

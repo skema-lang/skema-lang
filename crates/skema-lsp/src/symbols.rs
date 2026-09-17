@@ -10,7 +10,7 @@
 //! the `Project` block. Those are declarations, and they live in the tree.
 
 use skema_syntax::Span;
-use skema_syntax::ast::{Block, BlockKind, Item, ItemKind, Path, SourceFile};
+use skema_syntax::legacy_ast::{Block, BlockKind, Item, ItemKind, Path, SourceFile};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeclKind {
@@ -141,8 +141,8 @@ fn ident_of(path: Option<&Path>) -> Option<(String, Span)> {
         .or_else(|| Some((path.to_dotted(), path.span)))
 }
 
-fn type_text(ty: &skema_syntax::ast::FieldType) -> String {
-    use skema_syntax::ast::FieldTypeKind::{Named, Relation};
+fn type_text(ty: &skema_syntax::legacy_ast::FieldType) -> String {
+    use skema_syntax::legacy_ast::FieldTypeKind::{Named, Relation};
     match &ty.kind {
         Named { path, args } if args.is_empty() => path.to_dotted(),
         Named { path, args } => format!(
@@ -172,7 +172,7 @@ fn params_text(block: &Block) -> String {
     )
 }
 
-fn column_list(entry: &skema_syntax::ast::IndexEntry) -> String {
+fn column_list(entry: &skema_syntax::legacy_ast::IndexEntry) -> String {
     entry
         .columns
         .iter()

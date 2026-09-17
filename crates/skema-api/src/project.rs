@@ -209,7 +209,7 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
 struct ParsedFile<'a> {
     path: String,
     source: &'a str,
-    ast: skema_syntax::ast::SourceFile,
+    ast: skema_syntax::legacy_ast::SourceFile,
     syntax_diagnostics: Vec<skema_syntax::Diagnostic>,
 }
 

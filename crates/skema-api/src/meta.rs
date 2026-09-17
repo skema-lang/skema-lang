@@ -17,7 +17,7 @@
 //! load should not cost N parses.
 
 use serde::Serialize;
-use skema_syntax::ast::{self, BlockKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind};
 #[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 

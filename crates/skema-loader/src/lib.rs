@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 use std::{fmt, io};
 
 use skema_hir::FileId;
-use skema_syntax::ast::SourceFile;
+use skema_syntax::legacy_ast::SourceFile;
 
 #[derive(Debug)]
 pub struct LoadedFile {

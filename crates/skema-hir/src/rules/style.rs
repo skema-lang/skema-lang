@@ -1,7 +1,7 @@
 //! `Style` block property format validation: unquoted keys must be camelCase,
 //! values must be strings.
 
-use skema_syntax::ast::{self, BlockKind, ValueKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind, ValueKind};
 
 use super::lint::{Case, matches_case};
 use crate::{Diagnostic, FileId};

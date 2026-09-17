@@ -12,7 +12,7 @@ mod style;
 
 use skema_syntax::Severity;
 use skema_syntax::Span;
-use skema_syntax::ast;
+use skema_syntax::legacy_ast as ast;
 
 use crate::model::Model;
 use crate::namespace::{self, Namespaces};
@@ -91,7 +91,7 @@ pub(crate) fn run(
     for file in &facts {
         placement::check(file.id, file.ast, &mut diags);
         keys::check(file.id, file.ast, &mut diags);
-        dialect::check(file.id, file.ast, &mut diags);
+        dialect::check(file.id, &file.ast.syntax(), &mut diags);
         style::check(file.id, file.ast, &mut diags);
     }
 

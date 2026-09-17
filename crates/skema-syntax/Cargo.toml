@@ -12,9 +12,8 @@ license.workspace = true
 # traits/codegen) and is needed for the JSON serialization of `Span` in
 # diagnostics (`skema-hir`, `skema-cli --json`).
 serde = { version = "1", features = ["derive"] }
-
-# Conceivable later additions:
-#   rowan   – if we switch to a lossless syntax tree
+# Lossless syntax tree (task 66 spike): pure data structures, WASM-safe.
+rowan = "0.16"
 
 [lints]
 workspace = true

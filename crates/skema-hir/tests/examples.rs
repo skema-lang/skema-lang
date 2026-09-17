@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use skema_hir::{Diagnostic, FileId, InputFile, Severity, analyze};
-use skema_syntax::ast::SourceFile;
+use skema_syntax::legacy_ast::SourceFile;
 
 fn workspace_root() -> PathBuf {
     // CARGO_MANIFEST_DIR = crates/skema-hir

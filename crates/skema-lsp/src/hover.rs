@@ -17,7 +17,7 @@ use skema_api::{
     ExportedField, ExportedFlag, ExportedModel, ExportedTable, FlagValue, RelationKind, Span,
     block_reference_markdown, flag_reference,
 };
-use skema_syntax::ast::{Attr, BlockKind, Item, ItemKind};
+use skema_syntax::legacy_ast::{Attr, BlockKind, Item, ItemKind};
 
 use crate::analysis::Analysis;
 use crate::convert;

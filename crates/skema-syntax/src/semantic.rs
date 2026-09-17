@@ -18,7 +18,7 @@
 //! not labeling it.
 
 use crate::Span;
-use crate::ast::*;
+use crate::legacy_ast::*;
 
 /// A role an identifier-ish span plays in the source, independent of what
 /// the lexer alone can determine from the characters.

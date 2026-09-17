@@ -2,7 +2,7 @@
 //! (`docs/02`), and the Oracle-only `identifierLength` setting (`docs/11`).
 
 use skema_syntax::Span;
-use skema_syntax::ast::{self, BlockKind, ValueKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind, ValueKind};
 
 use super::{Dialect, Mode, OracleIdentifierLength, ProjectSettings};
 use crate::catalog::{DIALECT_ENGINES, IDENTIFIER_LENGTH_VALUES};

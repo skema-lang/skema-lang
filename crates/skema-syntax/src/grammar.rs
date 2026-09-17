@@ -44,20 +44,24 @@
 //! field named `Index` is read wrong; the payoff is that `Table Group { … }`
 //! stays writable, and in an ERP model that is an ordinary table name.
 
-use crate::ast::*;
+use crate::legacy_ast::*;
 use crate::parser::Parser;
 use crate::span::Span;
+use crate::syntax_kind::SyntaxKind as S;
 use crate::token::Token;
 use crate::token::TokenKind as T;
 
 impl Parser<'_> {
     /// Entry point: reads a whole file.
     pub fn parse_source_file(&mut self) -> SourceFile {
+        self.start_root();
         let mut items = Vec::new();
         self.repeat_until(T::Eof, |p| items.push(p.parse_item()));
+        let span = Span::new(0, self.prev_span().end);
         SourceFile {
-            span: Span::new(0, self.prev_span().end),
+            span,
             items,
+            green: self.finish_root(),
         }
     }
 
@@ -67,21 +71,25 @@ impl Parser<'_> {
     /// appear inside `Project` is a rule about meaning and is checked
     /// later, not here.
     fn parse_body(&mut self) -> Vec<Item> {
-        let mut items = Vec::new();
-        if !self.expect(T::LBrace) {
-            return items;
-        }
-        self.repeat_until(T::RBrace, |p| items.push(p.parse_item()));
-        self.expect(T::RBrace);
-        items
+        self.in_node(S::Body, |p| {
+            let mut items = Vec::new();
+            if !p.expect(T::LBrace) {
+                return items;
+            }
+            p.repeat_until(T::RBrace, |p| items.push(p.parse_item()));
+            p.expect(T::RBrace);
+            items
+        })
     }
 
     // -- Statements -------------------------------------------------------
 
     /// A single statement, including its span.
     fn parse_item(&mut self) -> Item {
+        let checkpoint = self.start_item();
         let start = self.current().span;
         let kind = self.parse_item_kind();
+        self.finish_item(checkpoint, item_syntax_kind(&kind));
         Item {
             kind,
             span: start.cover(self.prev_span()),
@@ -205,6 +213,10 @@ impl Parser<'_> {
     /// bare word, no comma (task 67 gives it meaning; here it's grammar
     /// only, legal after any setting in any block, `docs/13`).
     fn parse_severity_override(&mut self) -> Option<Ident> {
+        self.in_node(S::SeverityOverride, Self::parse_severity_override_inner)
+    }
+
+    fn parse_severity_override_inner(&mut self) -> Option<Ident> {
         let start = self.current().span;
         self.bump(); // `[`
         if self.at(T::Ident) && self.nth(1) == T::RBracket {
@@ -364,6 +376,13 @@ impl Parser<'_> {
 
     /// What's allowed to follow a field name — or nothing (`cancelled;`).
     fn parse_field_type(&mut self) -> Option<FieldType> {
+        if !self.current().kind.is_relation_op() && !self.at(T::Ident) {
+            return None;
+        }
+        self.in_node(S::FieldType, Self::parse_field_type_inner)
+    }
+
+    fn parse_field_type_inner(&mut self) -> Option<FieldType> {
         let start = self.current().span;
 
         // `customer >Customer.id`
@@ -384,7 +403,9 @@ impl Parser<'_> {
         if self.at(T::Ident) {
             let path = self.parse_path()?;
             let args = if self.at(T::LParen) {
-                self.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_value())
+                self.in_node(S::Args, |p| {
+                    p.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_value())
+                })
             } else {
                 Vec::new()
             };
@@ -399,23 +420,36 @@ impl Parser<'_> {
 
     /// `[pk, required, default=0]`
     fn parse_flags(&mut self) -> Vec<Attr> {
-        self.delimited_list(T::LBracket, T::RBracket, T::Comma, |p| p.parse_attr())
+        self.in_node(S::Flags, |p| {
+            p.delimited_list(T::LBracket, T::RBracket, T::Comma, |p| p.parse_attr())
+        })
     }
 
     /// `(a, b)` — for `Index` columns. `Datatype` parameters additionally
     /// have a type and are therefore read by [`Self::parse_params`].
     fn parse_ident_list(&mut self) -> Vec<Ident> {
-        self.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.ident())
+        self.in_node(S::Columns, |p| {
+            p.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.ident())
+        })
     }
 
     /// `(precision int, scale int)` — the parameter list of a `Datatype`.
     fn parse_params(&mut self) -> Vec<Param> {
-        self.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_param())
+        self.in_node(S::Params, |p| {
+            p.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_param())
+        })
     }
 
     /// A single parameter: "declared like a field — name, then type"
     /// (`docs/06`).
     fn parse_param(&mut self) -> Option<Param> {
+        if !self.at(T::Ident) {
+            return self.ident().and(None);
+        }
+        self.in_node(S::Param, Self::parse_param_inner)
+    }
+
+    fn parse_param_inner(&mut self) -> Option<Param> {
         let name = self.ident()?;
         let ty = if self.at(T::Ident) {
             self.parse_path()
@@ -431,6 +465,13 @@ impl Parser<'_> {
 
     /// `key` or `key = value`.
     fn parse_attr(&mut self) -> Option<Attr> {
+        if !matches!(self.current().kind, T::Ident | T::Str) {
+            return self.parse_key().and(None);
+        }
+        self.in_node(S::Attr, Self::parse_attr_inner)
+    }
+
+    fn parse_attr_inner(&mut self) -> Option<Attr> {
         let key = self.parse_key()?;
         let start = key.span;
         let value = if self.eat_assign() {
@@ -490,6 +531,20 @@ impl Parser<'_> {
 
     /// Any value in the language.
     fn parse_value(&mut self) -> Option<Value> {
+        let starts_value = match self.current().kind {
+            T::Str | T::Raw | T::Int | T::Float | T::LBracket | T::Ident => true,
+            T::Minus => matches!(self.nth(1), T::Int | T::Float),
+            _ => false,
+        };
+        if !starts_value {
+            let found = self.current().kind.describe();
+            self.error_here(format!("expected a value, found {found}"));
+            return None;
+        }
+        self.in_node(S::Value, Self::parse_value_inner)
+    }
+
+    fn parse_value_inner(&mut self) -> Option<Value> {
         let start = self.current().span;
 
         let kind = match self.current().kind {
@@ -523,8 +578,9 @@ impl Parser<'_> {
                 }
             }
             T::LBracket => {
-                let values =
-                    self.delimited_list(T::LBracket, T::RBracket, T::Comma, |p| p.parse_value());
+                let values = self.in_node(S::List, |p| {
+                    p.delimited_list(T::LBracket, T::RBracket, T::Comma, |p| p.parse_value())
+                });
                 ValueKind::List(values)
             }
             // `shop.OrderStatus.paid` or, with arguments, `decimal(10)`
@@ -533,8 +589,9 @@ impl Parser<'_> {
             T::Ident => {
                 let path = self.parse_path()?;
                 if self.at(T::LParen) {
-                    let args =
-                        self.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_value());
+                    let args = self.in_node(S::Args, |p| {
+                        p.delimited_list(T::LParen, T::RParen, T::Comma, |p| p.parse_value())
+                    });
                     ValueKind::Type { path, args }
                 } else {
                     ValueKind::Path(path)
@@ -555,6 +612,13 @@ impl Parser<'_> {
 
     /// `shop.OrderStatus.paid`
     fn parse_path(&mut self) -> Option<Path> {
+        if !self.at(T::Ident) {
+            return self.ident().and(None);
+        }
+        self.in_node(S::Path, Self::parse_path_inner)
+    }
+
+    fn parse_path_inner(&mut self) -> Option<Path> {
         let first = self.ident()?;
         let start = first.span;
         let mut segments = vec![first];
@@ -593,11 +657,25 @@ impl Parser<'_> {
     }
 }
 
+fn item_syntax_kind(kind: &ItemKind) -> S {
+    match kind {
+        ItemKind::Spec(_) => S::Spec,
+        ItemKind::Import(_) => S::Import,
+        ItemKind::Use(_) => S::Use,
+        ItemKind::Setting(_) => S::Setting,
+        ItemKind::Field(_) => S::Field,
+        ItemKind::Block(_) => S::Block,
+        ItemKind::Ref(_) => S::Ref,
+        ItemKind::IndexEntry(_) => S::IndexEntry,
+        ItemKind::Error => S::Error,
+    }
+}
+
 /// Strips the quotes and resolves escape sequences.
 ///
 /// Unknown escapes (`\q`) are left as-is instead of producing an error —
 /// in a configuration language, that's the friendlier interpretation.
-fn unquote(raw: &str) -> String {
+pub(crate) fn unquote(raw: &str) -> String {
     // Two steps instead of a chain, so an unterminated string (`"oops`)
     // still yields something sensible.
     let inner = raw.strip_prefix('"').unwrap_or(raw);

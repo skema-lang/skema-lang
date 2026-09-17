@@ -1,7 +1,7 @@
 //! Print the AST as indented text — readable where `{:#?}` is not.
 //! See `examples/dump_ast.rs`.
 
-use crate::ast::*;
+use crate::legacy_ast::*;
 use std::fmt::Write as _;
 
 /// The whole tree as readable text.

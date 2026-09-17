@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use skema_syntax::Severity;
-use skema_syntax::ast;
+use skema_syntax::legacy_ast as ast;
 
 use super::Ctx;
 use crate::model;

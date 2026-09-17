@@ -12,7 +12,7 @@
 //! context-independent half is checked: a quoted key without `x-` is wrong
 //! either way.
 
-use skema_syntax::ast::{self, BlockKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind};
 
 use crate::catalog::{
     COLUMN_BODY_KEYS, DATABASE_KEYS, ENTRY_BODY_KEYS, FIELD_BLOCK_KEYS, FLAG_KEYS, INDEX_FLAG_KEYS,
@@ -47,7 +47,7 @@ fn known_settings_for(
 
 /// Known keys for the body of an [`ast::Field`] node – depending on whether
 /// it's a table column, a `Datatype` parameter, or an `Enum` entry (all
-/// three share the node type, see `skema_syntax::ast`).
+/// three share the node type, see `skema_syntax::legacy_ast`).
 fn known_field_body_for(enclosing: BlockKind) -> Option<&'static [&'static str]> {
     match enclosing {
         BlockKind::Datatype => Some(PARAM_BODY_KEYS),

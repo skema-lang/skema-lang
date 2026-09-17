@@ -6,7 +6,7 @@
 //! items. That's a useful side effect: if something isn't reachable here,
 //! a `pub use` is missing in `lib.rs`.
 
-use skema_syntax::ast::{BlockKind, FieldTypeKind, ItemKind, RelationOp};
+use skema_syntax::legacy_ast::{BlockKind, FieldTypeKind, ItemKind, RelationOp};
 use skema_syntax::{parse, tokenize};
 
 /// `include_str!` reads the file at **compile time** and embeds it as a

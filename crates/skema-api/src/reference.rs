@@ -9,7 +9,7 @@
 //! condensed from `docs/src/13-reference.md` ("Block quick reference",
 //! "Flag reference").
 
-use skema_syntax::ast::BlockKind;
+use skema_syntax::legacy_ast::BlockKind;
 
 use crate::Builtins;
 

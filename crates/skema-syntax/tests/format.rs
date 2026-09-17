@@ -5,7 +5,7 @@
 //! `src/format.rs` itself; what belongs here is the invariants that only
 //! mean something over a large, varied body of real text.
 
-use skema_syntax::ast::{BlockKind, Path};
+use skema_syntax::legacy_ast::{BlockKind, Path};
 use skema_syntax::{TokenKind, format, parse, reorder, tokenize};
 
 const EXAMPLE: &str = include_str!("../../../examples/myexample.skema");

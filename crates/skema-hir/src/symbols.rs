@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use skema_syntax::Span;
-use skema_syntax::ast::{self, BlockKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind};
 
 use crate::{Diagnostic, FileId};
 

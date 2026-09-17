@@ -11,7 +11,7 @@
 
 use lsp_types::{FoldingRange, FoldingRangeKind};
 use skema_syntax::Span;
-use skema_syntax::ast::{Item, ItemKind, SourceFile};
+use skema_syntax::legacy_ast::{Item, ItemKind, SourceFile};
 
 use crate::convert;
 

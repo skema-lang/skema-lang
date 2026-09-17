@@ -12,26 +12,29 @@ use crate::catalog::DIALECT_ENGINES;
 use crate::{Diagnostic, FileId};
 
 pub(crate) fn check(id: FileId, file: &ast::SourceFile, diags: &mut Vec<Diagnostic>) {
-    walk(id, &file.items, diags);
+    walk(id, file.items(), diags);
 }
 
-fn walk(id: FileId, items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+fn walk(id: FileId, items: impl Iterator<Item = ast::Item>, diags: &mut Vec<Diagnostic>) {
     for item in items {
-        let ast::ItemKind::Block(b) = &item.kind else {
+        let ast::ItemKind::Block(b) = item.kind() else {
             continue;
         };
-        if b.kind == BlockKind::Dialect {
-            check_selector(id, b, diags);
+        if b.kind() == BlockKind::Dialect {
+            check_selector(id, &b, diags);
         }
-        walk(id, &b.items, diags);
+        walk(id, b.items(), diags);
     }
 }
 
 fn check_selector(id: FileId, block: &ast::Block, diags: &mut Vec<Diagnostic>) {
-    let Some(selector) = &block.selector else {
+    let Some(selector) = block.selector() else {
+        let Some(keyword) = block.keyword() else {
+            return;
+        };
         diags.push(Diagnostic::error(
             id,
-            block.keyword.span,
+            keyword.span(),
             format!(
                 "`Dialect` needs an engine name, e.g. `Dialect @postgres {{ … }}` – allowed: {}",
                 DIALECT_ENGINES.join(", ")
@@ -39,13 +42,13 @@ fn check_selector(id: FileId, block: &ast::Block, diags: &mut Vec<Diagnostic>) {
         ));
         return;
     };
-    if !DIALECT_ENGINES.contains(&selector.text.as_str()) {
+    if !DIALECT_ENGINES.contains(&selector.text()) {
         diags.push(Diagnostic::error(
             id,
-            selector.span,
+            selector.span(),
             format!(
                 "unknown dialect engine `{}` – allowed: {}",
-                selector.text,
+                selector.text(),
                 DIALECT_ENGINES.join(", ")
             ),
         ));

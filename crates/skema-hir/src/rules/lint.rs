@@ -11,7 +11,7 @@
 use std::collections::HashSet;
 
 use skema_syntax::Severity;
-use skema_syntax::ast::{self, BlockKind, ValueKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind, ValueKind};
 
 use super::project::read_word;
 use super::{Ctx, Mode, ProjectSettings};

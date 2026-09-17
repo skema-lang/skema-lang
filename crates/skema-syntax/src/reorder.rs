@@ -19,7 +19,7 @@
 //! conceptually untouched (the caller never even sees a rewritten string)
 //! rather than take a guess.
 
-use crate::ast::{BlockKind, ItemKind, Path};
+use crate::legacy_ast::{BlockKind, ItemKind, Path};
 use crate::token::{Token, TokenKind};
 use crate::{Span, parse};
 

@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 use skema_api::{ExportedField, FlagValue, RelationKind};
-use skema_syntax::ast::{self, BlockKind, ItemKind};
+use skema_syntax::legacy_ast::{self as ast, BlockKind, ItemKind};
 
 use crate::analysis::{Analysis, display_path};
 use crate::convert;

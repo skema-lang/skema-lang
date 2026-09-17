@@ -18,7 +18,7 @@ use lsp_types::{CompletionItem, CompletionItemKind, Documentation, MarkupContent
 use skema_api::{
     Builtins, ContextKind, CursorContext, block_reference_markdown, cursor_context, flag_reference,
 };
-use skema_syntax::ast::BlockKind;
+use skema_syntax::legacy_ast::BlockKind;
 
 use crate::analysis::Analysis;
 use crate::symbols::{self, DeclKind};

@@ -1,4 +1,5 @@
-//! The abstract syntax tree (AST) of the `.skema` language.
+//! The syntax tree of the `.skema` language: typed views over a lossless
+//! `rowan` tree.
 //!
 //! # Few nodes, lots of reuse
 //!
@@ -14,169 +15,332 @@
 //! | [`Value`] | every value, wherever it appears |
 //! | [`Ref`] | `Table shop.User;` inside a `Group` |
 //!
+//! # Views, not data
+//!
+//! Every type here is a handle on a [`SyntaxNode`] or [`SyntaxToken`]; the
+//! tree underneath keeps every token, whitespace and comments included, so
+//! `file.syntax().to_string()` is the source text. Accessors return
+//! `Option` where the parser may have left a part out, and a node's
+//! [`AstNode::span`] covers its significant tokens only — never the
+//! comments attached to it.
+//!
 //! # Form, not meaning
 //!
-//! The AST allows an `Index` block inside an `Enum`, or a named `Project`.
+//! The tree allows an `Index` block inside an `Enum`, or a named `Project`.
 //! Deliberately: "`Lint` may only appear inside `Project`" is then a clear
 //! message from `skema-hir` instead of a syntax error that drags down the
-//! rest of the file. The tree stays complete, so completion and
-//! go-to-definition keep working, and one body parser serves all blocks.
+//! rest of the file.
 
-use crate::{Span, TextSize};
+use rowan::{GreenNode, TextRange};
+
+use crate::Span;
+use crate::TextSize;
+use crate::grammar::unquote;
+use crate::syntax_kind::{SyntaxKind, SyntaxNode, SyntaxToken};
+
+// ===========================================================================
+// Plumbing
+// ===========================================================================
+
+pub trait AstNode: Sized {
+    fn cast(node: SyntaxNode) -> Option<Self>;
+    fn syntax(&self) -> &SyntaxNode;
+
+    /// First to last significant token — the span the owned AST recorded.
+    fn span(&self) -> Span {
+        significant_span(self.syntax())
+    }
+}
+
+macro_rules! ast_node {
+    ($name:ident, $kind:ident) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        pub struct $name(SyntaxNode);
+
+        impl AstNode for $name {
+            fn cast(node: SyntaxNode) -> Option<Self> {
+                (node.kind() == SyntaxKind::$kind).then_some(Self(node))
+            }
+
+            fn syntax(&self) -> &SyntaxNode {
+                &self.0
+            }
+        }
+    };
+}
+
+fn to_span(range: TextRange) -> Span {
+    Span::new(range.start().into(), range.end().into())
+}
+
+fn significant_span(node: &SyntaxNode) -> Span {
+    let mut tokens = node
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .filter(|token| !token.kind().is_trivia());
+    let Some(first) = tokens.next() else {
+        return Span::empty(node.text_range().start().into());
+    };
+    let first = to_span(first.text_range());
+    match tokens.last() {
+        Some(last) => first.cover(to_span(last.text_range())),
+        None => first,
+    }
+}
+
+fn child<N: AstNode>(parent: &SyntaxNode) -> Option<N> {
+    parent.children().find_map(N::cast)
+}
+
+fn children<N: AstNode>(parent: &SyntaxNode) -> impl Iterator<Item = N> + use<N> {
+    parent.children().filter_map(N::cast)
+}
+
+/// Direct significant tokens, in order.
+fn tokens(parent: &SyntaxNode) -> impl Iterator<Item = SyntaxToken> + use<> {
+    parent
+        .children_with_tokens()
+        .filter_map(|element| element.into_token())
+        .filter(|token| !token.kind().is_trivia())
+}
+
+fn token(parent: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxToken> {
+    tokens(parent).find(|token| token.kind() == kind)
+}
+
+/// The token directly after the first `after`, if it is a `kind`.
+fn token_after(parent: &SyntaxNode, after: SyntaxKind, kind: SyntaxKind) -> Option<SyntaxToken> {
+    let mut tokens = tokens(parent).skip_while(|token| token.kind() != after);
+    tokens.next()?;
+    tokens.next().filter(|token| token.kind() == kind)
+}
+
+fn body_items(parent: &SyntaxNode) -> impl Iterator<Item = Item> + use<> {
+    child::<Body>(parent)
+        .into_iter()
+        .flat_map(|body| children::<Item>(&body.0))
+}
 
 // ===========================================================================
 // Building blocks
 // ===========================================================================
 
 /// A name in the source text.
-///
-/// The text is held **by value**, unlike in [`crate::Token`]: a `&'a str`
-/// would tie the tree to the source buffer, and a language server keeps the
-/// tree precisely when that buffer has already changed. Swappable for an
-/// interned type (`SmolStr`) later without touching the rest.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ident {
-    pub text: String,
-    pub span: Span,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Ident(SyntaxToken);
+
+impl Ident {
+    fn cast(token: SyntaxToken) -> Option<Self> {
+        (token.kind() == SyntaxKind::Ident).then_some(Self(token))
+    }
+
+    pub fn text(&self) -> &str {
+        self.0.text()
+    }
+
+    pub fn span(&self) -> Span {
+        to_span(self.0.text_range())
+    }
+
+    pub fn syntax(&self) -> &SyntaxToken {
+        &self.0
+    }
 }
 
-/// A dot-separated name: `email`, `shop.OrderStatus`, `shop.Order.id`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Path {
-    pub segments: Vec<Ident>,
-    pub span: Span,
-}
+ast_node!(Path, Path);
 
 impl Path {
+    pub fn segments(&self) -> impl Iterator<Item = Ident> + use<> {
+        tokens(&self.0).filter_map(Ident::cast)
+    }
+
     /// The name, if it is **not** qualified.
-    ///
-    /// Declarations (`Table Customer`) need a plain name, references
-    /// (`Table shop.User`) may be qualified. One parser function reads both;
-    /// the distinction is made here.
-    pub fn as_ident(&self) -> Option<&Ident> {
-        match self.segments.as_slice() {
-            [only] => Some(only),
-            _ => None,
-        }
+    pub fn as_ident(&self) -> Option<Ident> {
+        let mut segments = self.segments();
+        let only = segments.next()?;
+        segments.next().is_none().then_some(only)
     }
 
     /// `shop.Order.id` — for error messages and debug output.
     pub fn to_dotted(&self) -> String {
-        self.segments
-            .iter()
-            .map(|s| s.text.as_str())
+        self.segments()
+            .map(|segment| segment.text().to_owned())
             .collect::<Vec<_>>()
             .join(".")
     }
 }
 
-/// The key of an assignment.
-///
-/// `quoted` distinguishes the two forms from `docs/01`, "Custom keys":
-///
-/// ```text
-/// author   = "anna";       # known key, unquoted
-/// "x-jira" = "SHOP-412";   # custom key, quoted and x- prefixed
-/// ```
-///
-/// The parser records what was written; whether `athor` is a typo is the
-/// checking phase's call.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Key {
-    pub text: String,
-    pub quoted: bool,
-    pub span: Span,
+/// The key of an assignment: `author` or the quoted custom form `"x-jira"`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Key(SyntaxToken);
+
+impl Key {
+    fn cast(token: SyntaxToken) -> Option<Self> {
+        matches!(token.kind(), SyntaxKind::Ident | SyntaxKind::Str).then_some(Self(token))
+    }
+
+    pub fn text(&self) -> String {
+        if self.quoted() {
+            unquote(self.0.text())
+        } else {
+            self.0.text().to_owned()
+        }
+    }
+
+    pub fn quoted(&self) -> bool {
+        self.0.kind() == SyntaxKind::Str
+    }
+
+    pub fn span(&self) -> Span {
+        to_span(self.0.text_range())
+    }
 }
 
-/// A value — the same type everywhere in the language.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Value {
-    pub kind: ValueKind,
-    pub span: Span,
-}
+ast_node!(Value, Value);
 
 impl Value {
+    /// `None` only for a node the parser could not fill.
+    pub fn kind(&self) -> Option<ValueKind> {
+        let first = self
+            .0
+            .children_with_tokens()
+            .find(|element| !element.kind().is_trivia())?;
+        let first = match first {
+            rowan::NodeOrToken::Node(node) => return node_value_kind(node),
+            rowan::NodeOrToken::Token(token) => token,
+        };
+        Some(match first.kind() {
+            SyntaxKind::Str => ValueKind::Str(unquote(first.text())),
+            SyntaxKind::Raw => {
+                let text = first.text();
+                ValueKind::Raw(
+                    text.get(1..text.len().saturating_sub(1))
+                        .unwrap_or_default()
+                        .to_owned(),
+                )
+            }
+            SyntaxKind::Int => ValueKind::Int(parse_int(first.text()).unwrap_or(0)),
+            SyntaxKind::Float => ValueKind::Float(parse_float(first.text())),
+            SyntaxKind::Minus => {
+                let number = tokens(&self.0).nth(1)?;
+                match number.kind() {
+                    SyntaxKind::Int => ValueKind::Int(-parse_int(number.text()).unwrap_or(0)),
+                    _ => ValueKind::Float(-parse_float(number.text())),
+                }
+            }
+            _ => return None,
+        })
+    }
+
     /// The value as plain text: a string without its quotes, a raw
     /// expression without its backticks, a list comma-joined.
-    ///
-    /// Not `dump::value`, which keeps quotes and backticks so a debug dump
-    /// stays unambiguous. This is the content form, used by the model export
-    /// (`skema-hir`) and by `Meta` readers (`skema-wasm`) alike.
     pub fn to_text(&self) -> String {
-        match &self.kind {
-            ValueKind::Path(p) => p.to_dotted(),
-            ValueKind::Str(s) => s.clone(),
-            ValueKind::Int(n) => n.to_string(),
-            ValueKind::Float(f) => f.to_string(),
-            ValueKind::Raw(r) => r.clone(),
-            ValueKind::List(items) => items
-                .iter()
-                .map(Value::to_text)
-                .collect::<Vec<_>>()
-                .join(", "),
-            ValueKind::Type { path, args } => format!(
-                "{}({})",
-                path.to_dotted(),
-                args.iter()
-                    .map(Value::to_text)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+        match self.kind() {
+            None => String::new(),
+            Some(ValueKind::Path(p)) => p.to_dotted(),
+            Some(ValueKind::Str(s) | ValueKind::Raw(s)) => s,
+            Some(ValueKind::Int(n)) => n.to_string(),
+            Some(ValueKind::Float(f)) => f.to_string(),
+            Some(ValueKind::List(items)) => join_texts(&items),
+            Some(ValueKind::Type { path, args }) => {
+                format!("{}({})", path.to_dotted(), join_texts(&args))
+            }
         }
     }
 }
 
+fn join_texts(values: &[Value]) -> String {
+    values
+        .iter()
+        .map(Value::to_text)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn node_value_kind(node: SyntaxNode) -> Option<ValueKind> {
+    match node.kind() {
+        SyntaxKind::List => Some(ValueKind::List(values(&node))),
+        SyntaxKind::Path => {
+            let parent = node.parent()?;
+            let path = Path(node);
+            Some(match child::<Args>(&parent) {
+                Some(args) => ValueKind::Type {
+                    path,
+                    args: values(&args.0),
+                },
+                None => ValueKind::Path(path),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The filled values among a node's children.
+fn values(parent: &SyntaxNode) -> Vec<Value> {
+    children::<Value>(parent)
+        .filter(|value| value.kind().is_some())
+        .collect()
+}
+
+pub(crate) fn parse_int(text: &str) -> Option<i64> {
+    text.replace('_', "").parse().ok()
+}
+
+fn parse_float(text: &str) -> f64 {
+    text.replace('_', "").parse().unwrap_or(0.0)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueKind {
-    /// `draft`, `CASCADE`, `shop.OrderStatus.paid`
-    ///
-    /// Whether `draft` is an enum value, a mode or a typo is name
-    /// resolution's call, not the parser's.
     Path(Path),
     Str(String),
     Int(i64),
     Float(f64),
-    /// Content between backticks, **without** the backticks. Passed through
-    /// to the target database unchanged.
     Raw(String),
-    /// `[highlight, important]`
     List(Vec<Value>),
-    /// `decimal(10)` — a type with arguments, used as a value.
-    ///
-    /// One place only: `type = decimal(10);` in a `Datatype`'s `Field`
-    /// block, where a type layers on another (`docs/06`). Structurally
-    /// [`FieldTypeKind::Named`], read as a value instead of a field type.
-    Type {
-        path: Path,
-        args: Vec<Value>,
-    },
+    Type { path: Path, args: Vec<Value> },
 }
 
-/// An assignment — in `{}` as well as in `[]`.
-///
-/// The language separates what the two *mean* (`[]` produces DDL, `{}`
-/// documentation — `docs/01`, "Brackets and braces"), but their *shape* is
-/// identical: key, optional `=`, value. One type, one parser function.
-///
-/// ```text
-/// mode = draft;          Attr { key: "mode",     value: Some(draft) }
-/// [pk]                   Attr { key: "pk",       value: None }
-/// [default=`now()`]      Attr { key: "default",  value: Some(Raw) }
-/// ```
-///
-/// `value: None` only makes sense in `[]`; in `{}` the checking phase
-/// reports it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Attr {
-    pub key: Key,
-    pub value: Option<Value>,
-    /// `key = value [error]` — a per-setting severity override. Set only
-    /// when this `Attr` came from a plain setting (`parse_setting`); a
-    /// field's `[flags]`, an index entry's `[flags]`, and a `Datatype`
-    /// parameter always leave it `None`, since a bracket already means
-    /// something else there.
-    pub severity_override: Option<Ident>,
-    pub span: Span,
+ast_node!(Attr, Attr);
+
+impl Attr {
+    pub fn key(&self) -> Option<Key> {
+        tokens(&self.0).next().and_then(Key::cast)
+    }
+
+    pub fn value(&self) -> Option<Value> {
+        children::<Value>(&self.0).find(|value| value.kind().is_some())
+    }
+
+    /// `[error]` after a setting; `None` in `[flags]` and when malformed.
+    pub fn severity_override(&self) -> Option<Ident> {
+        let setting = self
+            .0
+            .parent()
+            .filter(|p| p.kind() == SyntaxKind::Setting)?;
+        let bracket = setting
+            .children()
+            .find(|node| node.kind() == SyntaxKind::SeverityOverride)?;
+        let significant: Vec<_> = tokens(&bracket).collect();
+        match significant.as_slice() {
+            [open, word, close]
+                if open.kind() == SyntaxKind::LBracket && close.kind() == SyntaxKind::RBracket =>
+            {
+                Ident::cast(word.clone())
+            }
+            _ => None,
+        }
+    }
+}
+
+ast_node!(Body, Body);
+ast_node!(Args, Args);
+ast_node!(Flags, Flags);
+
+fn flags(parent: &SyntaxNode) -> impl Iterator<Item = Attr> + use<> {
+    child::<Flags>(parent)
+        .into_iter()
+        .flat_map(|flags| children::<Attr>(&flags.0))
 }
 
 // ===========================================================================
@@ -252,123 +416,143 @@ impl BlockKind {
     }
 }
 
-/// A block with a `{ … }` body.
-///
-/// Covers every level: `items` holds [`Item`]s, which may be `Block`s again.
-///
-/// ```text
-/// Table Customer                    { … }   name = Customer
-/// Project                           { … }   name = None
-/// Style @table                      { … }   selector = table
-/// Datatype decimal(precision int, scale int) { … }
-///                                            name = decimal
-///                                            params = [precision: int, scale: int]
-/// ```
-#[derive(Debug, Clone, PartialEq)]
-pub struct Block {
-    /// The word as written — even if it's unknown (`postgres`).
-    pub keyword: Ident,
-    pub kind: BlockKind,
-    /// `Style @table` — the built-in element type behind the `@`.
-    pub selector: Option<Ident>,
-    /// The name of the declaration. A `Path`, so `Table shop.User` takes
-    /// the same route; the checking phase decides whether a dot is allowed.
-    pub name: Option<Path>,
-    /// The parameters of a `Datatype`: `decimal(precision int, scale int)`.
-    pub params: Vec<Param>,
-    /// The `{` that opens the body.
-    ///
-    /// Always present: without a body the same syntax parses as a [`Ref`]
-    /// (`grammar::parse_block_or_ref`).
-    ///
-    /// Recorded because only the parser ever sees this token. [`Item::span`]
-    /// covers keyword-through-`}` and says nothing about where the *body*
-    /// starts, so anything inserting into a block (an editor adding a
-    /// `Meta { … }`, a formatter, a code action) would have to re-lex.
-    pub body_brace: Span,
-    pub items: Vec<Item>,
-}
+ast_node!(Block, Block);
 
 impl Block {
-    /// The first direct sub-block of a given kind, e.g. the `Meta` inside a
-    /// `Table` or the `Lint` inside a `Project`.
-    pub fn child(&self, kind: BlockKind) -> Option<&Block> {
-        self.items.iter().find_map(|item| match &item.kind {
-            ItemKind::Block(b) if b.kind == kind => Some(b),
+    /// The word as written — even if it's unknown (`postgres`).
+    pub fn keyword(&self) -> Option<Ident> {
+        tokens(&self.0).next().and_then(Ident::cast)
+    }
+
+    pub fn kind(&self) -> BlockKind {
+        block_kind(self.keyword())
+    }
+
+    /// `Style @table` — the built-in element type behind the `@`.
+    pub fn selector(&self) -> Option<Ident> {
+        token_after(&self.0, SyntaxKind::At, SyntaxKind::Ident).and_then(Ident::cast)
+    }
+
+    pub fn name(&self) -> Option<Path> {
+        child(&self.0)
+    }
+
+    pub fn params(&self) -> impl Iterator<Item = Param> + use<> {
+        child::<Params>(&self.0)
+            .into_iter()
+            .flat_map(|params| children::<Param>(&params.0))
+    }
+
+    /// The `{` that opens the body.
+    pub fn body_brace(&self) -> Option<Span> {
+        let body = child::<Body>(&self.0)?;
+        token(&body.0, SyntaxKind::LBrace).map(|brace| to_span(brace.text_range()))
+    }
+
+    /// Byte offset just past the opening `{`.
+    pub fn body_start(&self) -> Option<TextSize> {
+        self.body_brace().map(|brace| brace.end)
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = Item> + use<> {
+        body_items(&self.0)
+    }
+
+    /// The first direct sub-block of a given kind.
+    pub fn child(&self, kind: BlockKind) -> Option<Block> {
+        self.items().find_map(|item| match item.kind() {
+            ItemKind::Block(b) if b.kind() == kind => Some(b),
             _ => None,
         })
     }
+}
 
-    /// Byte offset just past the opening `{` — where this block's body
-    /// content begins, and thus where new content can be inserted.
-    pub const fn body_start(&self) -> TextSize {
-        self.body_brace.end
+fn block_kind(keyword: Option<Ident>) -> BlockKind {
+    keyword
+        .and_then(|keyword| BlockKind::from_keyword(keyword.text()))
+        .unwrap_or(BlockKind::Other)
+}
+
+ast_node!(Params, Params);
+ast_node!(Param, Param);
+
+impl Param {
+    pub fn name(&self) -> Option<Ident> {
+        tokens(&self.0).next().and_then(Ident::cast)
+    }
+
+    pub fn ty(&self) -> Option<Path> {
+        child(&self.0)
     }
 }
 
-/// A parameter of a `Datatype`: `precision int` in
-/// `Datatype decimal(precision int, scale int) { … }`.
-///
-/// Parameters are declared like fields — name, then type (`docs/06`). `ty`
-/// is optional because a half-typed line is the normal case in an editor.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Param {
-    pub name: Ident,
-    pub ty: Option<Path>,
-    pub span: Span,
-}
+ast_node!(Ref, Ref);
 
-/// A reference without a body: `Table shop.User;` inside a `Group`.
-///
-/// Syntactically the start of a [`Block`], ending in `;` instead of `{` —
-/// so one parser function reads both and branches at the end.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Ref {
-    pub keyword: Ident,
-    pub kind: BlockKind,
-    pub path: Path,
+impl Ref {
+    pub fn keyword(&self) -> Option<Ident> {
+        tokens(&self.0).next().and_then(Ident::cast)
+    }
+
+    pub fn kind(&self) -> BlockKind {
+        block_kind(self.keyword())
+    }
+
+    pub fn path(&self) -> Option<Path> {
+        child(&self.0)
+    }
 }
 
 // ===========================================================================
 // Fields
 // ===========================================================================
 
-/// A named entry in the body of a block.
-///
-/// Covers three things, because they share one shape:
-///
-/// ```text
-/// email varchar [unique] { note = "…" };   table field
-/// draft { label = "Draft" }                enum value (no type)
-/// cancelled;                               enum value (no type, no body)
-/// ```
-///
-/// A separate `Variant` node would be an exact copy with `ty: None`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Field {
-    pub name: Ident,
-    pub ty: Option<FieldType>,
-    /// `[pk, required, default=0]` — changes the generated schema.
-    pub flags: Vec<Attr>,
-    /// `{ note = "…" }` — descriptive only. Empty if no block was written.
-    pub items: Vec<Item>,
+ast_node!(Field, Field);
+
+impl Field {
+    pub fn name(&self) -> Option<Ident> {
+        tokens(&self.0).next().and_then(Ident::cast)
+    }
+
+    /// `None` also for a half-written relation (`>` without a target).
+    pub fn ty(&self) -> Option<FieldType> {
+        children::<FieldType>(&self.0).find(|ty| ty.kind().is_some())
+    }
+
+    pub fn flags(&self) -> impl Iterator<Item = Attr> + use<> {
+        flags(&self.0)
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = Item> + use<> {
+        body_items(&self.0)
+    }
 }
 
-/// What comes after the field name.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FieldType {
-    pub kind: FieldTypeKind,
-    pub span: Span,
+ast_node!(FieldType, FieldType);
+
+impl FieldType {
+    pub fn kind(&self) -> Option<FieldTypeKind> {
+        let path = child::<Path>(&self.0)?;
+        let op = tokens(&self.0).next().and_then(|token| match token.kind() {
+            SyntaxKind::Gt => Some(RelationOp::OneToMany),
+            SyntaxKind::Lt => Some(RelationOp::ManyToOne),
+            SyntaxKind::Minus => Some(RelationOp::OneToOne),
+            _ => None,
+        });
+        Some(match op {
+            Some(op) => FieldTypeKind::Relation { op, target: path },
+            None => FieldTypeKind::Named {
+                path,
+                args: child::<Args>(&self.0)
+                    .map(|args| values(&args.0))
+                    .unwrap_or_default(),
+            },
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldTypeKind {
-    /// `varchar`, `decimal(10, 2)`, `shop.OrderStatus`
-    ///
-    /// Data type or enum is not visible in the syntax — name resolution
-    /// settles it.
     Named { path: Path, args: Vec<Value> },
-    /// `>Customer.id`, `<>Tag.id`
     Relation { op: RelationOp, target: Path },
 }
 
@@ -398,53 +582,92 @@ impl RelationOp {
     }
 }
 
-/// An entry in the `Index` block: `[name] (column, …) [flags];`
-///
-/// The name is optional (`docs/10`); an unnamed index gets a generated one
-/// in the checking phase.
-#[derive(Debug, Clone, PartialEq)]
-pub struct IndexEntry {
-    pub name: Option<Ident>,
-    /// The order matters: `(a, b)` is not `(b, a)`.
-    pub columns: Vec<Ident>,
-    pub flags: Vec<Attr>,
+ast_node!(IndexEntry, IndexEntry);
+
+impl IndexEntry {
+    pub fn name(&self) -> Option<Ident> {
+        tokens(&self.0).next().and_then(Ident::cast)
+    }
+
+    pub fn columns(&self) -> impl Iterator<Item = Ident> + use<> {
+        child::<Columns>(&self.0)
+            .into_iter()
+            .flat_map(|columns| tokens(&columns.0).filter_map(Ident::cast))
+    }
+
+    pub fn flags(&self) -> impl Iterator<Item = Attr> + use<> {
+        flags(&self.0)
+    }
 }
+
+ast_node!(Columns, Columns);
 
 // ===========================================================================
 // Directives and file level
 // ===========================================================================
 
-/// `spec 1;` — the language definition version the file is written against.
-///
-/// `version` is optional so a half-typed `spec ;` still yields a node and
-/// the IDE knows a `spec` is here.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Spec {
-    pub version: Option<i64>,
+ast_node!(Spec, Spec);
+
+impl Spec {
+    pub fn version(&self) -> Option<i64> {
+        token(&self.0, SyntaxKind::Int).and_then(|int| parse_int(int.text()))
+    }
 }
 
-/// `import "./common.skema" as base;`
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Import {
-    pub path: Option<String>,
-    /// `as base` — overrides the source file's document name.
-    pub alias: Option<Ident>,
+ast_node!(Import, Import);
+
+impl Import {
+    pub fn path(&self) -> Option<String> {
+        token(&self.0, SyntaxKind::Str).map(|path| unquote(path.text()))
+    }
+
+    pub fn alias(&self) -> Option<Ident> {
+        token_after(&self.0, SyntaxKind::KwAs, SyntaxKind::Ident).and_then(Ident::cast)
+    }
 }
 
-/// `use common_base;` — pulls in a `Partial`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Use {
-    pub target: Path,
+ast_node!(Use, Use);
+
+impl Use {
+    pub fn target(&self) -> Option<Path> {
+        child(&self.0)
+    }
 }
+
+ast_node!(Setting, Setting);
 
 /// A single statement — the kind of node every body is made of.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Item {
-    pub kind: ItemKind,
-    pub span: Span,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Item(SyntaxNode);
+
+impl AstNode for Item {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        node.kind().is_item().then_some(Self(node))
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.0
+    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl Item {
+    pub fn kind(&self) -> ItemKind {
+        let node = self.0.clone();
+        match node.kind() {
+            SyntaxKind::Spec => ItemKind::Spec(Spec(node)),
+            SyntaxKind::Import => ItemKind::Import(Import(node)),
+            SyntaxKind::Use => ItemKind::Use(Use(node)),
+            SyntaxKind::Setting => child(&node).map_or(ItemKind::Error, ItemKind::Setting),
+            SyntaxKind::Field => ItemKind::Field(Field(node)),
+            SyntaxKind::Block => ItemKind::Block(Block(node)),
+            SyntaxKind::Ref => ItemKind::Ref(Ref(node)),
+            SyntaxKind::IndexEntry => ItemKind::IndexEntry(IndexEntry(node)),
+            _ => ItemKind::Error,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ItemKind {
     Spec(Spec),
     Import(Import),
@@ -456,59 +679,65 @@ pub enum ItemKind {
     Ref(Ref),
     IndexEntry(IndexEntry),
     /// An unreadable section. The parser skipped it and moved on.
-    ///
-    /// A node instead of an abort, so the other declarations in the file
-    /// stay usable while someone is typing.
     Error,
 }
 
 /// A whole file.
-///
-/// A flat list: `spec`, `import` and declarations are all [`Item`]s. That
-/// `spec` comes first and `import` may not sit inside a `Table` is a rule,
-/// not a shape, and rules belong to the checking phase.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SourceFile {
-    pub items: Vec<Item>,
-    pub span: Span,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SourceFile(SyntaxNode);
+
+impl AstNode for SourceFile {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        (node.kind() == SyntaxKind::SourceFile).then_some(Self(node))
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.0
+    }
+
+    /// From offset 0 — a file starts at its start, not at its first token.
+    fn span(&self) -> Span {
+        Span::new(0, significant_span(&self.0).end)
+    }
 }
 
 impl SourceFile {
+    pub fn new_root(green: GreenNode) -> Self {
+        Self(SyntaxNode::new_root(green))
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = Item> + use<> {
+        children::<Item>(&self.0)
+    }
+
     /// All top-level blocks — the usual entry point for analysis.
-    pub fn blocks(&self) -> impl Iterator<Item = &Block> {
-        self.items.iter().filter_map(|i| match &i.kind {
+    pub fn blocks(&self) -> impl Iterator<Item = Block> + use<> {
+        self.items().filter_map(|item| match item.kind() {
             ItemKind::Block(b) => Some(b),
             _ => None,
         })
     }
 
-    /// The first top-level block of `kind` declared under `name`, e.g. the
-    /// `Table Customer` of a file.
-    ///
-    /// Purely syntactic — the name as written, no namespace resolution, no
-    /// duplicate check. Those live in `skema_hir::symbols`. This is the
-    /// cheap lookup for a caller that already knows what it wants.
-    pub fn declaration(&self, kind: BlockKind, name: &str) -> Option<&Block> {
+    /// The first top-level block of `kind` declared under `name`.
+    pub fn declaration(&self, kind: BlockKind, name: &str) -> Option<Block> {
         self.blocks().find(|b| {
-            b.kind == kind
-                && b.name
-                    .as_ref()
-                    .and_then(Path::as_ident)
-                    .is_some_and(|i| i.text == name)
+            b.kind() == kind
+                && b.name()
+                    .and_then(|path| path.as_ident())
+                    .is_some_and(|ident| ident.text() == name)
         })
     }
 
-    /// The first `spec` entry, if any.
-    pub fn spec(&self) -> Option<&Spec> {
-        self.items.iter().find_map(|i| match &i.kind {
+    pub fn spec(&self) -> Option<Spec> {
+        self.items().find_map(|item| match item.kind() {
             ItemKind::Spec(s) => Some(s),
             _ => None,
         })
     }
 
-    pub fn imports(&self) -> impl Iterator<Item = &Import> {
-        self.items.iter().filter_map(|i| match &i.kind {
-            ItemKind::Import(im) => Some(im),
+    pub fn imports(&self) -> impl Iterator<Item = Import> + use<> {
+        self.items().filter_map(|item| match item.kind() {
+            ItemKind::Import(import) => Some(import),
             _ => None,
         })
     }
