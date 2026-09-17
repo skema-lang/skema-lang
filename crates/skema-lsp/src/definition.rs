@@ -86,7 +86,8 @@ fn import_target(
     })
 }
 
-fn to_syntax_span(span: skema_api::Span) -> skema_syntax::Span {
+/// Shared with `references.rs`, the mirror lookup over the same links.
+pub(crate) fn to_syntax_span(span: skema_api::Span) -> skema_syntax::Span {
     skema_syntax::Span {
         start: span.start,
         end: span.end,
@@ -95,7 +96,9 @@ fn to_syntax_span(span: skema_api::Span) -> skema_syntax::Span {
 
 /// A caret sitting just past the last character of a name is still on it -
 /// that is where it lands after double-clicking a word.
-const fn contains_inclusive(span: skema_api::Span, offset: u32) -> bool {
+///
+/// Shared with `references.rs`, the mirror lookup over the same links.
+pub(crate) const fn contains_inclusive(span: skema_api::Span, offset: u32) -> bool {
     span.start <= offset && offset <= span.end
 }
 

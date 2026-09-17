@@ -30,6 +30,7 @@ mod hover;
 mod inlay_hints;
 mod links;
 mod protocol;
+mod references;
 mod roots;
 mod symbols;
 mod tokens;
@@ -70,6 +71,7 @@ fn main() -> Result<(), DynError> {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
@@ -304,6 +306,11 @@ impl Server {
                 let result = self.definition(&params);
                 self.respond(id, &result.map(lsp_types::GotoDefinitionResponse::Scalar))
             }
+            References::METHOD => {
+                let (id, params) = cast::<References>(request)?;
+                let result = self.references(&params);
+                self.respond(id, &result)
+            }
             Completion::METHOD => {
                 let (id, params) = cast::<Completion>(request)?;
                 let result = self.completion(&params);
@@ -370,6 +377,18 @@ impl Server {
         let file = analysis.file(&path)?;
         let offset = convert::offset_of(&file.src, position.position) as u32;
         definition::definition(analysis, &path, offset)
+    }
+
+    fn references(
+        &mut self,
+        params: &lsp_types::ReferenceParams,
+    ) -> Option<Vec<lsp_types::Location>> {
+        let position = &params.text_document_position;
+        let path = convert::path_of(&position.text_document.uri)?;
+        let analysis = self.analysis_for(&path)?;
+        let file = analysis.file(&path)?;
+        let offset = convert::offset_of(&file.src, position.position) as u32;
+        references::references(analysis, &path, offset, params.context.include_declaration)
     }
 
     fn completion(
