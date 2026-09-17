@@ -8,7 +8,7 @@
 //! decision, not the language's.
 
 use serde::Serialize;
-use skema_syntax::legacy_ast::{self as ast, BlockKind};
+use skema_syntax::ast::{self, BlockKind};
 #[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 
@@ -51,34 +51,34 @@ pub struct StyleBlocks {
 /// Single-file, like `tableMetas`: a caller with several files already loops
 /// over them one at a time.
 pub fn style_blocks(source: &str) -> StyleBlocks {
-    let (file, _) = skema_syntax::parse(source);
+    let (parsed, _) = skema_syntax::parse(source);
+    let file = parsed.syntax();
     let offsets = Utf16Offsets::new(source);
 
     let mut blocks = Vec::new();
     for owner in file.blocks() {
-        let scope = match owner.kind {
+        let scope = match owner.kind() {
             BlockKind::Project => StyleScope::Project,
             BlockKind::Document => StyleScope::Document,
             _ => continue,
         };
         // `Block::child` only returns the *first* match, but a `Project` or
         // `Document` legally holds several `Style` blocks as siblings.
-        for item in &owner.items {
-            let ast::ItemKind::Block(block) = &item.kind else {
+        for item in owner.items() {
+            let ast::ItemKind::Block(block) = item.kind() else {
                 continue;
             };
-            if block.kind != BlockKind::Style {
+            if block.kind() != BlockKind::Style {
                 continue;
             }
             blocks.push(StyleBlock {
                 scope,
-                selector: block.selector.as_ref().map(|s| s.text.clone()),
+                selector: block.selector().map(|s| s.text().to_owned()),
                 class_name: block
-                    .name
-                    .as_ref()
-                    .and_then(ast::Path::as_ident)
-                    .map(|i| i.text.clone()),
-                entries: entries(block, &offsets),
+                    .name()
+                    .and_then(|name| name.as_ident())
+                    .map(|i| i.text().to_owned()),
+                entries: entries(&block, &offsets),
             });
         }
     }

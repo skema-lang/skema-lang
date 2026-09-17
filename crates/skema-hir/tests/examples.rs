@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use skema_hir::{Diagnostic, FileId, InputFile, Severity, analyze};
-use skema_syntax::legacy_ast::SourceFile;
+use skema_syntax::ast::SourceFile;
 
 fn workspace_root() -> PathBuf {
     // CARGO_MANIFEST_DIR = crates/skema-hir
@@ -38,18 +38,19 @@ fn load(entry: &Path) -> Vec<(PathBuf, SourceFile)> {
             continue;
         }
         let src = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
-        let (ast, diags) = skema_syntax::parse(&src);
+        let (parsed, diags) = skema_syntax::parse(&src);
         assert!(
             diags.is_empty(),
             "parser diagnostics in {path:?}: {diags:#?}"
         );
+        let ast = parsed.syntax();
 
         for import in ast.imports() {
-            let Some(rel) = &import.path else { continue };
+            let Some(rel) = import.path() else { continue };
             let target = path
                 .parent()
                 .expect("file has a parent directory")
-                .join(rel)
+                .join(&rel)
                 .canonicalize()
                 .unwrap_or_else(|e| panic!("import {rel:?} from {path:?}: {e}"));
             queue.push(target);
@@ -79,7 +80,7 @@ fn analyze_project(entry_relative: &str) -> (skema_hir::model::Model, Vec<Diagno
             let import_targets = ast
                 .imports()
                 .map(|import| {
-                    let rel = import.path.as_ref()?;
+                    let rel = import.path()?;
                     let target = path.parent()?.join(rel).canonicalize().ok()?;
                     ids.get(&target).copied()
                 })

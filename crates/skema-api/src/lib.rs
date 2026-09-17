@@ -186,7 +186,7 @@ fn dialect_types() -> BTreeMap<String, Vec<String>> {
 /// Derived from `BlockKind`, so a new block keyword reaches completion
 /// without anyone updating a second list.
 fn block_keywords() -> Vec<String> {
-    use skema_syntax::legacy_ast::BlockKind::{
+    use skema_syntax::ast::BlockKind::{
         Database, Datatype, Dialect, Document, Enum, Field, Group, Index, Lint, Meta, Partial,
         Project, Style, Table,
     };
@@ -200,7 +200,8 @@ fn block_keywords() -> Vec<String> {
 }
 
 fn run_analysis(source: &str, filename: &str) -> (model::Model, Vec<Diagnostic>) {
-    let (ast, syntax_diagnostics) = skema_syntax::parse(source);
+    let (parsed, syntax_diagnostics) = skema_syntax::parse(source);
+    let ast = parsed.syntax();
     let import_targets = vec![None; ast.imports().count()];
     let input = InputFile {
         id: FileId(0),

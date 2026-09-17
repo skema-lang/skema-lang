@@ -41,6 +41,10 @@ pub struct LoadedFile {
     /// core knows only byte offsets (see `skema_syntax::Span`).
     pub src: String,
     pub ast: SourceFile,
+    /// The same parse, as the typed view – what `input_files` hands
+    /// `skema_hir::InputFile`. `ast`'s other consumers (`skema-lsp`) stay on
+    /// the owned AST until they migrate too (task 92d).
+    view: skema_syntax::ast::SourceFile,
     pub parse_diagnostics: Vec<skema_syntax::Diagnostic>,
     /// In the same order as `ast.imports()`.
     pub import_targets: Vec<Option<FileId>>,
@@ -62,7 +66,7 @@ impl Project {
             .map(|(i, f)| skema_hir::InputFile {
                 id: FileId(i as u32),
                 display_path: f.path.display().to_string(),
-                ast: &f.ast,
+                ast: &f.view,
                 import_targets: f.import_targets.clone(),
             })
             .collect()
@@ -119,10 +123,12 @@ pub fn load_with(
             })
             .collect();
 
+        let view = ast.syntax();
         files.push(LoadedFile {
             path,
             src,
             ast,
+            view,
             parse_diagnostics,
             import_targets,
         });

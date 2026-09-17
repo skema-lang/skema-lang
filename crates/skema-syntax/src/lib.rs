@@ -77,6 +77,9 @@ pub use format::format;
 pub use lexer::{Lexer, tokenize};
 pub use parser::Parser;
 pub use reorder::{Reordered, reorder};
+// So a consumer can store the lossless tree (`ast::SourceFile::new_root`)
+// without taking its own `rowan` dependency.
+pub use rowan::GreenNode;
 pub use semantic::{SemanticKind, classify};
 pub use span::{Span, TextSize};
 pub use syntax_kind::{SkemaLanguage, SyntaxKind, SyntaxNode, SyntaxToken};

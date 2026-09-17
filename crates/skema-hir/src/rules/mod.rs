@@ -92,12 +92,7 @@ pub(crate) fn run(
                 f.id.0 as usize, i,
                 "skema_hir::analyze requires contiguous FileIds (0..len), matching the order in `files`"
             );
-            symbols::collect_file_facts(
-                f.id,
-                f.ast.syntax(),
-                f.import_targets.clone(),
-                &mut diags,
-            )
+            symbols::collect_file_facts(f.id, f.ast.clone(), f.import_targets.clone(), &mut diags)
         })
         .collect();
 

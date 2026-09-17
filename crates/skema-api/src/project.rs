@@ -25,6 +25,8 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use skema_hir::{FileId, InputFile};
+use skema_syntax::GreenNode;
+use skema_syntax::ast;
 #[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 
@@ -125,7 +127,14 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
     let parsed = load_project(&root, &by_path);
     let reachable: Vec<String> = parsed.iter().map(|f| f.path.clone()).collect();
 
-    // `import_targets` must line up with `ast.imports()` positionally, and
+    // Views are built once here, on demand, from the `GreenNode`s `parsed`
+    // actually stores – kept alive for `inputs` to borrow from.
+    let views: Vec<ast::SourceFile> = parsed
+        .iter()
+        .map(|f| ast::SourceFile::new_root(f.green.clone()))
+        .collect();
+
+    // `import_targets` must line up with `view.imports()` positionally, and
     // a `FileId` must be the index of its file in this same list – both are
     // contracts of `skema_hir::analyze`.
     let ids: HashMap<&str, FileId> = parsed
@@ -135,16 +144,16 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
         .collect();
     let inputs: Vec<InputFile<'_>> = parsed
         .iter()
+        .zip(&views)
         .enumerate()
-        .map(|(i, file)| InputFile {
+        .map(|(i, (file, view))| InputFile {
             id: FileId(i as u32),
             display_path: file.path.clone(),
-            ast: &file.ast,
-            import_targets: file
-                .ast
+            ast: view,
+            import_targets: view
                 .imports()
                 .map(|import| {
-                    let target = resolve_import_path(&file.path, import.path.as_ref()?);
+                    let target = resolve_import_path(&file.path, &import.path()?);
                     ids.get(target.as_str()).copied()
                 })
                 .collect(),
@@ -209,7 +218,10 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
 struct ParsedFile<'a> {
     path: String,
     source: &'a str,
-    ast: skema_syntax::legacy_ast::SourceFile,
+    /// The lossless tree, kept as the `Send + Sync` green tree rather than a
+    /// view (`SyntaxNode` is `!Send`) – views are rebuilt on demand where
+    /// they're needed.
+    green: GreenNode,
     syntax_diagnostics: Vec<skema_syntax::Diagnostic>,
 }
 
@@ -250,12 +262,13 @@ fn load_project<'a>(root: &str, files: &HashMap<&'a str, &'a str>) -> Vec<Parsed
         let Some(&source) = files.get(path.as_str()) else {
             continue;
         };
-        let (ast, syntax_diagnostics) = skema_syntax::parse(source);
-        for import in ast.imports() {
-            let Some(raw) = import.path.as_ref() else {
+        let (parsed_file, syntax_diagnostics) = skema_syntax::parse(source);
+        let view = parsed_file.syntax();
+        for import in view.imports() {
+            let Some(raw) = import.path() else {
                 continue; // a syntax error, already reported
             };
-            let target = resolve_import_path(&path, raw);
+            let target = resolve_import_path(&path, &raw);
             if files.contains_key(target.as_str()) && !queued.contains(&target) {
                 queued.push(target.clone());
                 queue.push_back(target);
@@ -264,7 +277,7 @@ fn load_project<'a>(root: &str, files: &HashMap<&'a str, &'a str>) -> Vec<Parsed
         parsed.push(ParsedFile {
             path,
             source,
-            ast,
+            green: parsed_file.green,
             syntax_diagnostics,
         });
     }
