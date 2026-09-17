@@ -5,10 +5,10 @@
 //!
 //! # What it serves
 //!
-//! Diagnostics, hover, go-to-definition, find-references, completion,
-//! semantic tokens and the document outline over standard LSP - plus three
-//! `skema/` messages a live ER diagram needs and LSP has no word for
-//! ([`protocol`]).
+//! Diagnostics, hover, go-to-definition, completion, semantic tokens,
+//! document links, inlay hints and the document outline over standard LSP -
+//! plus three `skema/` messages a live ER diagram needs and LSP has no word
+//! for ([`protocol`]).
 //!
 //! Every answer past the load comes from `skema-api`, the same crate the
 //! browser editor's WASM build serves, so a model looks the same in both.
@@ -25,12 +25,16 @@ mod analysis;
 mod completion;
 mod convert;
 mod definition;
+mod folding;
 mod hover;
+mod inlay_hints;
+mod links;
 mod protocol;
 mod references;
 mod roots;
 mod symbols;
 mod tokens;
+mod workspace_symbols;
 
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -43,11 +47,13 @@ use lsp_types::notification::{
     DidSaveTextDocument, Notification as _, PublishDiagnostics,
 };
 use lsp_types::request::{
-    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Request as _,
-    SemanticTokensFullRequest,
+    Completion, DocumentLinkRequest, DocumentSymbolRequest, FoldingRangeRequest, GotoDefinition,
+    HoverRequest, InlayHintRequest, References, Request as _, SemanticTokensFullRequest,
+    WorkspaceSymbolRequest,
 };
 use lsp_types::{
-    CompletionOptions, HoverProviderCapability, InitializeParams, OneOf, PublishDiagnosticsParams,
+    CompletionOptions, DocumentLinkOptions, FoldingRangeProviderCapability,
+    HoverProviderCapability, InitializeParams, OneOf, PublishDiagnosticsParams,
     SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
     SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
     TextDocumentSyncKind, Url, WorkDoneProgressOptions,
@@ -67,6 +73,7 @@ fn main() -> Result<(), DynError> {
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
+        workspace_symbol_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
             // The characters after which something is worth offering with
             // nothing typed yet: a relation arrow, a qualifier's dot, the
@@ -90,6 +97,14 @@ fn main() -> Result<(), DynError> {
                 work_done_progress_options: WorkDoneProgressOptions::default(),
             },
         )),
+        folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+        inlay_hint_provider: Some(OneOf::Left(true)),
+        document_link_provider: Some(DocumentLinkOptions {
+            // Everything needed to resolve a link is already loaded by the
+            // time any request answers - no `documentLink/resolve` round trip.
+            resolve_provider: Some(false),
+            work_done_progress_options: WorkDoneProgressOptions::default(),
+        }),
         ..ServerCapabilities::default()
     })?;
 
@@ -311,6 +326,26 @@ impl Server {
                 let result = self.document_symbols(&params);
                 self.respond(id, &result)
             }
+            FoldingRangeRequest::METHOD => {
+                let (id, params) = cast::<FoldingRangeRequest>(request)?;
+                let result = self.folding_ranges(&params);
+                self.respond(id, &result)
+            }
+            DocumentLinkRequest::METHOD => {
+                let (id, params) = cast::<DocumentLinkRequest>(request)?;
+                let result = self.document_links(&params);
+                self.respond(id, &result)
+            }
+            InlayHintRequest::METHOD => {
+                let (id, params) = cast::<InlayHintRequest>(request)?;
+                let result = self.inlay_hints(&params);
+                self.respond(id, &result)
+            }
+            WorkspaceSymbolRequest::METHOD => {
+                let (id, params) = cast::<WorkspaceSymbolRequest>(request)?;
+                let result = self.workspace_symbols(&params);
+                self.respond(id, &result)
+            }
             protocol::MODEL_REQUEST => {
                 let params: protocol::ModelParams = serde_json::from_value(request.params)?;
                 let result = self.model(&params);
@@ -397,6 +432,54 @@ impl Server {
             .map(|decl| symbol_of(decl, &source))
             .collect();
         Some(lsp_types::DocumentSymbolResponse::Nested(symbols))
+    }
+
+    /// Unlike every other handler, this answers from `self` rather than one
+    /// file's `Analysis` - there is no "current file" for a workspace-wide
+    /// search.
+    fn workspace_symbols(
+        &self,
+        params: &lsp_types::WorkspaceSymbolParams,
+    ) -> lsp_types::WorkspaceSymbolResponse {
+        lsp_types::WorkspaceSymbolResponse::Flat(workspace_symbols::workspace_symbols(
+            &self.analyses,
+            &params.query,
+        ))
+    }
+
+    fn folding_ranges(
+        &mut self,
+        params: &lsp_types::FoldingRangeParams,
+    ) -> Option<Vec<lsp_types::FoldingRange>> {
+        let path = convert::path_of(&params.text_document.uri)?;
+        // Purely syntactic, like `document_symbols` - works without a
+        // project, and for a file that has parse errors elsewhere.
+        let source = self.source_of(&path)?;
+        let (ast, _) = skema_syntax::parse(&source);
+        Some(folding::folding_ranges(&source, &ast))
+    }
+
+    fn document_links(
+        &mut self,
+        params: &lsp_types::DocumentLinkParams,
+    ) -> Vec<lsp_types::DocumentLink> {
+        let Some(path) = convert::path_of(&params.text_document.uri) else {
+            return Vec::new();
+        };
+        let Some(analysis) = self.analysis_for(&path) else {
+            return Vec::new();
+        };
+        links::document_links(analysis, &path)
+    }
+
+    fn inlay_hints(&mut self, params: &lsp_types::InlayHintParams) -> Vec<lsp_types::InlayHint> {
+        let Some(path) = convert::path_of(&params.text_document.uri) else {
+            return Vec::new();
+        };
+        let Some(analysis) = self.analysis_for(&path) else {
+            return Vec::new();
+        };
+        inlay_hints::inlay_hints(analysis, &path, params.range)
     }
 
     fn model(&mut self, params: &protocol::ModelParams) -> Option<protocol::ModelResponse> {
@@ -558,25 +641,10 @@ where
 
 #[allow(deprecated)] // `DocumentSymbol::deprecated` is required by the struct.
 fn symbol_of(decl: &symbols::Decl, source: &str) -> lsp_types::DocumentSymbol {
-    use skema_syntax::ast::BlockKind;
-    use symbols::DeclKind;
-
-    let kind = match decl.kind {
-        DeclKind::Block(BlockKind::Table | BlockKind::Partial) => lsp_types::SymbolKind::CLASS,
-        DeclKind::Block(BlockKind::Enum) => lsp_types::SymbolKind::ENUM,
-        DeclKind::Block(BlockKind::Datatype) => lsp_types::SymbolKind::STRUCT,
-        DeclKind::Block(BlockKind::Group) => lsp_types::SymbolKind::NAMESPACE,
-        DeclKind::Block(BlockKind::Document) => lsp_types::SymbolKind::MODULE,
-        DeclKind::Block(_) => lsp_types::SymbolKind::OBJECT,
-        DeclKind::Field => lsp_types::SymbolKind::FIELD,
-        DeclKind::Index => lsp_types::SymbolKind::KEY,
-        DeclKind::Reference => lsp_types::SymbolKind::VARIABLE,
-    };
-
     lsp_types::DocumentSymbol {
         name: decl.name.clone(),
         detail: decl.detail.clone(),
-        kind,
+        kind: symbols::symbol_kind(decl.kind),
         tags: None,
         deprecated: None,
         range: convert::range_of(source, decl.span),

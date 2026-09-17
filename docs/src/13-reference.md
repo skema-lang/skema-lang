@@ -14,7 +14,7 @@
 | `Enum` | A closed, ordered set of named values with a `Field` block describing storage. |
 | `Group` | A named, cross-file collection of declarations for diagrams and documentation. No schema effect. |
 | `Datatype` | A user-defined type: parameters, a `Field` block, and per-engine `Dialect` blocks. |
-| `Meta` | Descriptive block (author, note, version, style classes). Never affects generated schema. |
+| `Meta` | Descriptive block (author, note, version, style classes; `Table`-only `movedFrom`). Never affects generated schema. |
 | `Style` | Visual block. `@name` selects a built-in element type; a bare name defines a reusable class. |
 | `Lint` | Project-wide naming/consistency rules, enforced only under `mode = strict`. |
 | `Database` | The block for physical names: `database`, `schema`, `table`. |
@@ -71,6 +71,8 @@ Full walkthrough: [01 — Language Basics](01-language-basics.md).
 
 No operator exists for many-to-many — write the junction table. Full explanation: [07 — Relationships](07-relationships.md).
 
+A cycle of `required`/`pk` `>`/`-` relationships is always an error, in every `mode` — [07, "No cycles of `required` foreign keys"](07-relationships.md#no-cycles-of-required-foreign-keys).
+
 ## Block quick reference
 
 | Block | Top-level? | Named? | Typical parents | Typical children |
@@ -107,7 +109,6 @@ The items below are demonstrated in examples or proposed in the design docs, but
 | Automatically generated index names | Naming scheme for an unnamed index | [10](10-indexes.md#not-yet-specified) |
 | Index names from `Partial`s | Same name repeated across every consuming table | [09](09-partials.md#what-a-partial-may-contain), [10](10-indexes.md#indexes-inside-a-partial) |
 | `Dialect` property set | `sql` is defined inside `Datatype`; which engine settings are known inside `Database` (`tablespace`, `engine`, `charset`, …) is not | [06](06-data-types.md#dialect-engine-blocks), [11](11-physical-mapping.md#engine-specific-settings) |
-| Lint severities | Per-rule severity override syntax (for example, `fieldNaming = snake_case [error];`) | [04](04-linting.md#other-rules) |
 
 ## Not enforced yet
 

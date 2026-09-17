@@ -2,14 +2,16 @@
 
 use std::collections::HashMap;
 
-use skema_syntax::ast;
+use skema_syntax::Severity;
+use skema_syntax::ast::{self, AstNode};
 
 use super::Ctx;
 use crate::model;
 use crate::{Diagnostic, FileId};
 
 pub(crate) fn check(
-    ctx: &Ctx<'_>,
+    ctx: &Ctx,
+    dangling_ref_severity: Severity,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<model::Group> {
@@ -22,40 +24,42 @@ pub(crate) fn check(
         for (group_name, _name_span, item_span, block) in &file.groups {
             let mut members = Vec::new();
 
-            for item in &block.items {
-                let ast::ItemKind::Ref(r) = &item.kind else {
+            for item in block.items() {
+                let ast::ItemKind::Ref(r) = item.kind() else {
                     continue;
                 };
+                let path = r.path();
 
-                let Some((owner, name, name_span, rest)) = ctx.resolve_decl_path(file.id, &r.path)
+                let Some((owner, name, name_span, rest)) = ctx.resolve_decl_path(file.id, &path)
                 else {
                     continue;
                 };
                 if !rest.is_empty() {
                     diags.push(Diagnostic::error(
                         file.id,
-                        r.path.span,
+                        path.span(),
                         "a group reference names only the declaration, no further path after it",
                     ));
                     continue;
                 }
 
-                let Some(decl) = ctx.lookup_decl(owner, name) else {
-                    diags.push(Diagnostic::error(
+                let Some(decl) = ctx.lookup_decl(owner, &name) else {
+                    diags.push(Diagnostic::new(
                         file.id,
+                        dangling_ref_severity,
                         name_span,
                         format!("unknown declaration `{name}`"),
                     ));
                     continue;
                 };
-                if decl.kind != r.kind {
+                if decl.kind != r.kind() {
                     diags.push(Diagnostic::error(
                         file.id,
-                        item.span,
+                        item.span(),
                         format!(
                             "`{name}` is a `{}`, expected `{}` (docs/12, \"The kind is checked\")",
                             decl.kind.as_str(),
-                            r.kind.as_str()
+                            r.kind().as_str()
                         ),
                     ));
                     continue;
@@ -67,7 +71,7 @@ pub(crate) fn check(
                     to_span: decl.name_span,
                 });
 
-                let key = (owner, name.to_owned());
+                let key = (owner, name.to_string());
                 if let Some(existing_group) = claimed.get(&key) {
                     diags.push(Diagnostic::error(
                         file.id,
@@ -83,20 +87,20 @@ pub(crate) fn check(
 
                 let namespace = ctx
                     .file(owner)
-                    .and_then(|f| f.document)
-                    .map(|(n, ..)| n.to_owned())
+                    .and_then(|f| f.document.as_ref())
+                    .map(|(n, ..)| n.to_string())
                     .unwrap_or_default();
                 members.push(model::GroupMember {
                     kind: decl.kind.as_str().to_owned(),
                     namespace,
-                    name: name.to_owned(),
-                    span: item.span,
+                    name: name.to_string(),
+                    span: item.span(),
                 });
             }
 
             out.push(model::Group {
                 file: file.id,
-                name: (*group_name).to_owned(),
+                name: group_name.to_string(),
                 members,
                 span: *item_span,
             });

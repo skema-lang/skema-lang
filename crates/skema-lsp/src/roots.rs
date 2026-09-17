@@ -129,7 +129,7 @@ impl Roots {
             read(path).is_ok_and(|src| {
                 let (file, _) = skema_syntax::parse(&src);
                 file.blocks()
-                    .any(|b| b.kind == skema_syntax::ast::BlockKind::Project)
+                    .any(|b| b.kind() == skema_syntax::ast::BlockKind::Project)
             })
         });
         found.sort();

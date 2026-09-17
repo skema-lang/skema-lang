@@ -310,3 +310,30 @@ fn builtins_expose_the_checkers_own_catalogs() {
     assert!(builtins.meta_keys.iter().any(|k| k == "styleClasses"));
     assert!(builtins.block_keywords.iter().any(|k| k == "Table"));
 }
+
+#[wasm_bindgen_test]
+fn block_reference_markdown_js_returns_same_text_as_rust_api() {
+    let builtins = skema_wasm::builtins_js();
+    let result = skema_wasm::block_reference_markdown_js("Table").expect("Table reference");
+    assert!(!result.is_empty(), "reference text should not be empty");
+    // The result matches what skema_api returns directly
+    let expected =
+        skema_api::block_reference_markdown(skema_syntax::ast::BlockKind::Table, &builtins);
+    assert_eq!(result, expected);
+}
+
+#[wasm_bindgen_test]
+fn flag_reference_markdown_js_returns_some_for_known_flags() {
+    let result = skema_wasm::flag_reference_markdown_js("pk").expect("pk reference");
+    assert_eq!(result, "Primary key. Implies `required` and `unique`.");
+}
+
+#[wasm_bindgen_test]
+fn block_reference_markdown_js_returns_none_for_unknown_keyword() {
+    assert!(skema_wasm::block_reference_markdown_js("NotAKeyword").is_none());
+}
+
+#[wasm_bindgen_test]
+fn flag_reference_markdown_js_returns_none_for_unknown_flag() {
+    assert!(skema_wasm::flag_reference_markdown_js("notAFlag").is_none());
+}

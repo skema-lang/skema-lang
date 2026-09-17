@@ -18,7 +18,7 @@
 //! not labeling it.
 
 use crate::Span;
-use crate::ast::*;
+use crate::ast::{self, BlockKind, FieldTypeKind, ItemKind, ValueKind};
 
 /// A role an identifier-ish span plays in the source, independent of what
 /// the lexer alone can determine from the characters.
@@ -53,106 +53,110 @@ pub enum SemanticKind {
 /// Classifies every identifier-ish span in `file`, in ascending source
 /// order (the same order [`crate::tokenize`] yields tokens in – callers
 /// that merge the two streams rely on this).
-pub fn classify(file: &SourceFile) -> Vec<(Span, SemanticKind)> {
+pub fn classify(file: &ast::SourceFile) -> Vec<(Span, SemanticKind)> {
     let mut out = Vec::new();
-    for item in &file.items {
-        classify_item(item, &mut out);
+    for item in file.items() {
+        classify_item(&item, &mut out);
     }
     out
 }
 
-fn classify_item(item: &Item, out: &mut Vec<(Span, SemanticKind)>) {
-    match &item.kind {
-        ItemKind::Block(b) => classify_block(b, out),
-        ItemKind::Field(f) => classify_field(f, out),
+fn classify_item(item: &ast::Item, out: &mut Vec<(Span, SemanticKind)>) {
+    match item.kind() {
+        ItemKind::Block(b) => classify_block(&b, out),
+        ItemKind::Field(f) => classify_field(&f, out),
         ItemKind::Ref(r) => {
-            if r.kind != BlockKind::Other {
-                out.push((r.keyword.span, SemanticKind::BlockKeyword));
+            if r.kind() != BlockKind::Other {
+                if let Some(keyword) = r.keyword() {
+                    out.push((keyword.span(), SemanticKind::BlockKeyword));
+                }
             }
-            classify_path(&r.path, SemanticKind::DeclarationName, out);
+            classify_path(&r.path(), SemanticKind::DeclarationName, out);
         }
-        ItemKind::IndexEntry(e) => classify_index_entry(e, out),
-        ItemKind::Setting(a) => classify_attr(a, SemanticKind::MetaKey, out),
+        ItemKind::IndexEntry(e) => classify_index_entry(&e, out),
+        ItemKind::Setting(a) => classify_attr(&a, SemanticKind::MetaKey, out),
         ItemKind::Spec(_) | ItemKind::Import(_) | ItemKind::Use(_) | ItemKind::Error => {}
     }
 }
 
-fn classify_block(b: &Block, out: &mut Vec<(Span, SemanticKind)>) {
-    if b.kind != BlockKind::Other {
-        out.push((b.keyword.span, SemanticKind::BlockKeyword));
+fn classify_block(b: &ast::Block, out: &mut Vec<(Span, SemanticKind)>) {
+    if b.kind() != BlockKind::Other {
+        out.push((b.keyword().span(), SemanticKind::BlockKeyword));
     }
-    if let Some(name) = &b.name {
-        classify_path(name, SemanticKind::DeclarationName, out);
+    if let Some(name) = b.name() {
+        classify_path(&name, SemanticKind::DeclarationName, out);
     }
-    for param in &b.params {
-        out.push((param.name.span, SemanticKind::FieldName));
-        if let Some(ty) = &param.ty {
-            classify_path(ty, SemanticKind::TypeRef, out);
+    for param in b.params() {
+        if let Some(name) = param.name() {
+            out.push((name.span(), SemanticKind::FieldName));
+        }
+        if let Some(ty) = param.ty() {
+            classify_path(&ty, SemanticKind::TypeRef, out);
         }
     }
-    for item in &b.items {
-        classify_item(item, out);
+    for item in b.items() {
+        classify_item(&item, out);
     }
 }
 
-fn classify_field(f: &Field, out: &mut Vec<(Span, SemanticKind)>) {
-    out.push((f.name.span, SemanticKind::FieldName));
-    if let Some(ty) = &f.ty {
-        match &ty.kind {
-            FieldTypeKind::Named { path, .. } => classify_path(path, SemanticKind::TypeRef, out),
-            FieldTypeKind::Relation { target, .. } => {
-                classify_path(target, SemanticKind::TypeRef, out);
+fn classify_field(f: &ast::Field, out: &mut Vec<(Span, SemanticKind)>) {
+    out.push((f.name().span(), SemanticKind::FieldName));
+    if let Some(ty) = f.ty() {
+        match ty.kind() {
+            Some(FieldTypeKind::Named { path, .. }) => {
+                classify_path(&path, SemanticKind::TypeRef, out);
             }
+            Some(FieldTypeKind::Relation { target, .. }) => {
+                classify_path(&target, SemanticKind::TypeRef, out);
+            }
+            None => {}
         }
     }
-    for flag in &f.flags {
-        classify_attr(flag, SemanticKind::FlagName, out);
+    for flag in f.flags() {
+        classify_attr(&flag, SemanticKind::FlagName, out);
     }
-    for item in &f.items {
-        classify_item(item, out);
+    for item in f.items() {
+        classify_item(&item, out);
     }
 }
 
-fn classify_index_entry(e: &IndexEntry, out: &mut Vec<(Span, SemanticKind)>) {
-    if let Some(name) = &e.name {
-        out.push((name.span, SemanticKind::DeclarationName));
+fn classify_index_entry(e: &ast::IndexEntry, out: &mut Vec<(Span, SemanticKind)>) {
+    if let Some(name) = e.name() {
+        out.push((name.span(), SemanticKind::DeclarationName));
     }
-    for column in &e.columns {
-        out.push((column.span, SemanticKind::FieldName));
+    for column in e.columns() {
+        out.push((column.span(), SemanticKind::FieldName));
     }
-    for flag in &e.flags {
-        classify_attr(flag, SemanticKind::FlagName, out);
+    for flag in e.flags() {
+        classify_attr(&flag, SemanticKind::FlagName, out);
     }
 }
 
 /// `key_kind` is `FlagName` for a `[]` flag and `MetaKey` for a `{}`
 /// setting – same `Attr` node, different meaning depending on which
 /// bracket it was written in (`docs/01`, 1.7), so the caller decides.
-fn classify_attr(a: &Attr, key_kind: SemanticKind, out: &mut Vec<(Span, SemanticKind)>) {
-    out.push((a.key.span, key_kind));
+fn classify_attr(a: &ast::Attr, key_kind: SemanticKind, out: &mut Vec<(Span, SemanticKind)>) {
+    out.push((a.key().span(), key_kind));
     // `type = decimal(10);` (docs/06, "Layering types"): unlike a bare
     // `ValueKind::Path` value (deliberately left unclassified, see the
     // module doc), a `Type` value is unambiguously a type reference by
     // construction, no name resolution needed to know that much.
-    if let Some(Value {
-        kind: ValueKind::Type { path, .. },
-        ..
-    }) = &a.value
-    {
-        classify_path(path, SemanticKind::TypeRef, out);
+    if let Some(ValueKind::Type { path, .. }) = a.value().and_then(|v| v.kind()) {
+        classify_path(&path, SemanticKind::TypeRef, out);
     }
 }
 
 /// Pushes `Namespace` for every segment but the last, and `leaf_kind` for
 /// the last one. A single-segment path is just `leaf_kind`.
-fn classify_path(path: &Path, leaf_kind: SemanticKind, out: &mut Vec<(Span, SemanticKind)>) {
-    let Some((last, prefix)) = path.segments.split_last() else {
+fn classify_path(path: &ast::Path, leaf_kind: SemanticKind, out: &mut Vec<(Span, SemanticKind)>) {
+    let segments: Vec<_> = path.segments().collect();
+    let Some((last, prefix)) = segments.split_last() else {
         return;
     };
     for segment in prefix {
-        out.push((segment.span, SemanticKind::Namespace));
+        out.push((segment.span(), SemanticKind::Namespace));
     }
-    out.push((last.span, leaf_kind));
+    out.push((last.span(), leaf_kind));
 }
 
 #[cfg(test)]

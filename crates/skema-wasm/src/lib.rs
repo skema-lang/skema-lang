@@ -29,8 +29,8 @@ pub use skema_api::{
     ExportedEnumEntry, ExportedField, ExportedFlag, ExportedGroup, ExportedGroupMember,
     ExportedIndex, ExportedModel, ExportedPhysical, ExportedRelation, ExportedTable,
     ExportedTypeRef, FlagValue, GroupMeta, GroupMetas, Location, MetaEntry, ProjectFile,
-    ProjectFileStatus, ProjectInput, ProjectResult, RelationKind, Severity, Span, StyleBlock,
-    StyleBlocks, StyleScope, TableMeta, TableMetas, Utf16Range,
+    ProjectFileStatus, ProjectInput, ProjectResult, ReferenceLink, RelationKind, Severity, Span,
+    StyleBlock, StyleBlocks, StyleScope, TableMeta, TableMetas, Utf16Range,
 };
 
 /// Readable panic messages in the browser console instead of an opaque
@@ -127,4 +127,22 @@ pub fn style_blocks(source: &str) -> StyleBlocks {
 #[wasm_bindgen(js_name = "builtins")]
 pub fn builtins_js() -> Builtins {
     skema_api::builtins()
+}
+
+/// Hover/completion card for a block keyword: purpose, where it appears,
+/// what it contains. Matches what `skema-lsp` shows for the same keyword.
+#[wasm_bindgen(js_name = "blockReferenceMarkdown")]
+pub fn block_reference_markdown_js(keyword: &str) -> Option<String> {
+    let kind = skema_syntax::ast::BlockKind::from_keyword(keyword)?;
+    Some(skema_api::block_reference_markdown(
+        kind,
+        &skema_api::builtins(),
+    ))
+}
+
+/// One-line reference for a flag: meaning, constraints, where it applies.
+/// `None` for custom or undocumented flags.
+#[wasm_bindgen(js_name = "flagReferenceMarkdown")]
+pub fn flag_reference_markdown_js(name: &str) -> Option<String> {
+    skema_api::flag_reference(name).map(str::to_owned)
 }

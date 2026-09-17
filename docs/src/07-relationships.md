@@ -160,6 +160,27 @@ Table Loan {
 
 From [`examples/generic/lending.skema`](../../examples/generic/lending.skema): `Loan` is the junction table between `Member` and `Copy`, carrying loan-specific fields that a generated pivot table would have had no place for.
 
+## No cycles of `required` foreign keys
+
+A `required` (or `pk`, which implies `required`) `>`/`-` relationship never
+allows `NULL`, so its row must be inserted after the row it points to. If
+these relationships form a cycle, no insert order exists in any target
+database — every row in the cycle needs a not-yet-existing row to already
+exist first, including the one-table case, a `required` self-reference:
+
+```skema
+Table Employee {
+  id      int [pk];
+  manager >Employee.id [required];   # ERROR — no first employee could ever be inserted
+}
+```
+
+This is checked unconditionally, in every `mode`, independently of `Lint` —
+unlike a naming convention, it isn't a style a team can opt out of. An
+`optional` link anywhere in the cycle (the default — see "Nullability" in
+[05 — Tables & Fields](05-tables-and-fields.md)) breaks it: that row can be
+inserted as `NULL` first and back-filled.
+
 ## See also
 
 - [05 — Tables & Fields](05-tables-and-fields.md) — flags in general

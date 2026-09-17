@@ -279,6 +279,8 @@ pub struct ExportedTable {
     pub fields: Vec<ExportedField>,
     pub indexes: Vec<ExportedIndex>,
     pub examples: Vec<ExportedExampleRow>,
+    /// `Meta.movedFrom` – see `model::Table::moved_from`.
+    pub moved_from: Option<String>,
     pub span: Span,
     pub location: Option<Location>,
 }
@@ -500,6 +502,7 @@ fn table(t: &model::Table, ctx: &LocateCtx<'_>) -> ExportedTable {
         fields: t.fields.iter().map(|f| field(f, ctx)).collect(),
         indexes: t.indexes.iter().map(|i| index(i, ctx)).collect(),
         examples: t.examples.iter().map(|e| example_row(e, ctx)).collect(),
+        moved_from: t.moved_from.clone(),
         span: t.span.into(),
         location: ctx.locate(t.file, t.span),
     }
@@ -648,5 +651,23 @@ Table Post {
         let result = crate::export_model(src, None, false);
         assert!(result.ok, "{:#?}", result.diagnostics);
         assert_eq!(result.model.dialect.as_deref(), Some("postgres"));
+    }
+
+    #[test]
+    fn a_tables_moved_from_round_trips_through_export() {
+        let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nTable T { id int [pk]; Meta { movedFrom = \"OldName\"; } }\n";
+        let result = crate::export_model(src, None, false);
+        assert!(result.ok, "{:#?}", result.diagnostics);
+        assert_eq!(
+            result.model.tables[0].moved_from.as_deref(),
+            Some("OldName")
+        );
+    }
+
+    #[test]
+    fn a_table_without_moved_from_exports_none() {
+        let result = crate::export_model(SRC, None, false);
+        assert!(result.ok, "{:#?}", result.diagnostics);
+        assert_eq!(result.model.tables[0].moved_from, None);
     }
 }

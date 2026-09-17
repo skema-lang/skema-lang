@@ -60,6 +60,11 @@ pub struct Table {
     pub fields: Vec<Field>,
     pub indexes: Vec<Index>,
     pub examples: Vec<ExampleRow>,
+    /// `Meta.movedFrom` – the table's previous name, for the planned
+    /// `skema diff` to recognize a rename. The one deliberate exception to
+    /// `Meta` never reaching the model (`skema-api::meta`'s doc comment) –
+    /// see `decisions.md`, "Schema diff & migrations" (tasks 71–75).
+    pub moved_from: Option<String>,
     pub span: Span,
 }
 

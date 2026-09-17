@@ -35,6 +35,7 @@
 //! There is no I/O here, so nothing can fail and nothing returns a `Result`.
 
 pub mod context;
+pub mod diff;
 pub mod dto;
 pub mod highlight;
 pub mod location;
@@ -51,6 +52,9 @@ use skema_hir::{FileId, InputFile, catalog, model};
 use tsify_next::Tsify;
 
 pub use context::{ContextKind, CursorContext, cursor_context};
+pub use diff::{
+    EnumChange, EnumDiff, IndexIdentity, SchemaDiff, TableChange, TableDiff, diff_models,
+};
 pub use dto::{
     CheckResult, Diagnostic, ExportResult, ExportedEnum, ExportedEnumEntry, ExportedField,
     ExportedFlag, ExportedGroup, ExportedGroupMember, ExportedIndex, ExportedModel,

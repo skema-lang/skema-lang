@@ -21,7 +21,7 @@
 
 use std::path::Path;
 
-use skema_syntax::ast::ItemKind;
+use skema_syntax::ast::{AstNode, Item, ItemKind};
 
 use crate::analysis::{Analysis, display_path};
 use crate::convert;
@@ -50,31 +50,40 @@ pub fn definition(analysis: &Analysis, path: &Path, offset: u32) -> Option<lsp_t
     })
 }
 
+/// Every `import` item in `from`, paired with its resolved target file -
+/// `None` for one that didn't resolve. The one walk of
+/// `from.ast.items`/`from.import_targets` that [`import_target`] and
+/// `links::document_links` both need (brain task 77).
+pub(crate) fn imports<'a>(
+    analysis: &'a Analysis,
+    from: &'a skema_loader::LoadedFile,
+) -> impl Iterator<Item = (Item, Option<&'a skema_loader::LoadedFile>)> {
+    let mut resolved = from.import_targets.iter();
+    from.ast.items().filter_map(move |item| {
+        if !matches!(item.kind(), ItemKind::Import(_)) {
+            return None;
+        }
+        let id = (*resolved.next()?)?;
+        let target = analysis.project.files.get(id.0 as usize);
+        Some((item, target))
+    })
+}
+
 /// When `offset` sits on an `import`'s path string, the file it names.
 fn import_target(
     analysis: &Analysis,
     from: &skema_loader::LoadedFile,
     offset: u32,
 ) -> Option<lsp_types::Location> {
-    let mut imports = 0;
-    for item in &from.ast.items {
-        if !matches!(item.kind, ItemKind::Import(_)) {
-            continue;
-        }
-        let index = imports;
-        imports += 1;
-        if !(item.span.start <= offset && offset < item.span.end) {
-            continue;
-        }
-        let id = (*from.import_targets.get(index)?)?;
-        let target = analysis.project.files.get(id.0 as usize)?;
-        return Some(lsp_types::Location {
-            uri: convert::url_of(&target.path)?,
-            // The top of the file: an import names a file, not a place in it.
-            range: lsp_types::Range::default(),
-        });
-    }
-    None
+    let (_, target) = imports(analysis, from).find(|(item, _)| {
+        let span = item.span();
+        span.start <= offset && offset < span.end
+    })?;
+    Some(lsp_types::Location {
+        uri: convert::url_of(&target?.path)?,
+        // The top of the file: an import names a file, not a place in it.
+        range: lsp_types::Range::default(),
+    })
 }
 
 /// Shared with `references.rs`, the mirror lookup over the same links.

@@ -15,9 +15,13 @@ path = "src/main.rs"
 # `skema-api`'s types, and nothing here reaches past them into the core.
 skema-api.workspace = true
 skema-loader.workspace = true
+skema-syntax.workspace = true
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

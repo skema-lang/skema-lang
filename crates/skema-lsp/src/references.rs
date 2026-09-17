@@ -159,7 +159,10 @@ mod tests {
         let locations = references(&analysis, &root, offset, false).expect("references");
         assert_eq!(
             ranges_of(&locations),
-            vec![nth_range(&source, "Money", 1), nth_range(&source, "Money", 2)]
+            vec![
+                nth_range(&source, "Money", 1),
+                nth_range(&source, "Money", 2)
+            ]
         );
 
         let with_decl = references(&analysis, &root, offset, true).expect("references");
@@ -279,7 +282,10 @@ mod tests {
         let analysis = build(&root);
 
         let locations = references(&analysis, &root, offset, false).expect("references");
-        assert_eq!(ranges_of(&locations), vec![nth_range(&source, "Customer", 1)]);
+        assert_eq!(
+            ranges_of(&locations),
+            vec![nth_range(&source, "Customer", 1)]
+        );
 
         let with_decl = references(&analysis, &root, offset, true).expect("references");
         assert_eq!(

@@ -15,9 +15,9 @@
 
 use skema_api::{
     ExportedField, ExportedFlag, ExportedModel, ExportedTable, FlagValue, RelationKind, Span,
-    block_reference_markdown,
+    block_reference_markdown, flag_reference,
 };
-use skema_syntax::ast::{BlockKind, Item, ItemKind};
+use skema_syntax::ast::{Attr, BlockKind, Item, ItemKind};
 
 use crate::analysis::Analysis;
 use crate::convert;
@@ -33,23 +33,23 @@ pub fn hover(analysis: &Analysis, display_path: &str, offset: u32) -> Option<lsp
         .find(|f| crate::analysis::display_path(f) == display_path)?;
 
     let model_hit = describe(&analysis.model, display_path, offset);
-    let keyword_hit = keyword_at(&file.ast.items, offset).map(|(kind, span)| {
+    let keyword_hit = keyword_at(file.ast.items(), offset).map(|(kind, span)| {
         (
             block_reference_markdown(kind, &skema_api::builtins()),
             Span::from(span),
         )
     });
+    let flag_hit = attr_at(file.ast.items(), offset)
+        .and_then(|(name, span)| Some((flag_reference(&name)?.to_owned(), Span::from(span))));
 
-    // A resolved fact and a keyword reference can cover the same offset - a
-    // `Table`'s span covers everything inside it, its own keyword included.
-    // The narrower one is what the caret is actually on (same rule as
-    // `describe`'s "innermost match wins").
-    let (markdown, span) = match (model_hit, keyword_hit) {
-        (Some(a), Some(b)) if width(b.1) < width(a.1) => b,
-        (Some(a), _) => a,
-        (None, Some(b)) => b,
-        (None, None) => return None,
-    };
+    // All three can cover the same offset - a flag's span sits inside its
+    // field's, whose span sits inside its table's. The narrowest one is what
+    // the caret is actually on (same rule as `describe`'s "innermost match
+    // wins").
+    let (markdown, span) = [model_hit, keyword_hit, flag_hit]
+        .into_iter()
+        .flatten()
+        .min_by_key(|(_, span)| width(*span))?;
 
     Some(lsp_types::Hover {
         contents: lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
@@ -70,18 +70,22 @@ pub fn hover(analysis: &Analysis, display_path: &str, offset: u32) -> Option<lsp
 /// from the syntax tree rather than the model: `Document`, `Meta`,
 /// `Project` and the other settings blocks carry no schema meaning of their
 /// own, so they never appear in [`ExportedModel`] at all.
-fn keyword_at(items: &[Item], offset: u32) -> Option<(BlockKind, skema_syntax::Span)> {
+fn keyword_at(
+    items: impl Iterator<Item = Item>,
+    offset: u32,
+) -> Option<(BlockKind, skema_syntax::Span)> {
     for item in items {
-        let ItemKind::Block(block) = &item.kind else {
+        let ItemKind::Block(block) = item.kind() else {
             continue;
         };
+        let keyword_span = block.keyword().span();
         // `Other` is a name the language doesn't recognize (`postgres`
         // inside `Dialect`) - nothing in the reference to say about it, so
         // it is not a hit, but its children may still contain real ones.
-        if block.kind != BlockKind::Other && syntax_contains(block.keyword.span, offset) {
-            return Some((block.kind, block.keyword.span));
+        if block.kind() != BlockKind::Other && syntax_contains(keyword_span, offset) {
+            return Some((block.kind(), keyword_span));
         }
-        if let Some(found) = keyword_at(&block.items, offset) {
+        if let Some(found) = keyword_at(block.items(), offset) {
             return Some(found);
         }
     }
@@ -90,6 +94,42 @@ fn keyword_at(items: &[Item], offset: u32) -> Option<(BlockKind, skema_syntax::S
 
 const fn syntax_contains(span: skema_syntax::Span, offset: u32) -> bool {
     span.start <= offset && offset < span.end
+}
+
+/// The flag whose own key word contains `offset`, walked from the syntax
+/// tree the same way `keyword_at` walks it for block keywords: a `Field`'s
+/// or `IndexEntry`'s `flags` are `Attr`s with their own span, so no new
+/// span-tracking is needed.
+fn attr_at(items: impl Iterator<Item = Item>, offset: u32) -> Option<(String, skema_syntax::Span)> {
+    for item in items {
+        match item.kind() {
+            ItemKind::Field(field) => {
+                if let Some(found) = attr_in(field.flags(), offset) {
+                    return Some(found);
+                }
+            }
+            ItemKind::IndexEntry(entry) => {
+                if let Some(found) = attr_in(entry.flags(), offset) {
+                    return Some(found);
+                }
+            }
+            ItemKind::Block(block) => {
+                if let Some(found) = attr_at(block.items(), offset) {
+                    return Some(found);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn attr_in(
+    mut flags: impl Iterator<Item = Attr>,
+    offset: u32,
+) -> Option<(String, skema_syntax::Span)> {
+    let attr = flags.find(|attr| syntax_contains(attr.key().span(), offset))?;
+    Some((attr.key().text(), attr.key().span()))
 }
 
 /// Innermost match wins: a field's span sits inside its table's, and the
@@ -362,4 +402,110 @@ const fn contains(span: Span, offset: u32) -> bool {
 
 const fn width(span: Span) -> u32 {
     span.end.saturating_sub(span.start)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+    use crate::analysis::Analysis;
+
+    fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().expect("temp dir");
+        for (name, contents) in files {
+            fs::write(dir.path().join(name), contents).expect("write fixture");
+        }
+        let root = dir.path().join(files[0].0);
+        (dir, root)
+    }
+
+    fn build(root: &Path) -> Analysis {
+        Analysis::build(root, false, |p| fs::read_to_string(p)).expect("analysis")
+    }
+
+    /// `hover` takes a display path, not a filesystem one - resolve it from
+    /// the loaded file the way `main.rs` does.
+    fn hover_at(analysis: &Analysis, root: &Path, offset: u32) -> Option<lsp_types::Hover> {
+        let display = crate::analysis::display_path(analysis.file(root).expect("root loaded"));
+        hover(analysis, display, offset)
+    }
+
+    fn hover_value(hover: lsp_types::Hover) -> String {
+        match hover.contents {
+            lsp_types::HoverContents::Markup(content) => content.value,
+            other => panic!("expected markdown hover, got {other:?}"),
+        }
+    }
+
+    /// One field per documented flag, plus an `onDelete`/`onUpdate` pair
+    /// (only valid on a relation's `>` side) and one undocumented flag.
+    /// Line-continuation strips the source indentation, so nothing here
+    /// depends on the `.skema` fixture itself being indented.
+    const SOURCE: &str = "spec 1;\nDocument shop {}\n\
+        Table Customer { id int [pk]; }\n\
+        Table Order {\n\
+        id int [unique];\n\
+        amount int [required];\n\
+        note varchar [optional];\n\
+        price int [default=`0`];\n\
+        label varchar [column=\"c\"];\n\
+        relDelete >Customer.id [onDelete=restrict];\n\
+        relUpdate >Customer.id [onUpdate=restrict];\n\
+        extra varchar [readonly];\n\
+        }\n";
+
+    #[test]
+    fn hovering_a_documented_flag_shows_its_reference() {
+        let (_dir, root) = workspace(&[("main.skema", SOURCE)]);
+        let analysis = build(&root);
+
+        for name in [
+            "pk", "unique", "required", "optional", "default", "column", "onDelete", "onUpdate",
+        ] {
+            let offset = SOURCE
+                .find(name)
+                .unwrap_or_else(|| panic!("{name} in source")) as u32;
+            let value = hover_value(
+                hover_at(&analysis, &root, offset).unwrap_or_else(|| panic!("hover at {name}")),
+            );
+            assert_eq!(
+                value,
+                flag_reference(name).unwrap_or_else(|| panic!("{name} is documented")),
+                "hovering `{name}` should show its own flag reference, narrower than the field it sits in"
+            );
+        }
+    }
+
+    #[test]
+    fn hovering_a_custom_flag_falls_back_to_the_field_card() {
+        let (_dir, root) = workspace(&[("main.skema", SOURCE)]);
+        let analysis = build(&root);
+
+        let offset = SOURCE.find("readonly").expect("readonly in source") as u32;
+        let value = hover_value(hover_at(&analysis, &root, offset).expect("a hover"));
+
+        assert!(
+            value.contains("**extra**"),
+            "falls back to the field: {value}"
+        );
+        for name in ["pk", "unique", "required", "optional", "column"] {
+            assert!(
+                !value.contains(flag_reference(name).unwrap()),
+                "no flag reference text expected for a custom flag: {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn hovering_the_field_name_is_unaffected_by_flag_hover() {
+        let (_dir, root) = workspace(&[("main.skema", SOURCE)]);
+        let analysis = build(&root);
+
+        let offset = SOURCE.find("amount").expect("amount in source") as u32;
+        let value = hover_value(hover_at(&analysis, &root, offset).expect("a hover"));
+
+        assert!(value.starts_with("**amount**"), "got: {value}");
+    }
 }

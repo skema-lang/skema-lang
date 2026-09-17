@@ -43,13 +43,12 @@ fn load(entry: &Path) -> Vec<(PathBuf, SourceFile)> {
             diags.is_empty(),
             "parser diagnostics in {path:?}: {diags:#?}"
         );
-
         for import in ast.imports() {
-            let Some(rel) = &import.path else { continue };
+            let Some(rel) = import.path() else { continue };
             let target = path
                 .parent()
                 .expect("file has a parent directory")
-                .join(rel)
+                .join(&rel)
                 .canonicalize()
                 .unwrap_or_else(|e| panic!("import {rel:?} from {path:?}: {e}"));
             queue.push(target);
@@ -79,7 +78,7 @@ fn analyze_project(entry_relative: &str) -> (skema_hir::model::Model, Vec<Diagno
             let import_targets = ast
                 .imports()
                 .map(|import| {
-                    let rel = import.path.as_ref()?;
+                    let rel = import.path()?;
                     let target = path.parent()?.join(rel).canonicalize().ok()?;
                     ids.get(&target).copied()
                 })

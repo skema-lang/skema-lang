@@ -10,8 +10,8 @@
 //! # Structure
 //!
 //! ```text
-//! &str ──[lexer]──► Vec<Token> ──[parser + grammar]──► SourceFile
-//!                                                    + Vec<Diagnostic>
+//! &str ──[lexer]──► Vec<Token> ──[parser + grammar]──► green tree ──► ast::SourceFile
+//!                                                                  + Vec<Diagnostic>
 //! ```
 //!
 //! | Module | Responsibility |
@@ -19,17 +19,19 @@
 //! | `span` | positions — byte offsets, nothing else |
 //! | `token` | the language's token kinds |
 //! | `lexer` | characters → tokens, lossless and panic-free |
-//! | [`ast`] | the syntax tree's nodes |
+//! | [`ast`] | typed view over the lossless tree |
 //! | `parser` | cursor, error handling, recovery (*how*) |
 //! | `grammar` | the language's rules (*what*) |
 //! | `diagnostic` | messages with a location |
 //! | `dump` | tree as text, for inspection |
+//! | `format` | reindents and normalizes blank lines, layout only |
+//! | `reorder` | sorts top-level declarations into canonical order, drops comments |
 //!
 //! # Parse permissively, validate strictly
 //!
 //! The parser accepts more than the language allows — a `Lint` block inside
 //! a `Table`, an `import` mid-file, an unknown `Meta` key — and all of it
-//! yields valid AST nodes. A file being edited is almost always invalid,
+//! yields valid syntax nodes. A file being edited is almost always invalid,
 //! and a parser that bails out takes completion away exactly when it is
 //! needed. So [`parse`] always returns a tree plus what is wrong with it.
 //!
@@ -51,26 +53,35 @@
 //! assert!(diagnostics.is_empty());
 //!
 //! let table = file.blocks().next().expect("a declaration");
-//! assert_eq!(table.kind, BlockKind::Table);
-//! assert_eq!(table.items.len(), 2);
+//! assert_eq!(table.kind(), BlockKind::Table);
+//! assert_eq!(table.items().count(), 2);
 //! ```
 
 pub mod ast;
 mod diagnostic;
 mod dump;
+mod format;
 mod grammar;
 mod lexer;
 mod parser;
+mod reorder;
 mod semantic;
 mod span;
+pub mod syntax_kind;
 mod token;
 
 pub use diagnostic::{Diagnostic, Severity};
 pub use dump::dump;
+pub use format::format;
 pub use lexer::{Lexer, tokenize};
 pub use parser::Parser;
+pub use reorder::{Reordered, reorder};
+// So a consumer can store the lossless tree (`ast::SourceFile::new_root`)
+// without taking its own `rowan` dependency.
+pub use rowan::GreenNode;
 pub use semantic::{SemanticKind, classify};
 pub use span::{Span, TextSize};
+pub use syntax_kind::{SkemaLanguage, SyntaxKind, SyntaxNode, SyntaxToken};
 pub use token::{Token, TokenKind, keyword_from_str};
 
 use ast::SourceFile;

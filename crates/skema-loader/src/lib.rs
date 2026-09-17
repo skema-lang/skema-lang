@@ -112,7 +112,7 @@ pub fn load_with(
         let import_targets: Vec<Option<FileId>> = ast
             .imports()
             .map(|import| {
-                let rel = import.path.as_ref()?;
+                let rel = import.path()?;
                 let joined = path.parent()?.join(rel);
                 let target = canonicalize(&joined).ok()?;
                 Some(intern(target, &mut ids, &mut queue))

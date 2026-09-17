@@ -25,6 +25,8 @@ use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use skema_hir::{FileId, InputFile};
+use skema_syntax::GreenNode;
+use skema_syntax::ast::{self, AstNode};
 #[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 
@@ -86,6 +88,10 @@ pub struct ProjectResult {
     /// which interleaves files by coincidental byte offset once more than
     /// one is in play.
     pub diagnostics: Vec<Diagnostic>,
+    /// Every written reference `skema-hir` resolved, paired with what it
+    /// resolves to – the browser's go-to-definition is a lookup against
+    /// this, not a second resolution pass (brain task 81, task 09).
+    pub references: Vec<dto::ReferenceLink>,
 }
 
 pub fn analyze_project(input: ProjectInput) -> ProjectResult {
@@ -114,13 +120,21 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
                 .collect(),
             model: dto::empty_model(),
             diagnostics: orphan_diagnostics(&files, &[]),
+            references: Vec::new(),
         };
     }
 
     let parsed = load_project(&root, &by_path);
     let reachable: Vec<String> = parsed.iter().map(|f| f.path.clone()).collect();
 
-    // `import_targets` must line up with `ast.imports()` positionally, and
+    // Views are built once here, on demand, from the `GreenNode`s `parsed`
+    // actually stores – kept alive for `inputs` to borrow from.
+    let views: Vec<ast::SourceFile> = parsed
+        .iter()
+        .map(|f| ast::SourceFile::new_root(f.green.clone()))
+        .collect();
+
+    // `import_targets` must line up with `view.imports()` positionally, and
     // a `FileId` must be the index of its file in this same list – both are
     // contracts of `skema_hir::analyze`.
     let ids: HashMap<&str, FileId> = parsed
@@ -130,26 +144,23 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
         .collect();
     let inputs: Vec<InputFile<'_>> = parsed
         .iter()
+        .zip(&views)
         .enumerate()
-        .map(|(i, file)| InputFile {
+        .map(|(i, (file, view))| InputFile {
             id: FileId(i as u32),
             display_path: file.path.clone(),
-            ast: &file.ast,
-            import_targets: file
-                .ast
+            ast: view,
+            import_targets: view
                 .imports()
                 .map(|import| {
-                    let target = resolve_import_path(&file.path, import.path.as_ref()?);
+                    let target = resolve_import_path(&file.path, &import.path()?);
                     ids.get(target.as_str()).copied()
                 })
                 .collect(),
         })
         .collect();
 
-    // `analyzeProject` is the browser's in-memory analysis – no LSP session,
-    // so nothing consumes go-to-definition data here (`skema-loader::analyze`
-    // is the path that does, for `skema-lsp`).
-    let (model, _references, hir_diagnostics) = skema_hir::analyze(&inputs);
+    let (model, hir_references, hir_diagnostics) = skema_hir::analyze(&inputs);
 
     let entries: Vec<FileEntry<'_>> = parsed
         .iter()
@@ -162,6 +173,10 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
         files: &entries,
         with_locations,
     };
+    let references: Vec<dto::ReferenceLink> = hir_references
+        .iter()
+        .map(|r| dto::reference_link(&ctx, r))
+        .collect();
 
     let mut diagnostics: Vec<Diagnostic> = parsed
         .iter()
@@ -196,13 +211,17 @@ pub fn analyze_project(input: ProjectInput) -> ProjectResult {
             .collect(),
         model: dto::export_model(&model, &ctx),
         diagnostics,
+        references,
     }
 }
 
 struct ParsedFile<'a> {
     path: String,
     source: &'a str,
-    ast: skema_syntax::ast::SourceFile,
+    /// The lossless tree, kept as the `Send + Sync` green tree rather than a
+    /// view (`SyntaxNode` is `!Send`) – views are rebuilt on demand where
+    /// they're needed.
+    green: GreenNode,
     syntax_diagnostics: Vec<skema_syntax::Diagnostic>,
 }
 
@@ -243,12 +262,12 @@ fn load_project<'a>(root: &str, files: &HashMap<&'a str, &'a str>) -> Vec<Parsed
         let Some(&source) = files.get(path.as_str()) else {
             continue;
         };
-        let (ast, syntax_diagnostics) = skema_syntax::parse(source);
-        for import in ast.imports() {
-            let Some(raw) = import.path.as_ref() else {
+        let (view, syntax_diagnostics) = skema_syntax::parse(source);
+        for import in view.imports() {
+            let Some(raw) = import.path() else {
                 continue; // a syntax error, already reported
             };
-            let target = resolve_import_path(&path, raw);
+            let target = resolve_import_path(&path, &raw);
             if files.contains_key(target.as_str()) && !queued.contains(&target) {
                 queued.push(target.clone());
                 queue.push_back(target);
@@ -257,7 +276,7 @@ fn load_project<'a>(root: &str, files: &HashMap<&'a str, &'a str>) -> Vec<Parsed
         parsed.push(ParsedFile {
             path,
             source,
-            ast,
+            green: view.syntax().green().into_owned(),
             syntax_diagnostics,
         });
     }
@@ -378,6 +397,95 @@ mod tests {
         let table = &result.model.tables[0];
         assert_eq!(table.file, "/project.skema");
         assert_eq!(table.fields[0].ty.name, "types.Email");
+    }
+
+    /// A reference-generating fixture covering the four kinds go-to-definition
+    /// cares about (brain task 81): a field type, both halves of a relation
+    /// target, a `use` target, a `Group` member. Mirrors
+    /// `skema-loader::analysis`'s own fixtures (`skema-loader/src/analysis.rs`),
+    /// so the two crates' output can be checked for equivalence.
+    const REFERENCE_FIXTURE: &str = "spec 1;\nDocument shop {}\n\
+        Project { mode = draft; dialect = generic; }\n\
+        Datatype Money { Field { type = int; } }\n\
+        Partial Stamped { createdAt string; }\n\
+        Table Customer { id int [pk]; }\n\
+        Table Order { id int [pk]; total Money; customer >Customer.id; use Stamped; }\n\
+        Group Core { Table Customer; }\n";
+
+    /// The byte span of the `occurrence`-th (0-based) `needle` in `source`.
+    fn span_of(source: &str, needle: &str, occurrence: usize) -> dto::Span {
+        let start = source
+            .match_indices(needle)
+            .nth(occurrence)
+            .unwrap_or_else(|| panic!("occurrence {occurrence} of {needle:?} not found"))
+            .0 as u32;
+        dto::Span {
+            start,
+            end: start + needle.len() as u32,
+        }
+    }
+
+    fn reference_from(refs: &[dto::ReferenceLink], from: dto::Span) -> &dto::ReferenceLink {
+        refs.iter()
+            .find(|r| r.from_span.start == from.start && r.from_span.end == from.end)
+            .unwrap_or_else(|| panic!("no reference from {from:?}, got {refs:#?}"))
+    }
+
+    #[test]
+    fn references_cover_a_field_type_a_relation_both_halves_a_use_target_and_a_group_member() {
+        let source = REFERENCE_FIXTURE;
+        let result = analyze(vec![file("/project.skema", source)], "/project.skema");
+        assert!(
+            result.ok,
+            "expected a clean analysis, got: {:?}",
+            result.diagnostics
+        );
+
+        // A field type: `total Money;` -> `Datatype Money`.
+        let money_decl = span_of(source, "Money", 0);
+        let field_type = reference_from(&result.references, span_of(source, "Money", 1));
+        assert_eq!(field_type.from_file, "/project.skema");
+        assert_eq!(field_type.to_file, "/project.skema");
+        assert_eq!(field_type.to_span.start, money_decl.start);
+        assert_eq!(field_type.to_span.end, money_decl.end);
+
+        // A relation's table half: `>Customer.id` -> `Table Customer`.
+        let customer_decl = span_of(source, "Customer", 0);
+        let relation_table = reference_from(&result.references, span_of(source, "Customer", 1));
+        assert_eq!(relation_table.to_span.start, customer_decl.start);
+        assert_eq!(relation_table.to_span.end, customer_decl.end);
+
+        // A relation's field half: `.id` -> Customer's own `id` column, not
+        // the `id` written at the relation site.
+        let dot_id_start = source.find(".id").expect("a relation target field") as u32 + 1;
+        let relation_field = reference_from(
+            &result.references,
+            dto::Span {
+                start: dot_id_start,
+                end: dot_id_start + 2,
+            },
+        );
+        let customer_id = span_of(source, "id int [pk]", 0);
+        assert_eq!(relation_field.to_span.start, customer_id.start);
+        assert_eq!(relation_field.to_span.end, customer_id.start + 2);
+
+        // A `use` target: `use Stamped;` -> `Partial Stamped`.
+        let stamped_decl = span_of(source, "Stamped", 0);
+        let use_target = reference_from(&result.references, span_of(source, "Stamped", 1));
+        assert_eq!(use_target.to_span.start, stamped_decl.start);
+        assert_eq!(use_target.to_span.end, stamped_decl.end);
+
+        // A `Group` member: `Table Customer;` -> `Table Customer`.
+        let group_member = reference_from(&result.references, span_of(source, "Customer", 2));
+        assert_eq!(group_member.to_span.start, customer_decl.start);
+        assert_eq!(group_member.to_span.end, customer_decl.end);
+
+        assert_eq!(
+            result.references.len(),
+            5,
+            "expected exactly these five references, got {:#?}",
+            result.references
+        );
     }
 
     #[test]

@@ -35,20 +35,20 @@ impl Namespaces {
 /// Builds the namespace table of each file from its own `Document` name and
 /// its imports. `docs/02`, "Namespace uniqueness": every name visible here
 /// must be unique, otherwise it's an error.
-pub(crate) fn build(facts: &[FileFacts<'_>], diags: &mut Vec<Diagnostic>) -> Namespaces {
+pub(crate) fn build(facts: &[FileFacts], diags: &mut Vec<Diagnostic>) -> Namespaces {
     let mut visible = vec![HashMap::new(); facts.len()];
     let mut imports = vec![Vec::new(); facts.len()];
 
     for file in facts {
         let idx = file.id.0 as usize;
 
-        if let Some((name, span, _)) = file.document {
+        if let Some((name, span, _)) = &file.document {
             insert_namespace(
                 &mut visible[idx],
-                name.to_owned(),
+                name.to_string(),
                 file.id,
                 file.id,
-                span,
+                *span,
                 diags,
             );
         }
@@ -56,7 +56,7 @@ pub(crate) fn build(facts: &[FileFacts<'_>], diags: &mut Vec<Diagnostic>) -> Nam
         for (i, (item_span, import)) in file.imports.iter().enumerate() {
             let target = file.import_targets.get(i).copied().flatten();
 
-            match (target, &import.path) {
+            match (target, import.path()) {
                 (None, Some(path)) => {
                     diags.push(Diagnostic::error(
                         file.id,
@@ -70,14 +70,14 @@ pub(crate) fn build(facts: &[FileFacts<'_>], diags: &mut Vec<Diagnostic>) -> Nam
             }
             let Some(target) = target else { continue };
 
-            let (visible_as, name_span) = match &import.alias {
-                Some(alias) => (alias.text.clone(), alias.span),
+            let (visible_as, name_span) = match import.alias() {
+                Some(alias) => (alias.text().to_owned(), alias.span()),
                 None => match facts
                     .iter()
                     .find(|f| f.id == target)
-                    .and_then(|f| f.document)
+                    .and_then(|f| f.document.as_ref())
                 {
-                    Some((name, ..)) => (name.to_owned(), *item_span),
+                    Some((name, ..)) => (name.to_string(), *item_span),
                     // Target file has no `Document` block – already reported there.
                     None => continue,
                 },

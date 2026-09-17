@@ -6,7 +6,7 @@
 //! items. That's a useful side effect: if something isn't reachable here,
 //! a `pub use` is missing in `lib.rs`.
 
-use skema_syntax::ast::{BlockKind, FieldTypeKind, ItemKind, RelationOp};
+use skema_syntax::ast::{self, BlockKind, FieldTypeKind, RelationOp};
 use skema_syntax::{parse, tokenize};
 
 /// `include_str!` reads the file at **compile time** and embeds it as a
@@ -70,7 +70,7 @@ fn example_model_parses_without_messages() {
 fn example_model_contains_the_expected_declarations() {
     let (file, _) = parse(EXAMPLE);
 
-    let count = |k: BlockKind| file.blocks().filter(|b| b.kind == k).count();
+    let count = |k: BlockKind| file.blocks().filter(|b| b.kind() == k).count();
     assert_eq!(count(BlockKind::Project), 1);
     assert_eq!(count(BlockKind::Document), 1);
     assert_eq!(count(BlockKind::Partial), 1);
@@ -80,7 +80,7 @@ fn example_model_contains_the_expected_declarations() {
     // Email and decimal
     assert_eq!(count(BlockKind::Datatype), 2);
 
-    assert_eq!(file.spec().and_then(|s| s.version), Some(1));
+    assert_eq!(file.spec().and_then(|s| s.version()), Some(1));
     // myexample.skema is deliberately runnable on its own (docs/README,
     // "All constructs in a single file") – imports are shown by
     // examples/generic/.
@@ -93,38 +93,41 @@ fn table_order_is_fully_broken_down() {
 
     let order = file
         .blocks()
-        .find(|b| b.name.as_ref().is_some_and(|n| n.to_dotted() == "Order"))
+        .find(|b| b.name().is_some_and(|n| n.to_dotted() == "Order"))
         .expect("Table Order");
 
+    let items: Vec<_> = order.items().collect();
+
     // `use common_base;`
-    assert!(
-        matches!(&order.items[0].kind, ItemKind::Use(u) if u.target.to_dotted() == "common_base")
-    );
+    assert!(matches!(
+        items[0].kind(),
+        ast::ItemKind::Use(u) if u.target().to_dotted() == "common_base"
+    ));
 
     // `customer >Customer.id [required, onDelete=cascade];`
-    let ItemKind::Field(customer) = &order.items[1].kind else {
-        panic!("expected a field, found {:?}", order.items[1].kind);
+    let ast::ItemKind::Field(customer) = items[1].kind() else {
+        panic!("expected a field, found {:?}", items[1].kind());
     };
-    assert_eq!(customer.name.text, "customer");
-    let Some(FieldTypeKind::Relation { op, target }) = customer.ty.as_ref().map(|t| &t.kind) else {
+    assert_eq!(customer.name().text(), "customer");
+    let Some(FieldTypeKind::Relation { op, target }) = customer.ty().and_then(|t| t.kind()) else {
         panic!("expected a relationship");
     };
-    assert_eq!(*op, RelationOp::OneToMany);
+    assert_eq!(op, RelationOp::OneToMany);
     assert_eq!(target.to_dotted(), "Customer.id");
-    assert_eq!(customer.flags.len(), 2);
-    assert_eq!(customer.flags[0].key.text, "required");
-    assert_eq!(customer.flags[1].key.text, "onDelete");
+    let flags: Vec<_> = customer.flags().collect();
+    assert_eq!(flags.len(), 2);
+    assert_eq!(flags[0].key().text(), "required");
+    assert_eq!(flags[1].key().text(), "onDelete");
 
     // `gross_sum decimal(10, 2);` – a data type with arguments
     let gross_sum = order
-        .items
-        .iter()
-        .find_map(|i| match &i.kind {
-            ItemKind::Field(f) if f.name.text == "gross_sum" => Some(f),
+        .items()
+        .find_map(|item| match item.kind() {
+            ast::ItemKind::Field(f) if f.name().text() == "gross_sum" => Some(f),
             _ => None,
         })
         .expect("gross_sum");
-    let Some(FieldTypeKind::Named { path, args }) = gross_sum.ty.as_ref().map(|t| &t.kind) else {
+    let Some(FieldTypeKind::Named { path, args }) = gross_sum.ty().and_then(|t| t.kind()) else {
         panic!("expected a named type");
     };
     assert_eq!(path.to_dotted(), "decimal");
@@ -136,14 +139,13 @@ fn group_contains_refs_instead_of_declarations() {
     let (file, _) = parse(EXAMPLE);
     let group = file
         .blocks()
-        .find(|b| b.kind == BlockKind::Group)
+        .find(|b| b.kind() == BlockKind::Group)
         .expect("Group Shop");
 
     let refs: Vec<_> = group
-        .items
-        .iter()
-        .filter_map(|i| match &i.kind {
-            ItemKind::Ref(r) => Some((r.kind, r.path.to_dotted())),
+        .items()
+        .filter_map(|item| match item.kind() {
+            ast::ItemKind::Ref(r) => Some((r.kind(), r.path().to_dotted())),
             _ => None,
         })
         .collect();
@@ -168,23 +170,21 @@ fn datatype_with_parameters_and_sub_blocks() {
     let dt = file
         .blocks()
         .find(|b| {
-            b.kind == BlockKind::Datatype
-                && b.name.as_ref().is_some_and(|n| n.to_dotted() == "decimal")
+            b.kind() == BlockKind::Datatype && b.name().is_some_and(|n| n.to_dotted() == "decimal")
         })
         .expect("Datatype decimal");
 
-    assert_eq!(
-        dt.name.as_ref().map(|n| n.to_dotted()).as_deref(),
-        Some("decimal")
-    );
-    let params: Vec<_> = dt.params.iter().map(|p| p.name.text.as_str()).collect();
+    assert_eq!(dt.name().map(|n| n.to_dotted()).as_deref(), Some("decimal"));
+    let params: Vec<_> = dt
+        .params()
+        .map(|p| p.name().map(|n| n.text().to_owned()).unwrap_or_default())
+        .collect();
     assert_eq!(params, ["precision", "scale"]);
 
     let sub_blocks: Vec<_> = dt
-        .items
-        .iter()
-        .filter_map(|i| match &i.kind {
-            ItemKind::Block(b) => Some(b.kind),
+        .items()
+        .filter_map(|item| match item.kind() {
+            ast::ItemKind::Block(b) => Some(b.kind()),
             _ => None,
         })
         .collect();

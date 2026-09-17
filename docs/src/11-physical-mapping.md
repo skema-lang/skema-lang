@@ -88,6 +88,27 @@ Table Order {
 
 The engine name carries `@` here for the same reason it does inside `Datatype`: it is [a name belonging to the language](01-language-basics.md#the-at-sign-convention), not one the project chose. There is one spelling in both places.
 
+## Reserved words and identifier length
+
+Under `mode = strict` with a real `dialect` (not `generic`), every *resolved* physical name — table, column, schema, database — is checked against that engine's reserved words (case-insensitive) and its identifier length limit, in bytes. `draft` and `generic` get no diagnostic at all: the check has nothing decided to check against a `generic` project, and `draft` is a sketch, not yet the state a model is generated from.
+
+The check follows the same cascade as everywhere else in this document: it sees `table = "order"` on a `Table` named `Order`, not the business name, because the physical name is what `CREATE TABLE` receives.
+
+Postgres's limit is 63 bytes, MySQL's is 64 — both fixed. Oracle's is configurable, since real Oracle databases differ on it:
+
+```skema
+Project {
+  mode    = strict;
+  dialect = oracledb;
+
+  Database {
+    Dialect @oracledb { identifierLength = "extended"; }
+  }
+}
+```
+
+`identifierLength` takes `"standard"` (30 bytes, the default when absent) or `"extended"` (128 bytes) — an unrecognized value is an error, a closed setting like `mode`/`dialect`, written as a quoted string like every other setting inside a `Dialect` block. It is legal **only** in `Project`'s own `Database` block: unlike `tablespace`/`schema`, an identifier limit is a fact about the whole database instance, not something that varies per table, so it is rejected in a `Document`- or `Table`-level `Database`.
+
 ## What not to use
 
 `Meta.dbName` is **not** a physical-name mechanism — `Meta` only describes, it never changes generated DDL (see [03 — Meta & Style](03-meta-and-style.md)). Use `Database { table = "…"; }` instead.

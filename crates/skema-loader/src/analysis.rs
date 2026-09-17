@@ -222,6 +222,70 @@ mod tests {
     }
 
     #[test]
+    fn references_match_skema_api_analyze_project_for_the_same_project() {
+        use skema_api::{ProjectFile, ProjectInput, analyze_project};
+
+        // Mirrors `skema-api::project`'s own reference-covering fixture
+        // (`skema-api/src/project.rs`), covering a field type, both halves
+        // of a relation target, a `use` target and a `Group` member, so
+        // both crates' `ReferenceLink`s can be compared for one project.
+        let source = "spec 1;\nDocument shop {}\n\
+            Project { mode = draft; dialect = generic; }\n\
+            Datatype Money { Field { type = int; } }\n\
+            Partial Stamped { createdAt string; }\n\
+            Table Customer { id int [pk]; }\n\
+            Table Order { id int [pk]; total Money; customer >Customer.id; use Stamped; }\n\
+            Group Core { Table Customer; }\n";
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("project.skema");
+        fs::write(&root, source).expect("write fixture");
+
+        let project = load(&root).expect("load");
+        let via_loader = analyze(&project, true);
+        assert!(via_loader.ok(), "{:#?}", via_loader.diagnostics);
+
+        // Same absolute path `skema-loader` itself resolves to, so `file`
+        // names in each side's `ReferenceLink`s line up byte-for-byte.
+        let root_path = root
+            .canonicalize()
+            .expect("canonicalize")
+            .to_str()
+            .expect("a utf-8 path")
+            .to_owned();
+        let via_api = analyze_project(ProjectInput {
+            files: vec![ProjectFile {
+                path: root_path.clone(),
+                source: source.to_owned(),
+            }],
+            root_path,
+            with_locations: true,
+        });
+        assert!(via_api.ok, "{:#?}", via_api.diagnostics);
+
+        fn signature(r: &skema_api::ReferenceLink) -> (String, u32, u32, String, u32, u32) {
+            (
+                r.from_file.clone(),
+                r.from_span.start,
+                r.from_span.end,
+                r.to_file.clone(),
+                r.to_span.start,
+                r.to_span.end,
+            )
+        }
+        let mut loader_refs: Vec<_> = via_loader.references.iter().map(signature).collect();
+        let mut api_refs: Vec<_> = via_api.references.iter().map(signature).collect();
+        loader_refs.sort();
+        api_refs.sort();
+
+        assert_eq!(
+            loader_refs, api_refs,
+            "skema-api::analyze_project's references must match skema-loader::analyze's for the same project"
+        );
+        assert_eq!(via_loader.references.len(), 5);
+    }
+
+    #[test]
     fn a_load_error_names_its_file_once() {
         // The path belongs in `location`; repeating it in the message made
         // `skema-cli` print it twice.

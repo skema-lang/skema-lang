@@ -31,6 +31,7 @@ Table Customer {
 | `note` | string | Domain description. Feeds editor hover text and generated DDL comments. |
 | `version` | string | The model's own revision — see [`spec` vs `Meta.version`](01-language-basics.md#spec-vs-metaversion). |
 | `styleClasses` | list | Assigns style classes — see [Style classes](#style-classes) below. |
+| `movedFrom` | string, `Table` only | This table's previous name, read by the planned `skema diff` to recognize a rename instead of a drop and an unrelated add. |
 
 Custom keys follow the `x-` rule from [01 — Custom keys](01-language-basics.md#custom-keys).
 

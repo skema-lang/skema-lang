@@ -96,6 +96,115 @@ fn known_key_with_x_prefix_is_allowed() {
     assert!(diags.is_empty(), "{diags:#?}");
 }
 
+#[test]
+fn moved_from_on_a_table_meta_is_accepted_and_resolved() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; Meta {{ movedFrom = \"OldName\"; }} }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(model.tables[0].moved_from.as_deref(), Some("OldName"));
+}
+
+#[test]
+fn table_without_moved_from_resolves_to_none() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(model.tables[0].moved_from, None);
+}
+
+#[test]
+fn moved_from_with_a_non_string_value_is_rejected() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; Meta {{ movedFrom = [foo]; }} }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`movedFrom` must be a string")),
+        "{diags:#?}"
+    );
+    assert_eq!(model.tables[0].moved_from, None);
+}
+
+#[test]
+fn moved_from_is_rejected_in_project_meta() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Meta { movedFrom = \"OldName\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_document_meta() {
+    let src = "spec 1;\nDocument shop { Meta { movedFrom = \"OldName\"; } }\nProject { mode = draft; dialect = generic; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_partial_meta() {
+    let src = format!(
+        "{HEADER}\nPartial P {{ id int [pk]; Meta {{ movedFrom = \"OldName\"; }} }}\nTable T {{ use P; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_enum_meta() {
+    let src = format!(
+        "{HEADER}\nEnum Status {{ Field {{ type = string; }} Meta {{ movedFrom = \"OldName\"; }} draft; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_group_meta() {
+    let src = format!(
+        "{HEADER}\nTable Order {{ id int [pk]; }}\nGroup G {{ Meta {{ movedFrom = \"OldName\"; }} Table Order; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn moved_from_is_rejected_in_datatype_meta() {
+    let src = format!(
+        "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; }} Meta {{ movedFrom = \"OldName\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown key `movedFrom`")),
+        "{diags:#?}"
+    );
+}
+
 /// A field body needs no `[…]` flags of its own – `bar string { label =
 /// "…"; };` is the whole statement (`docs/05`, the "any part may be
 /// missing" rule).
@@ -130,6 +239,415 @@ fn duplicate_group_membership_is_rejected() {
         messages(&diags)
             .iter()
             .any(|m| m.contains("already belongs to group")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn dangling_group_ref_is_an_error_by_default() {
+    let src = format!("{HEADER}\nGroup G {{ Table Ghost; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown declaration"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_group_ref_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nGroup G { Table Ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown declaration"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_group_ref_stays_an_error_when_explicitly_configured() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = error; } }\nGroup G { Table Ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown declaration"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_group_ref_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nGroup G { Table Ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown declaration"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+// ===========================================================================
+// `Lint.danglingRef` on the other reference kinds `resolve.rs` resolves
+// (task 90) – same `dangling_ref_severity` helper as `Group`'s tests above.
+// ===========================================================================
+
+#[test]
+fn dangling_use_target_is_an_error_by_default() {
+    let src = format!("{HEADER}\nTable T {{ use Ghost; id uuid [pk]; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown `Partial` `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_use_target_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nTable T { use Ghost; id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown `Partial` `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_use_target_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nTable T { use Ghost; id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown `Partial` `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_table_is_an_error_by_default() {
+    let src = format!("{HEADER}\nTable T {{ id int [pk]; customer >Ghost.id; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown table `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_table_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nTable T { id uuid [pk]; customer >Ghost.id; }\n";
+    let (model, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown table `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+
+    // Owner-decided model behaviour (task 90): downgrading to `warn` keeps
+    // the field, untyped and relation-less, and blocks nothing.
+    let table = model.tables.iter().find(|t| t.name == "T").unwrap();
+    let field = table.fields.iter().find(|f| f.name == "customer").unwrap();
+    assert_eq!(field.ty.name, "unknown");
+    assert!(field.relation.is_none());
+    assert!(
+        !diags
+            .iter()
+            .any(|d| d.severity == skema_hir::Severity::Error),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn dangling_relation_table_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nTable T { id int [pk]; customer >Ghost.id; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown table `Ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_field_is_an_error_by_default() {
+    let src = format!(
+        "{HEADER}\nTable Customer {{ id int [pk]; }}\nTable Order {{ id int [pk]; customer >Customer.ghost; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("`Customer` has no field `ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_field_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nTable Customer { id uuid [pk]; }\nTable Order { id uuid [pk]; customer >Customer.ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("`Customer` has no field `ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_relation_field_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.ghost; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("`Customer` has no field `ghost`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_type_name_is_an_error_by_default() {
+    let src = format!("{HEADER}\nTable T {{ x ghosttype; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown type `ghosttype`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_type_name_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nTable T { x ghosttype; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown type `ghosttype`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_type_name_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nTable T { x ghosttype; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown type `ghosttype`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_type_name_under_a_dialect_is_also_governed() {
+    // The dialect-specific "unknown type" message (`resolve_named_type`'s
+    // other `None` arm) is the same governed diagnostic under a different
+    // wording – covers both variants task 90 lists under kind 5.
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; Lint { danglingRef = warn; } }\nTable T { x ghosttype; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("unknown type `ghosttype`"))
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_use_wrong_kind_is_an_error_by_default() {
+    let src = format!(
+        "{HEADER}\nEnum Status {{ Field {{ type = string; }} draft; }}\nTable T {{ use Status; id int [pk]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("expects a `Partial`, `Status` is a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_use_wrong_kind_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { use Status; id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("expects a `Partial`, `Status` is a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_use_wrong_kind_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { use Status; id int [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("expects a `Partial`, `Status` is a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_wrong_kind_is_an_error_by_default() {
+    let src = format!(
+        "{HEADER}\nEnum Status {{ Field {{ type = string; }} draft; }}\nTable T {{ id int [pk]; x >Status.draft; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`Status` is not a `Table`, but a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn dangling_relation_wrong_kind_is_a_warning_when_configured_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { id uuid [pk]; x >Status.draft; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`Status` is not a `Table`, but a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn dangling_relation_wrong_kind_ignores_configured_severity_under_draft() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; Lint { danglingRef = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { id int [pk]; x >Status.draft; }\n";
+    let (_, diags) = analyze_src(src);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`Status` is not a `Table`, but a `Enum`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn use_of_a_namespace_without_a_partial_is_a_hard_error() {
+    // `use ns;` where `ns` resolves to an imported namespace but no
+    // `Partial` name follows it – previously silent (`Ctx::resolve_decl_path`
+    // returning `None`), never governed by `danglingRef` (task 90).
+    let imported = "spec 1;\nDocument ns { }\nPartial P { id uuid [pk]; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nTable T { use ns; other uuid; }\n";
+
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`use` expects a `Partial` after namespace `ns`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn use_of_a_namespace_without_a_partial_stays_an_error_under_warn() {
+    let imported = "spec 1;\nDocument ns { }\nPartial P { id uuid [pk]; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nimport \"./a.skema\";\nTable T { use ns; other uuid; }\n";
+
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let unknown: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message
+                .contains("`use` expects a `Partial` after namespace `ns`")
+        })
+        .collect();
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn cycle_in_use_still_errors_under_warn() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nPartial A { use B; }\nPartial B { use A; }\nTable T { use A; id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let cycles: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("cycle in `use`"))
+        .collect();
+    assert!(!cycles.is_empty(), "{diags:#?}");
+    assert!(
+        cycles
+            .iter()
+            .all(|d| d.severity == skema_hir::Severity::Error),
         "{diags:#?}"
     );
 }
@@ -237,6 +755,79 @@ fn known_relation_action_values_are_accepted() {
     );
     let (_, diags) = analyze_src(&src);
     assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn relation_target_of_a_namespace_without_a_table_is_rejected() {
+    // A relation target naming only a namespace (`customer >ns;`) – the only
+    // other `None` case from `Ctx::resolve_decl_path`, an empty path, cannot
+    // occur here. This is an unconditional error, never governed by `danglingRef`.
+    let imported = "spec 1;\nDocument ns { }\nTable Customer { id uuid [pk]; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nTable Order { customer >ns; }\n";
+
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let errors: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message.contains(
+                "a relationship target names a table and a field, not only namespace `ns`",
+            )
+        })
+        .collect();
+    assert_eq!(errors.len(), 1, "{diags:#?}");
+    assert_eq!(errors[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn relation_target_of_a_namespace_without_a_table_stays_an_error_under_warn() {
+    let imported = "spec 1;\nDocument ns { }\nTable Customer { id uuid [pk]; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { danglingRef = warn; } }\nimport \"./a.skema\";\nTable Order { customer >ns; }\n";
+
+    let ast_imported = skema_syntax::parse(imported).0;
+    let ast_main = skema_syntax::parse(main).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let errors: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.message.contains(
+                "a relationship target names a table and a field, not only namespace `ns`",
+            )
+        })
+        .collect();
+    assert_eq!(errors.len(), 1, "{diags:#?}");
+    assert_eq!(errors[0].severity, skema_hir::Severity::Error);
 }
 
 #[test]
@@ -1147,5 +1738,852 @@ fn style_class_with_invalid_key_is_rejected() {
             .iter()
             .any(|m| m.contains("is not camelCase")),
         "{diags:#?}"
+    );
+}
+
+// ===========================================================================
+// requirePrimaryKey / requireForeignKeyIndex / requireTableNote /
+// requireFieldNote (task 68)
+// ===========================================================================
+
+/// One (Lint key, source triggering the gap, substring of the gap's
+/// diagnostic) triple per new rule – shared by the omitted-key, draft-mode
+/// and unknown-severity tests below, which behave identically across all
+/// four keys.
+const REQUIRE_LINT_CASES: &[(&str, &str, &str)] = &[
+    (
+        "requirePrimaryKey",
+        "Table T { name string; }",
+        "has no primary key",
+    ),
+    (
+        "requireForeignKeyIndex",
+        "Table Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; }",
+        "has no covering index",
+    ),
+    (
+        "requireTableNote",
+        "Table T { id int [pk]; }",
+        "has no `Meta.note`",
+    ),
+    (
+        "requireFieldNote",
+        "Table T { id int [pk] { note = \"pk\"; } name string; }",
+        "has no `note`",
+    ),
+];
+
+#[test]
+fn require_lint_key_omitted_means_no_check() {
+    for &(key, decls, gap) in REQUIRE_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ danglingRef = warn; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            !messages(&diags).iter().any(|m| m.contains(gap)),
+            "`{key}` fired although it was never written in `Lint`: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn require_lint_key_is_not_checked_under_draft() {
+    for &(key, decls, gap) in REQUIRE_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = draft; dialect = generic; Lint {{ {key} = warn; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            !messages(&diags).iter().any(|m| m.contains(gap)),
+            "`{key}` fired under `mode = draft`: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn require_lint_key_unknown_severity_word_is_rejected() {
+    for &(key, decls, gap) in REQUIRE_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = maybe; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("unknown severity `maybe`")),
+            "`{key}`: {diags:#?}"
+        );
+        assert!(
+            !messages(&diags).iter().any(|m| m.contains(gap)),
+            "`{key}` still ran its check after an invalid severity: {diags:#?}"
+        );
+    }
+}
+
+// --- requirePrimaryKey -----------------------------------------------------
+
+#[test]
+fn table_without_pk_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn; } }\nTable T { name string; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no primary key"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn table_without_pk_severity_error_is_respected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = error; } }\nTable T { name string; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no primary key"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn table_with_a_pk_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn a_pk_inherited_via_use_partial_counts() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn; } }\nPartial P { id int [pk]; }\nTable T { use P; name string; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no primary key")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_partial_without_pk_is_never_flagged_itself() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn; } }\nPartial P { name string; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no primary key")),
+        "a `Partial` never becomes a table (docs/09): {diags:#?}"
+    );
+}
+
+// --- requireForeignKeyIndex -------------------------------------------------
+
+#[test]
+fn uncovered_foreign_key_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no covering index"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn uncovered_foreign_key_severity_error_is_respected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = error; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no covering index"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn foreign_key_with_own_unique_flag_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id [unique]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn foreign_key_with_own_pk_flag_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { customer >Customer.id [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn foreign_key_as_the_leading_column_of_a_composite_index_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; opened_on date; Index { (customer, opened_on); } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn foreign_key_not_leading_a_composite_index_is_still_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; }\nTable Order { id int [pk]; customer >Customer.id; opened_on date; Index { (opened_on, customer); } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn backreference_field_is_never_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable Customer { id int [pk]; orders <Order.customer; }\nTable Order { id int [pk]; customer >Customer.id; }\n";
+    let (_, diags) = analyze_src(src);
+    let msgs = messages(&diags);
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("`customer` has no covering index")),
+        "the `>` side should still be flagged: {diags:#?}"
+    );
+    assert!(
+        !msgs
+            .iter()
+            .any(|m| m.contains("`orders` has no covering index")),
+        "a `<` backreference creates no column (docs/07) and must be exempt: {diags:#?}"
+    );
+}
+
+#[test]
+fn one_to_one_relation_field_is_also_checked() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireForeignKeyIndex = warn; } }\nTable User { id int [pk]; }\nTable Profile { id int [pk]; user -User.id; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`user` has no covering index")),
+        "{diags:#?}"
+    );
+}
+
+// --- requireTableNote --------------------------------------------------------
+
+#[test]
+fn table_without_meta_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = warn; } }\nTable T { id int [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no `Meta.note`"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+}
+
+#[test]
+fn table_without_meta_note_severity_error_is_respected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = error; } }\nTable T { id int [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("has no `Meta.note`"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn table_with_meta_but_no_note_key_is_still_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = warn; } }\nTable T { id int [pk]; Meta { author = \"anna\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("has no `Meta.note`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn table_with_meta_note_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = warn; } }\nTable T { id uuid [pk]; Meta { note = \"what this table is for\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+// --- requireFieldNote --------------------------------------------------------
+
+#[test]
+fn field_without_note_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireFieldNote = warn; } }\nTable T { id int [pk] { note = \"primary key\"; } name string; }\n";
+    let (_, diags) = analyze_src(src);
+    let msgs = messages(&diags);
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("field `name` has no `note`")),
+        "{diags:#?}"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("field `id` has no `note`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn field_without_note_severity_error_is_respected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireFieldNote = error; } }\nTable T { id int [pk] { note = \"primary key\"; } name string; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits: Vec<_> = diags
+        .iter()
+        .filter(|d| d.message.contains("field `name` has no `note`"))
+        .collect();
+    assert_eq!(hits.len(), 1, "{diags:#?}");
+    assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+}
+
+#[test]
+fn field_with_note_is_not_flagged() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireFieldNote = warn; } }\nTable T { id uuid [pk] { note = \"primary key\"; } name varchar(80) { note = \"the customer's name\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn partial_field_without_note_is_flagged_even_when_unused_by_any_table() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireFieldNote = warn; } }\nPartial P { description string; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("field `description` has no `note`")),
+        "a `Partial`'s own fields are checked directly, not only through a \
+         `Table` that `use`s it: {diags:#?}"
+    );
+}
+
+#[test]
+fn enum_is_unaffected_by_either_note_rule() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requireTableNote = warn; requireFieldNote = warn; } }\nEnum Status { Field { type = string; } draft; }\nTable T { id uuid [pk] { note = \"pk\"; } status Status { note = \"current status\"; } Meta { note = \"a table\"; } }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+// --- required-FK cycles (always-on, not `Lint`) -----------------------------
+
+#[test]
+fn two_table_required_cycle_is_rejected_under_draft_with_no_lint_block() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; a >A.id [required]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let msgs = messages(&diags);
+    let hits: Vec<&&str> = msgs
+        .iter()
+        .filter(|m| m.contains("closes a cycle among tables: A, B"))
+        .collect();
+    assert_eq!(
+        hits.len(),
+        2,
+        "one diagnostic per field that closes the cycle, not gated by `Lint`/`mode`: {diags:#?}"
+    );
+}
+
+#[test]
+fn two_table_required_cycle_is_rejected_under_strict_with_lint_block() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { unusedImport = warn; } }\nTable A { id int [pk]; b >B.id [required]; }\nTable B { id int [pk]; a >A.id [required]; }\n";
+    let (_, diags) = analyze_src(src);
+    let hits = messages(&diags)
+        .iter()
+        .filter(|m| m.contains("closes a cycle among tables: A, B"))
+        .count();
+    assert_eq!(hits, 2, "{diags:#?}");
+}
+
+#[test]
+fn three_table_required_cycle_is_rejected() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; c >C.id [required]; }}\nTable C {{ id int [pk]; a >A.id [required]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let hits = messages(&diags)
+        .iter()
+        .filter(|m| m.contains("closes a cycle among tables: A, B, C"))
+        .count();
+    assert_eq!(hits, 3, "{diags:#?}");
+}
+
+#[test]
+fn self_referencing_required_foreign_key_is_rejected() {
+    let src =
+        format!("{HEADER}\nTable Employee {{ id int [pk]; manager >Employee.id [required]; }}\n");
+    let (_, diags) = analyze_src(&src);
+    let hits = messages(&diags)
+        .iter()
+        .filter(|m| m.contains("closes a cycle among tables: Employee"))
+        .count();
+    assert_eq!(hits, 1, "{diags:#?}");
+}
+
+#[test]
+fn pk_flag_foreign_key_counts_as_required() {
+    // `b` carries `[pk]`, not `[required]` – `pk` implies `required` (docs/05,
+    // "pk implies required and unique") and must close the cycle just the same.
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [pk]; }}\nTable B {{ id int [pk]; a >A.id [required]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    let msgs = messages(&diags);
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("foreign key `b`") && m.contains("A, B")),
+        "{diags:#?}"
+    );
+    assert!(
+        msgs.iter()
+            .any(|m| m.contains("foreign key `a`") && m.contains("A, B")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn noncircular_required_chain_is_not_flagged() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; c >C.id [required]; }}\nTable C {{ id int [pk]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn optional_link_breaks_the_cycle() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; a >A.id; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+#[test]
+fn back_reference_does_not_create_a_cycle_edge() {
+    let src = format!(
+        "{HEADER}\nTable A {{ id int [pk]; b >B.id [required]; }}\nTable B {{ id int [pk]; bs <A.b; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+
+// --- Naming-rule severity override ------------------------------------------
+
+/// `(Lint key, declaration with one violating name, message fragment)` – a
+/// bad `CamelCaseName` against a `snake_case` rule, shared by every test
+/// below that behaves identically across all three naming rules.
+const NAMING_LINT_CASES: &[(&str, &str, &str)] = &[
+    (
+        "fieldNaming",
+        "Table T { id uuid [pk]; CamelCaseName text; }",
+        "`CamelCaseName` does not follow the configured `fieldNaming`",
+    ),
+    (
+        "tableNaming",
+        "Table CamelCaseName { id uuid [pk]; }",
+        "`CamelCaseName` does not follow the configured `tableNaming`",
+    ),
+    (
+        "enumNaming",
+        "Enum CamelCaseName { Field { type = string; } draft; }",
+        "`CamelCaseName` does not follow the configured `enumNaming`",
+    ),
+];
+
+#[test]
+fn naming_rule_violation_defaults_to_warning() {
+    for &(key, decls, gap) in NAMING_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = snake_case; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        let hits: Vec<_> = diags.iter().filter(|d| d.message.contains(gap)).collect();
+        assert_eq!(hits.len(), 1, "`{key}`: {diags:#?}");
+        assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+    }
+}
+
+#[test]
+fn naming_rule_explicit_warn_override_stays_a_warning() {
+    for &(key, decls, gap) in NAMING_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = snake_case [warn]; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        let hits: Vec<_> = diags.iter().filter(|d| d.message.contains(gap)).collect();
+        assert_eq!(hits.len(), 1, "`{key}`: {diags:#?}");
+        assert_eq!(hits[0].severity, skema_hir::Severity::Warning);
+    }
+}
+
+#[test]
+fn naming_rule_error_override_is_respected() {
+    for &(key, decls, gap) in NAMING_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = snake_case [error]; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        let hits: Vec<_> = diags.iter().filter(|d| d.message.contains(gap)).collect();
+        assert_eq!(hits.len(), 1, "`{key}`: {diags:#?}");
+        assert_eq!(hits[0].severity, skema_hir::Severity::Error);
+    }
+}
+
+#[test]
+fn naming_rule_unknown_severity_word_is_rejected() {
+    for &(key, decls, gap) in NAMING_LINT_CASES {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = generic; Lint {{ {key} = snake_case [oops]; }} }}\n{decls}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("unknown severity `oops`")),
+            "`{key}`: {diags:#?}"
+        );
+        assert!(
+            !messages(&diags).iter().any(|m| m.contains(gap)),
+            "`{key}` still ran its check after an invalid severity: {diags:#?}"
+        );
+        assert_eq!(
+            diags.len(),
+            1,
+            "`{key}` should yield exactly one diagnostic: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn severity_override_on_unused_import_is_rejected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { unusedImport = warn [error]; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags).iter().any(|m| m.contains(
+            "severity override `[error]` is only valid on `fieldNaming`/`tableNaming`/`enumNaming`"
+        )),
+        "{diags:#?}"
+    );
+    assert_eq!(diags.len(), 1, "{diags:#?}");
+}
+
+#[test]
+fn severity_override_on_require_lint_key_is_rejected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; Lint { requirePrimaryKey = warn [error]; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags).iter().any(|m| m.contains(
+            "severity override `[error]` is only valid on `fieldNaming`/`tableNaming`/`enumNaming`"
+        )),
+        "{diags:#?}"
+    );
+    assert_eq!(diags.len(), 1, "{diags:#?}");
+}
+
+#[test]
+fn severity_override_on_meta_setting_is_rejected() {
+    for mode in ["draft", "strict"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = {mode}; dialect = generic; }}\nTable T {{ id uuid [pk]; Meta {{ author = \"anna\" [error]; }} }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags).iter().any(|m| m.contains(
+                "severity override `[error]` is only valid on `fieldNaming`/`tableNaming`/`enumNaming`"
+            )),
+            "mode={mode}: {diags:#?}"
+        );
+        assert_eq!(diags.len(), 1, "mode={mode}: {diags:#?}");
+    }
+}
+
+#[test]
+fn severity_override_on_database_setting_is_rejected() {
+    for mode in ["draft", "strict"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = {mode}; dialect = generic; }}\nTable T {{ id uuid [pk]; Database {{ table = \"t\" [error]; }} }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags).iter().any(|m| m.contains(
+                "severity override `[error]` is only valid on `fieldNaming`/`tableNaming`/`enumNaming`"
+            )),
+            "mode={mode}: {diags:#?}"
+        );
+        assert_eq!(diags.len(), 1, "mode={mode}: {diags:#?}");
+    }
+}
+
+// ===========================================================================
+// Reserved words & identifier length (task 82)
+// ===========================================================================
+
+#[test]
+fn reserved_physical_table_name_is_flagged_under_strict() {
+    // `order` is reserved in all three dialects (docs/05's own example).
+    for dialect in ["postgres", "mysql", "oracledb"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable Order {{ id uuid [pk]; Database {{ table = \"order\"; }} }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("`order` is a reserved word in")
+                    && m.contains(dialect)
+                    && m.contains("table")),
+            "{dialect}: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn reserved_physical_table_name_is_silent_under_draft_and_generic() {
+    let draft = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = postgres; }\nTable Order { id uuid [pk]; Database { table = \"order\"; } }\n";
+    let (_, diags) = analyze_src(draft);
+    assert!(
+        !messages(&diags).iter().any(|m| m.contains("reserved word")),
+        "draft: {diags:#?}"
+    );
+
+    let generic = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = generic; }\nTable Order { id uuid [pk]; Database { table = \"order\"; } }\n";
+    let (_, diags) = analyze_src(generic);
+    assert!(
+        !messages(&diags).iter().any(|m| m.contains("reserved word")),
+        "generic: {diags:#?}"
+    );
+}
+
+#[test]
+fn reserved_physical_column_name_is_flagged_under_strict() {
+    // `select` is reserved in all three dialects.
+    for dialect in ["postgres", "mysql", "oracledb"] {
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable T {{ id uuid [pk]; select varchar(80); }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("`select` is a reserved word in")
+                    && m.contains(dialect)
+                    && m.contains("column")),
+            "{dialect}: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn too_long_physical_column_name_is_flagged_under_strict() {
+    // One byte over each dialect's limit (oracledb defaults to `standard`, 30).
+    for (dialect, len) in [("postgres", 64), ("mysql", 65), ("oracledb", 31)] {
+        let name = "a".repeat(len);
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable T {{ id uuid [pk]; {name} varchar(80); }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            messages(&diags)
+                .iter()
+                .any(|m| m.contains("byte identifier limit")),
+            "{dialect} at {len} bytes: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn physical_column_name_at_the_dialect_limit_is_not_flagged() {
+    // Exactly at each dialect's limit – no diagnostic.
+    for (dialect, len) in [("postgres", 63), ("mysql", 64), ("oracledb", 30)] {
+        let name = "a".repeat(len);
+        let src = format!(
+            "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = {dialect}; }}\nTable T {{ id uuid [pk]; {name} varchar(80); }}\n"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert!(
+            !messages(&diags)
+                .iter()
+                .any(|m| m.contains("byte identifier limit")),
+            "{dialect} at {len} bytes: {diags:#?}"
+        );
+    }
+}
+
+#[test]
+fn physical_table_name_check_uses_the_database_override_not_the_declared_name() {
+    // Safe declared name, colliding override -> flagged (a safe business
+    // name given a colliding override must not slip through).
+    let collides = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable Purchase { id uuid [pk]; Database { table = \"order\"; } }\n";
+    let (_, diags) = analyze_src(collides);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`order` is a reserved word")),
+        "{diags:#?}"
+    );
+
+    // Colliding declared name, safe override -> not flagged (checking the
+    // business name instead would false-positive here).
+    let safe = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable Order { id uuid [pk]; Database { table = \"purchase_orders\"; } }\n";
+    let (_, diags) = analyze_src(safe);
+    assert!(
+        !messages(&diags).iter().any(|m| m.contains("reserved word")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn physical_column_name_check_uses_the_column_flag_not_the_declared_name() {
+    let collides = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable T { id uuid [pk]; status varchar(80) [column=\"select\"]; }\n";
+    let (_, diags) = analyze_src(collides);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`select` is a reserved word")),
+        "{diags:#?}"
+    );
+
+    let safe = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; }\nTable T { id uuid [pk]; select varchar(80) [column=\"status\"]; }\n";
+    let (_, diags) = analyze_src(safe);
+    assert!(
+        !messages(&diags).iter().any(|m| m.contains("reserved word")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn reserved_schema_name_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; Database { schema = \"select\"; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("`select` is a reserved word in postgres") && m.contains("schema")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn reserved_database_name_is_flagged_under_strict() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = postgres; Database { database = \"select\"; } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags).iter().any(
+            |m| m.contains("`select` is a reserved word in postgres") && m.contains("database")
+        ),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn multibyte_physical_column_name_is_counted_in_bytes_not_characters() {
+    // 32 characters, each `é` two UTF-8 bytes -> 64 bytes, one over
+    // postgres's 63-byte limit despite being well under it in characters.
+    let name = "é".repeat(32);
+    let src = format!(
+        "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = postgres; }}\nTable T {{ id uuid [pk]; note varchar(80) [column=\"{name}\"]; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("64 bytes long") && m.contains("63-byte identifier limit")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn oracledb_default_identifier_length_is_standard_30_bytes() {
+    let name = "a".repeat(31);
+    let src = format!(
+        "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = oracledb; }}\nTable T {{ id uuid [pk]; {name} varchar(80); }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("30-byte identifier limit")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn identifier_length_extended_raises_oracledbs_limit_to_128_bytes() {
+    let name_31 = "a".repeat(31);
+    let under_limit = format!(
+        "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = oracledb; Database {{ Dialect @oracledb {{ identifierLength = \"extended\"; }} }} }}\nTable T {{ id uuid [pk]; {name_31} varchar(80); }}\n"
+    );
+    let (_, diags) = analyze_src(&under_limit);
+    assert!(
+        !messages(&diags)
+            .iter()
+            .any(|m| m.contains("byte identifier limit")),
+        "31 bytes under extended: {diags:#?}"
+    );
+
+    let name_129 = "a".repeat(129);
+    let over_limit = format!(
+        "spec 1;\nDocument shop {{ }}\nProject {{ mode = strict; dialect = oracledb; Database {{ Dialect @oracledb {{ identifierLength = \"extended\"; }} }} }}\nTable T {{ id uuid [pk]; {name_129} varchar(80); }}\n"
+    );
+    let (_, diags) = analyze_src(&over_limit);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("128-byte identifier limit")),
+        "129 bytes under extended: {diags:#?}"
+    );
+}
+
+#[test]
+fn unknown_identifier_length_value_is_rejected() {
+    let src = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = oracledb; Database { Dialect @oracledb { identifierLength = \"medium\"; } } }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(src);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("unknown `identifierLength` value `medium`")),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn identifier_length_outside_projects_own_database_is_rejected() {
+    let document_level = "spec 1;\nDocument shop { Database { Dialect @oracledb { identifierLength = \"extended\"; } } }\nProject { mode = strict; dialect = oracledb; }\nTable T { id uuid [pk]; }\n";
+    let (_, diags) = analyze_src(document_level);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("only legal in `Project`'s own `Database` block")),
+        "document-level: {diags:#?}"
+    );
+
+    let table_level = "spec 1;\nDocument shop { }\nProject { mode = strict; dialect = oracledb; }\nTable T { id uuid [pk]; Database { Dialect @oracledb { identifierLength = \"extended\"; } } }\n";
+    let (_, diags) = analyze_src(table_level);
+    assert!(
+        messages(&diags)
+            .iter()
+            .any(|m| m.contains("only legal in `Project`'s own `Database` block")),
+        "table-level: {diags:#?}"
     );
 }

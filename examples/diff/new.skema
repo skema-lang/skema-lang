@@ -1,0 +1,29 @@
+spec 1;
+
+/*
+ * "After" side of a `skema diff` example – renames Order to Purchase,
+ * drops its customer_id column (breaking), and adds Shipment.
+ */
+
+Document shop {
+  Meta {
+    note = "After: skema diff example";
+  }
+}
+
+Project {
+  mode    = draft;
+  dialect = generic;
+}
+
+Table Purchase {
+  id int [pk];
+
+  Meta {
+    movedFrom = "Order";
+  }
+}
+
+Table Shipment {
+  id int [pk];
+}

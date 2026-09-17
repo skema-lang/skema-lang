@@ -17,7 +17,7 @@
 //! load should not cost N parses.
 
 use serde::Serialize;
-use skema_syntax::ast::{self, BlockKind};
+use skema_syntax::ast::{self, AstNode, BlockKind};
 #[cfg(feature = "typescript")]
 use tsify_next::Tsify;
 
@@ -185,30 +185,33 @@ struct RawDeclMeta {
 
 fn decl_metas(file: &ast::SourceFile, offsets: &Utf16Offsets, kind: BlockKind) -> Vec<RawDeclMeta> {
     file.blocks()
-        .filter(|b| b.kind == kind)
+        .filter(|b| b.kind() == kind)
         .filter_map(|decl| {
-            let name = decl.name.as_ref()?.as_ident()?.text.clone();
+            let name = decl.name()?.as_ident()?.text().to_owned();
             let meta = decl.child(BlockKind::Meta);
+            let meta_body_start = meta
+                .as_ref()
+                .and_then(ast::Block::body_start)
+                .map(|s| offsets.convert(s));
             Some(RawDeclMeta {
                 name,
-                body_start: offsets.convert(decl.body_start()),
-                meta_body_start: meta.map(|m| offsets.convert(m.body_start())),
-                entries: meta.map(|m| entries(m, offsets)).unwrap_or_default(),
+                body_start: offsets.convert(decl.body_start()?),
+                meta_body_start,
+                entries: meta.map(|m| entries(&m, offsets)).unwrap_or_default(),
             })
         })
         .collect()
 }
 
 pub(crate) fn entries(meta: &ast::Block, offsets: &Utf16Offsets) -> Vec<MetaEntry> {
-    meta.items
-        .iter()
-        .filter_map(|item| match &item.kind {
+    meta.items()
+        .filter_map(|item| match item.kind() {
             ast::ItemKind::Setting(a) => Some(MetaEntry {
-                key: a.key.text.clone(),
-                value: a.value.as_ref().map(ast::Value::to_text),
-                key_range: range(offsets, a.key.span),
-                value_range: a.value.as_ref().map(|v| range(offsets, v.span)),
-                entry_range: range(offsets, a.span),
+                key: a.key().text(),
+                value: a.value().map(|v| v.to_text()),
+                key_range: range(offsets, a.key().span()),
+                value_range: a.value().map(|v| range(offsets, v.span())),
+                entry_range: range(offsets, a.span()),
             }),
             _ => None,
         })

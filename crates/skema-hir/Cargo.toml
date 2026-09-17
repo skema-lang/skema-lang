@@ -12,6 +12,8 @@ skema-syntax.workspace = true
 # exportable to JSON, but HOW (file, stdout, HTTP response) is up to the
 # calling crates (`skema-cli`, `skema-lsp`, `skema-py`).
 serde = { version = "1", features = ["derive"] }
+# Owned names for symbol tables that outlive a borrow of the syntax tree.
+smol_str = "0.3.2"
 
 [lints]
 workspace = true
