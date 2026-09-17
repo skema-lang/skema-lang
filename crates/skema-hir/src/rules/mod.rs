@@ -89,10 +89,11 @@ pub(crate) fn run(
     let namespaces = namespace::build(&facts, &mut diags);
 
     for file in &facts {
-        placement::check(file.id, file.ast, &mut diags);
-        keys::check(file.id, file.ast, &mut diags);
-        dialect::check(file.id, &file.ast.syntax(), &mut diags);
-        style::check(file.id, file.ast, &mut diags);
+        let view = file.ast.syntax();
+        placement::check(file.id, &view, &mut diags);
+        keys::check(file.id, &view, &mut diags);
+        dialect::check(file.id, &view, &mut diags);
+        style::check(file.id, &view, &mut diags);
     }
 
     let project = project::check(&facts, &mut diags);

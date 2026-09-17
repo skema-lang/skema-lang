@@ -3,7 +3,7 @@
 //! kind (Lint belongs in Project, Index in Table/Partial, Field in
 //! Datatype/Enum, …).
 
-use skema_syntax::legacy_ast::{self as ast, BlockKind};
+use skema_syntax::ast::{self, AstNode, BlockKind};
 
 use crate::{Diagnostic, FileId};
 
@@ -54,21 +54,27 @@ fn allowed_parents(kind: BlockKind) -> Option<&'static [Parent]> {
 }
 
 pub(crate) fn check(id: FileId, file: &ast::SourceFile, diags: &mut Vec<Diagnostic>) {
-    walk(id, &file.items, Parent::Top, diags);
+    walk(id, file.items(), Parent::Top, diags);
 }
 
-fn walk(id: FileId, items: &[ast::Item], parent: Parent, diags: &mut Vec<Diagnostic>) {
+fn walk(
+    id: FileId,
+    items: impl Iterator<Item = ast::Item>,
+    parent: Parent,
+    diags: &mut Vec<Diagnostic>,
+) {
     for item in items {
-        match &item.kind {
+        match item.kind() {
             ast::ItemKind::Block(b) => {
-                if let Some(allowed) = allowed_parents(b.kind) {
+                let kind = b.kind();
+                if let Some(allowed) = allowed_parents(kind) {
                     if !allowed.contains(&parent) {
-                        diags.push(Diagnostic::error(id, item.span, message(b.kind, allowed)));
+                        diags.push(Diagnostic::error(id, item.span(), message(kind, allowed)));
                     }
                 }
-                walk(id, &b.items, Parent::Block(b.kind), diags);
+                walk(id, b.items(), Parent::Block(kind), diags);
             }
-            ast::ItemKind::Field(f) => walk(id, &f.items, Parent::FieldBody, diags),
+            ast::ItemKind::Field(f) => walk(id, f.items(), Parent::FieldBody, diags),
             _ => {}
         }
     }

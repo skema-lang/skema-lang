@@ -29,12 +29,9 @@ fn walk(id: FileId, items: impl Iterator<Item = ast::Item>, diags: &mut Vec<Diag
 
 fn check_selector(id: FileId, block: &ast::Block, diags: &mut Vec<Diagnostic>) {
     let Some(selector) = block.selector() else {
-        let Some(keyword) = block.keyword() else {
-            return;
-        };
         diags.push(Diagnostic::error(
             id,
-            keyword.span(),
+            block.keyword().span(),
             format!(
                 "`Dialect` needs an engine name, e.g. `Dialect @postgres {{ … }}` – allowed: {}",
                 DIALECT_ENGINES.join(", ")

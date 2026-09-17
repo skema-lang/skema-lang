@@ -286,7 +286,7 @@ fn a_broken_field_stays_local_in_the_view() {
     let fields: Vec<_> = customer
         .items()
         .filter_map(|i| match i.kind() {
-            ast::ItemKind::Field(f) => f.name().map(|n| n.text().to_owned()),
+            ast::ItemKind::Field(f) => Some(f.name().text().to_owned()),
             _ => None,
         })
         .collect();
@@ -340,11 +340,133 @@ fn malformed_severity_overrides_expose_none_and_keep_the_next_setting() {
         .expect("Lint")
         .items()
         .filter_map(|i| match i.kind() {
-            ast::ItemKind::Setting(a) => a.key().map(|k| k.text()),
+            ast::ItemKind::Setting(a) => Some(a.key().text()),
             _ => None,
         })
         .collect();
     assert_eq!(keys, ["fieldNaming", "tableNaming"]);
+}
+
+// ---------------------------------------------------------------------------
+// Cast-time validation: a node missing a required part reads as `Error`,
+// and the accessor for that part is never `Option` (task 92, owner decision
+// "validate required parts at cast time").
+//
+// The grammar never actually emits a `Block`/`Field`/`Use`/`Ref`/`Setting`
+// node without its required part — `parse_item_kind` only calls into these
+// productions once the required first token is already confirmed present,
+// so a failure there falls back to a plain `Error` item before the node is
+// even opened (`grammar::parse_block_or_ref`, `parse_field`, `parse_use`).
+// These tests build the malformed shape directly with a `GreenNodeBuilder`,
+// bypassing the parser, to pin down `AstNode::cast`'s own contract rather
+// than a parser behaviour that already happens to hold.
+// ---------------------------------------------------------------------------
+
+use rowan::{GreenNodeBuilder, Language};
+use skema_syntax::syntax_kind::SkemaLanguage;
+
+fn raw(kind: SyntaxKind) -> rowan::SyntaxKind {
+    SkemaLanguage::kind_to_raw(kind)
+}
+
+/// A lone node of `kind`, with no children — the shape every one of these
+/// tests needs: present, but with its required part missing.
+fn synthetic_item(kind: SyntaxKind) -> ast::Item {
+    let mut builder = GreenNodeBuilder::new();
+    builder.start_node(raw(SyntaxKind::SourceFile));
+    builder.start_node(raw(kind));
+    builder.finish_node();
+    builder.finish_node();
+    ast::SourceFile::new_root(builder.finish())
+        .items()
+        .next()
+        .expect("one item")
+}
+
+#[test]
+fn block_without_a_keyword_reads_as_error() {
+    assert_eq!(
+        synthetic_item(SyntaxKind::Block).kind(),
+        ast::ItemKind::Error
+    );
+}
+
+#[test]
+fn field_without_a_name_reads_as_error() {
+    assert_eq!(
+        synthetic_item(SyntaxKind::Field).kind(),
+        ast::ItemKind::Error
+    );
+}
+
+#[test]
+fn use_without_a_target_reads_as_error() {
+    assert_eq!(synthetic_item(SyntaxKind::Use).kind(), ast::ItemKind::Error);
+}
+
+#[test]
+fn ref_without_a_path_reads_as_error() {
+    assert_eq!(synthetic_item(SyntaxKind::Ref).kind(), ast::ItemKind::Error);
+}
+
+/// A `Setting` wraps an `Attr`; an `Attr` with no key token makes the
+/// `Setting` unreadable too, since `Attr::cast` — not just `Setting::cast` —
+/// refuses it.
+#[test]
+fn setting_whose_attr_has_no_key_reads_as_error() {
+    let mut builder = GreenNodeBuilder::new();
+    builder.start_node(raw(SyntaxKind::SourceFile));
+    builder.start_node(raw(SyntaxKind::Setting));
+    builder.start_node(raw(SyntaxKind::Attr));
+    builder.token(raw(SyntaxKind::Eq), "=");
+    builder.finish_node(); // Attr
+    builder.finish_node(); // Setting
+    builder.finish_node(); // SourceFile
+    let file = ast::SourceFile::new_root(builder.finish());
+    let item = file.items().next().expect("one item");
+    assert_eq!(item.kind(), ast::ItemKind::Error);
+
+    // `Attr::cast` itself refuses the same node directly.
+    let attr_node = file
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == SyntaxKind::Attr)
+        .expect("the Attr node is still in the tree");
+    assert!(ast::Attr::cast(attr_node).is_none());
+}
+
+/// The other side of cast-time validation: once a node *does* have its
+/// required part, the accessor hands it back directly — no `Option` to
+/// thread through every call site.
+#[test]
+fn accessors_for_required_parts_are_not_optional() {
+    let (file, messages) =
+        parse("use base;\nmode = draft;\nTable Customer { id int; }\nGroup g { Table Customer; }");
+    assert!(messages.is_empty());
+    let view = file.syntax();
+
+    let ast::ItemKind::Use(u) = view.items().next().expect("use item").kind() else {
+        panic!("expected a use item");
+    };
+    let _: ast::Path = u.target();
+
+    let ast::ItemKind::Setting(setting) = view.items().nth(1).expect("setting item").kind() else {
+        panic!("expected a setting item");
+    };
+    let _: ast::Key = setting.key();
+
+    let table = view.blocks().next().expect("Table");
+    let _: ast::Ident = table.keyword();
+    let ast::ItemKind::Field(f) = table.items().next().expect("field").kind() else {
+        panic!("expected a field");
+    };
+    let _: ast::Ident = f.name();
+
+    let group = view.blocks().nth(1).expect("Group");
+    let ast::ItemKind::Ref(r) = group.items().next().expect("ref").kind() else {
+        panic!("expected a ref");
+    };
+    let _: ast::Path = r.path();
 }
 
 // ---------------------------------------------------------------------------
@@ -369,11 +491,11 @@ fn lower_item(item: &ast::Item) -> old::Item {
             alias: i.alias().map(|a| ident(&a)),
         }),
         ast::ItemKind::Use(u) => old::ItemKind::Use(old::Use {
-            target: path(&u.target().expect("use target")),
+            target: path(&u.target()),
         }),
         ast::ItemKind::Setting(a) => old::ItemKind::Setting(attr(&a)),
         ast::ItemKind::Field(f) => old::ItemKind::Field(old::Field {
-            name: ident(&f.name().expect("field name")),
+            name: ident(&f.name()),
             ty: f.ty().map(|t| old::FieldType {
                 span: t.span(),
                 kind: match t.kind().expect("checked by ty()") {
@@ -391,7 +513,7 @@ fn lower_item(item: &ast::Item) -> old::Item {
             items: f.items().map(|i| lower_item(&i)).collect(),
         }),
         ast::ItemKind::Block(b) => old::ItemKind::Block(old::Block {
-            keyword: ident(&b.keyword().expect("keyword")),
+            keyword: ident(&b.keyword()),
             kind: b.kind(),
             selector: b.selector().map(|s| ident(&s)),
             name: b.name().map(|n| path(&n)),
@@ -409,7 +531,7 @@ fn lower_item(item: &ast::Item) -> old::Item {
         ast::ItemKind::Ref(r) => old::ItemKind::Ref(old::Ref {
             keyword: ident(&r.keyword().expect("keyword")),
             kind: r.kind(),
-            path: path(&r.path().expect("ref path")),
+            path: path(&r.path()),
         }),
         ast::ItemKind::IndexEntry(e) => old::ItemKind::IndexEntry(old::IndexEntry {
             name: e.name().map(|n| ident(&n)),
@@ -439,7 +561,7 @@ fn path(p: &ast::Path) -> old::Path {
 }
 
 fn attr(a: &ast::Attr) -> old::Attr {
-    let key = a.key().expect("key");
+    let key = a.key();
     old::Attr {
         key: old::Key {
             text: key.text(),

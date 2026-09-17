@@ -12,7 +12,7 @@
 //! context-independent half is checked: a quoted key without `x-` is wrong
 //! either way.
 
-use skema_syntax::legacy_ast::{self as ast, BlockKind};
+use skema_syntax::ast::{self, BlockKind};
 
 use crate::catalog::{
     COLUMN_BODY_KEYS, DATABASE_KEYS, ENTRY_BODY_KEYS, FIELD_BLOCK_KEYS, FLAG_KEYS, INDEX_FLAG_KEYS,
@@ -58,53 +58,54 @@ fn known_field_body_for(enclosing: BlockKind) -> Option<&'static [&'static str]>
 }
 
 pub(crate) fn check(id: FileId, file: &ast::SourceFile, diags: &mut Vec<Diagnostic>) {
-    walk(id, &file.items, None, None, diags);
+    walk(id, file.items(), None, None, diags);
 }
 
 fn walk(
     id: FileId,
-    items: &[ast::Item],
+    items: impl Iterator<Item = ast::Item>,
     enclosing: Option<BlockKind>,
     declaration: Option<BlockKind>,
     diags: &mut Vec<Diagnostic>,
 ) {
     for item in items {
-        match &item.kind {
+        match item.kind() {
             ast::ItemKind::Setting(a) => {
                 let known = enclosing.and_then(|k| known_settings_for(k, declaration));
-                check_attr(id, a, known.as_deref(), enclosing, diags);
+                check_attr(id, &a, known.as_deref(), enclosing, diags);
             }
-            ast::ItemKind::Block(b) if b.kind == BlockKind::Field => {
-                for sub in &b.items {
-                    if let ast::ItemKind::Setting(a) = &sub.kind {
-                        check_attr(id, a, Some(FIELD_BLOCK_KEYS), Some(b.kind), diags);
+            ast::ItemKind::Block(b) if b.kind() == BlockKind::Field => {
+                for sub in b.items() {
+                    if let ast::ItemKind::Setting(a) = sub.kind() {
+                        check_attr(id, &a, Some(FIELD_BLOCK_KEYS), Some(b.kind()), diags);
                     }
                 }
             }
             ast::ItemKind::Block(b) => {
-                let next_declaration = if b.kind.is_declaration() {
-                    Some(b.kind)
+                let kind = b.kind();
+                let next_declaration = if kind.is_declaration() {
+                    Some(kind)
                 } else {
                     declaration
                 };
-                walk(id, &b.items, Some(b.kind), next_declaration, diags);
+                walk(id, b.items(), Some(kind), next_declaration, diags);
             }
             ast::ItemKind::Field(f) => {
                 let known = enclosing.and_then(known_field_body_for);
-                for sub in &f.items {
-                    if let ast::ItemKind::Setting(a) = &sub.kind {
+                for sub in f.items() {
+                    if let ast::ItemKind::Setting(a) = sub.kind() {
                         // A field body is never `Lint` – the bracket is
                         // never legal here regardless of enclosing.
-                        check_attr(id, a, known, None, diags);
+                        check_attr(id, &a, known, None, diags);
                     }
                 }
-                for flag in &f.flags {
-                    check_attr(id, flag, Some(FLAG_KEYS), None, diags);
+                for flag in f.flags() {
+                    check_attr(id, &flag, Some(FLAG_KEYS), None, diags);
                 }
             }
             ast::ItemKind::IndexEntry(e) => {
-                for flag in &e.flags {
-                    check_attr(id, flag, Some(INDEX_FLAG_KEYS), None, diags);
+                for flag in e.flags() {
+                    check_attr(id, &flag, Some(INDEX_FLAG_KEYS), None, diags);
                 }
             }
             _ => {}
@@ -119,43 +120,44 @@ fn check_attr(
     enclosing: Option<BlockKind>,
     diags: &mut Vec<Diagnostic>,
 ) {
-    if let Some(severity_override) = &attr.severity_override {
+    let key = attr.key();
+    if let Some(severity_override) = attr.severity_override() {
         let placed_on_naming_rule = enclosing == Some(BlockKind::Lint)
-            && SEVERITY_OVERRIDABLE_LINT_KEYS.contains(&attr.key.text.as_str());
+            && SEVERITY_OVERRIDABLE_LINT_KEYS.contains(&key.text().as_str());
         if !placed_on_naming_rule {
             diags.push(Diagnostic::error(
                 id,
-                severity_override.span,
+                severity_override.span(),
                 format!(
                     "severity override `[{}]` is only valid on \
                      `fieldNaming`/`tableNaming`/`enumNaming` (docs/04)",
-                    severity_override.text
+                    severity_override.text()
                 ),
             ));
         }
     }
 
-    if attr.key.quoted {
-        if !attr.key.text.starts_with("x-") {
+    if key.quoted() {
+        if !key.text().starts_with("x-") {
             diags.push(Diagnostic::error(
                 id,
-                attr.key.span,
+                key.span(),
                 format!(
                     "custom keys must start with `x-`, e.g. `\"x-{}\"` (docs/01)",
-                    attr.key.text
+                    key.text()
                 ),
             ));
         }
         return;
     }
     if let Some(known) = known {
-        if !known.contains(&attr.key.text.as_str()) {
+        if !known.contains(&key.text().as_str()) {
             diags.push(Diagnostic::error(
                 id,
-                attr.key.span,
+                key.span(),
                 format!(
                     "unknown key `{}` – allowed here: {} (custom keys: `\"x-…\"`)",
-                    attr.key.text,
+                    key.text(),
                     known.join(", ")
                 ),
             ));

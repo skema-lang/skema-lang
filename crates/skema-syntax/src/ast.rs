@@ -301,21 +301,40 @@ pub enum ValueKind {
     Type { path: Path, args: Vec<Value> },
 }
 
-ast_node!(Attr, Attr);
+/// `key ( "=" value )?` — cast fails without a key, so [`Attr::key`] never is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Attr {
+    node: SyntaxNode,
+    key: Key,
+}
+
+impl AstNode for Attr {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        if node.kind() != SyntaxKind::Attr {
+            return None;
+        }
+        let key = tokens(&node).next().and_then(Key::cast)?;
+        Some(Self { node, key })
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.node
+    }
+}
 
 impl Attr {
-    pub fn key(&self) -> Option<Key> {
-        tokens(&self.0).next().and_then(Key::cast)
+    pub fn key(&self) -> Key {
+        self.key.clone()
     }
 
     pub fn value(&self) -> Option<Value> {
-        children::<Value>(&self.0).find(|value| value.kind().is_some())
+        children::<Value>(&self.node).find(|value| value.kind().is_some())
     }
 
     /// `[error]` after a setting; `None` in `[flags]` and when malformed.
     pub fn severity_override(&self) -> Option<Ident> {
         let setting = self
-            .0
+            .node
             .parent()
             .filter(|p| p.kind() == SyntaxKind::Setting)?;
         let bracket = setting
@@ -416,36 +435,56 @@ impl BlockKind {
     }
 }
 
-ast_node!(Block, Block);
+/// `Word ("@" Ident)? path? params? body` — cast fails without the keyword,
+/// so [`Block::keyword`] never is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Block {
+    node: SyntaxNode,
+    keyword: Ident,
+}
+
+impl AstNode for Block {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        if node.kind() != SyntaxKind::Block {
+            return None;
+        }
+        let keyword = tokens(&node).next().and_then(Ident::cast)?;
+        Some(Self { node, keyword })
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.node
+    }
+}
 
 impl Block {
     /// The word as written — even if it's unknown (`postgres`).
-    pub fn keyword(&self) -> Option<Ident> {
-        tokens(&self.0).next().and_then(Ident::cast)
+    pub fn keyword(&self) -> Ident {
+        self.keyword.clone()
     }
 
     pub fn kind(&self) -> BlockKind {
-        block_kind(self.keyword())
+        BlockKind::from_keyword(self.keyword.text()).unwrap_or(BlockKind::Other)
     }
 
     /// `Style @table` — the built-in element type behind the `@`.
     pub fn selector(&self) -> Option<Ident> {
-        token_after(&self.0, SyntaxKind::At, SyntaxKind::Ident).and_then(Ident::cast)
+        token_after(&self.node, SyntaxKind::At, SyntaxKind::Ident).and_then(Ident::cast)
     }
 
     pub fn name(&self) -> Option<Path> {
-        child(&self.0)
+        child(&self.node)
     }
 
     pub fn params(&self) -> impl Iterator<Item = Param> + use<> {
-        child::<Params>(&self.0)
+        child::<Params>(&self.node)
             .into_iter()
             .flat_map(|params| children::<Param>(&params.0))
     }
 
     /// The `{` that opens the body.
     pub fn body_brace(&self) -> Option<Span> {
-        let body = child::<Body>(&self.0)?;
+        let body = child::<Body>(&self.node)?;
         token(&body.0, SyntaxKind::LBrace).map(|brace| to_span(brace.text_range()))
     }
 
@@ -455,7 +494,7 @@ impl Block {
     }
 
     pub fn items(&self) -> impl Iterator<Item = Item> + use<> {
-        body_items(&self.0)
+        body_items(&self.node)
     }
 
     /// The first direct sub-block of a given kind.
@@ -486,19 +525,38 @@ impl Param {
     }
 }
 
-ast_node!(Ref, Ref);
+/// `Word path ";"` — cast fails without the path, so [`Ref::path`] never is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Ref {
+    node: SyntaxNode,
+    path: Path,
+}
+
+impl AstNode for Ref {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        if node.kind() != SyntaxKind::Ref {
+            return None;
+        }
+        let path = child(&node)?;
+        Some(Self { node, path })
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.node
+    }
+}
 
 impl Ref {
     pub fn keyword(&self) -> Option<Ident> {
-        tokens(&self.0).next().and_then(Ident::cast)
+        tokens(&self.node).next().and_then(Ident::cast)
     }
 
     pub fn kind(&self) -> BlockKind {
         block_kind(self.keyword())
     }
 
-    pub fn path(&self) -> Option<Path> {
-        child(&self.0)
+    pub fn path(&self) -> Path {
+        self.path.clone()
     }
 }
 
@@ -506,24 +564,44 @@ impl Ref {
 // Fields
 // ===========================================================================
 
-ast_node!(Field, Field);
+/// `Ident type? flags? (body | ";")` — cast fails without the name, so
+/// [`Field::name`] never is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Field {
+    node: SyntaxNode,
+    name: Ident,
+}
+
+impl AstNode for Field {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        if node.kind() != SyntaxKind::Field {
+            return None;
+        }
+        let name = tokens(&node).next().and_then(Ident::cast)?;
+        Some(Self { node, name })
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.node
+    }
+}
 
 impl Field {
-    pub fn name(&self) -> Option<Ident> {
-        tokens(&self.0).next().and_then(Ident::cast)
+    pub fn name(&self) -> Ident {
+        self.name.clone()
     }
 
     /// `None` also for a half-written relation (`>` without a target).
     pub fn ty(&self) -> Option<FieldType> {
-        children::<FieldType>(&self.0).find(|ty| ty.kind().is_some())
+        children::<FieldType>(&self.node).find(|ty| ty.kind().is_some())
     }
 
     pub fn flags(&self) -> impl Iterator<Item = Attr> + use<> {
-        flags(&self.0)
+        flags(&self.node)
     }
 
     pub fn items(&self) -> impl Iterator<Item = Item> + use<> {
-        body_items(&self.0)
+        body_items(&self.node)
     }
 }
 
@@ -626,11 +704,31 @@ impl Import {
     }
 }
 
-ast_node!(Use, Use);
+/// `"use" path ";"` — cast fails without the target, so [`Use::target`]
+/// never is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Use {
+    node: SyntaxNode,
+    target: Path,
+}
+
+impl AstNode for Use {
+    fn cast(node: SyntaxNode) -> Option<Self> {
+        if node.kind() != SyntaxKind::Use {
+            return None;
+        }
+        let target = child(&node)?;
+        Some(Self { node, target })
+    }
+
+    fn syntax(&self) -> &SyntaxNode {
+        &self.node
+    }
+}
 
 impl Use {
-    pub fn target(&self) -> Option<Path> {
-        child(&self.0)
+    pub fn target(&self) -> Path {
+        self.target.clone()
     }
 }
 
@@ -656,11 +754,11 @@ impl Item {
         match node.kind() {
             SyntaxKind::Spec => ItemKind::Spec(Spec(node)),
             SyntaxKind::Import => ItemKind::Import(Import(node)),
-            SyntaxKind::Use => ItemKind::Use(Use(node)),
+            SyntaxKind::Use => Use::cast(node).map_or(ItemKind::Error, ItemKind::Use),
             SyntaxKind::Setting => child(&node).map_or(ItemKind::Error, ItemKind::Setting),
-            SyntaxKind::Field => ItemKind::Field(Field(node)),
-            SyntaxKind::Block => ItemKind::Block(Block(node)),
-            SyntaxKind::Ref => ItemKind::Ref(Ref(node)),
+            SyntaxKind::Field => Field::cast(node).map_or(ItemKind::Error, ItemKind::Field),
+            SyntaxKind::Block => Block::cast(node).map_or(ItemKind::Error, ItemKind::Block),
+            SyntaxKind::Ref => Ref::cast(node).map_or(ItemKind::Error, ItemKind::Ref),
             SyntaxKind::IndexEntry => ItemKind::IndexEntry(IndexEntry(node)),
             _ => ItemKind::Error,
         }
