@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.2"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -22,10 +22,10 @@ license = "MIT OR Apache-2.0"
 # without it neither skema-hir nor skema-loader could be published to a
 # registry (see the GitLab Cargo registry job in .gitlab-ci.yml).
 [workspace.dependencies]
-skema-syntax = { path = "crates/skema-syntax", version = "0.3.2" }
-skema-hir = { path = "crates/skema-hir", version = "0.3.2" }
-skema-loader = { path = "crates/skema-loader", version = "0.3.2" }
-skema-api = { path = "crates/skema-api", version = "0.3.2" }
+skema-syntax = { path = "crates/skema-syntax", version = "0.4.0" }
+skema-hir = { path = "crates/skema-hir", version = "0.4.0" }
+skema-loader = { path = "crates/skema-loader", version = "0.4.0" }
+skema-api = { path = "crates/skema-api", version = "0.4.0" }
 
 [workspace.lints.rust]
 # Public types without Debug are a pain in a compiler frontend, because you

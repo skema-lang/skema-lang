@@ -769,7 +769,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "skema-api"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "serde",
  "skema-hir",
@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "skema-cli"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "clap",
  "serde",
@@ -793,7 +793,7 @@ dependencies = [
 
 [[package]]
 name = "skema-hir"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "serde",
  "skema-syntax",
@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "skema-loader"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "skema-api",
  "skema-hir",
@@ -812,7 +812,7 @@ dependencies = [
 
 [[package]]
 name = "skema-lsp"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "lsp-server",
  "lsp-types",
@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "skema-py"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "pyo3",
  "serde",
@@ -836,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "skema-syntax"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "rowan",
  "serde",
@@ -844,7 +844,7 @@ dependencies = [
 
 [[package]]
 name = "skema-wasm"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "console_error_panic_hook",
  "skema-api",
