@@ -252,6 +252,9 @@ build-python-wheel:
       assert balance["ty"]["datatype"] == {"namespace": "shared", "name": "Money"}, balance["ty"]
       status = next(e for e in model["enums"] if e["name"] == "Status")
       assert (status["default"], status["note"]) == ("active", "Stored as text"), status
+      created_at = next(f for f in customer["fields"] if f["name"] == "created_at")
+      assert created_at["fromPartial"] == {"namespace": "shared", "name": "Audited"}, created_at
+      assert balance["fromPartial"] is None, balance
       PYEOF
   artifacts:
     paths:

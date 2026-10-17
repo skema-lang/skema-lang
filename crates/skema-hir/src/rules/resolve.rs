@@ -36,12 +36,21 @@ struct Env<'c> {
 /// `use`).
 #[derive(Default)]
 struct Flattened {
-    fields: Vec<(FileId, Span, ast::Field)>,
+    fields: Vec<FlatField>,
     indexes: Vec<(FileId, Span, ast::IndexEntry)>,
     /// One entry per `Record` block directly inside the table's own
     /// `Example` block – `Example` is `Table`-only (`docs/05`), so unlike
     /// `fields`/`indexes` this never comes from an inlined `use` `Partial`.
     examples: Vec<(FileId, Span, ast::Block)>,
+}
+
+struct FlatField {
+    owner: FileId,
+    span: Span,
+    field: ast::Field,
+    /// The innermost `Partial` declaring the field; `None` when written in
+    /// the table itself.
+    partial: Option<(FileId, SmolStr)>,
 }
 
 pub(crate) fn run(
@@ -83,9 +92,7 @@ pub(crate) fn run(
             let fields = flat
                 .fields
                 .iter()
-                .map(|(owner, span, f)| {
-                    resolve_field(&env, *owner, *span, f, &flattened, links, diags)
-                })
+                .map(|field| resolve_field(&env, field, &flattened, links, diags))
                 .collect();
             let indexes = build_indexes(flat, diags);
             let examples = build_examples(&env, flat, diags);
@@ -200,8 +207,13 @@ fn flatten_partial(
     }
 
     stack.push(key);
-    let result = flatten_items(env, owner, decl.block.items(), stack, links, diags);
+    let mut result = flatten_items(env, owner, decl.block.items(), stack, links, diags);
     stack.pop();
+    for field in &mut result.fields {
+        field
+            .partial
+            .get_or_insert_with(|| (owner, SmolStr::from(name)));
+    }
     result
 }
 
@@ -256,7 +268,16 @@ fn flatten_items(
                 }
                 out.indexes.extend(inner.indexes);
             }
-            ast::ItemKind::Field(f) => push_field(&mut out, (owner, item.span(), f), diags),
+            ast::ItemKind::Field(field) => push_field(
+                &mut out,
+                FlatField {
+                    owner,
+                    span: item.span(),
+                    field,
+                    partial: None,
+                },
+                diags,
+            ),
             ast::ItemKind::Block(b) if b.kind() == BlockKind::Index => {
                 for sub in b.items() {
                     if let ast::ItemKind::IndexEntry(e) = sub.kind() {
@@ -287,26 +308,25 @@ fn first_segment(path: &ast::Path) -> String {
         .unwrap_or_default()
 }
 
-fn push_field(out: &mut Flattened, field: (FileId, Span, ast::Field), diags: &mut Vec<Diagnostic>) {
-    let (owner, span, f) = field;
-    let name = f.name();
-    if let Some((_, _, existing)) = out
+fn push_field(out: &mut Flattened, field: FlatField, diags: &mut Vec<Diagnostic>) {
+    let name = field.field.name();
+    if let Some(existing) = out
         .fields
         .iter()
-        .find(|(_, _, e)| e.name().text() == name.text())
+        .find(|e| e.field.name().text() == name.text())
     {
         diags.push(Diagnostic::error(
-            owner,
+            field.owner,
             name.span(),
             format!(
                 "field name `{}` is already taken (at {:?}) – from `use` or an earlier field (docs/09)",
                 name.text(),
-                existing.name().span()
+                existing.field.name().span()
             ),
         ));
         return;
     }
-    out.fields.push((owner, span, f));
+    out.fields.push(field);
 }
 
 // ===========================================================================
@@ -339,7 +359,7 @@ fn build_indexes(flat: &Flattened, diags: &mut Vec<Diagnostic>) -> Vec<model::In
 }
 
 fn has_field(flat: &Flattened, name: &str) -> bool {
-    flat.fields.iter().any(|(_, _, f)| f.name().text() == name)
+    flat.fields.iter().any(|f| f.field.name().text() == name)
 }
 
 // ===========================================================================
@@ -358,7 +378,12 @@ fn build_examples(
     let field_types: Vec<(ast::Ident, Option<String>)> = flat
         .fields
         .iter()
-        .map(|(owner, _, f)| (f.name(), example_field_terminal_type(env, *owner, f)))
+        .map(|f| {
+            (
+                f.field.name(),
+                example_field_terminal_type(env, f.owner, &f.field),
+            )
+        })
         .collect();
 
     let rows: Vec<model::ExampleRow> = flat
@@ -458,8 +483,12 @@ fn build_examples(
 fn fields_flagged(flat: &Flattened, keys: &[&str]) -> Vec<String> {
     flat.fields
         .iter()
-        .filter(|(_, _, f)| f.flags().any(|a| keys.contains(&a.key().text().as_str())))
-        .map(|(_, _, f)| f.name().text().to_owned())
+        .filter(|f| {
+            f.field
+                .flags()
+                .any(|a| keys.contains(&a.key().text().as_str()))
+        })
+        .map(|f| f.field.name().text().to_owned())
         .collect()
 }
 
@@ -516,13 +545,17 @@ fn is_bool_literal(path: &ast::Path) -> bool {
 
 fn resolve_field(
     env: &Env<'_>,
-    owner: FileId,
-    span: Span,
-    f: &ast::Field,
+    flat_field: &FlatField,
     flattened: &HashMap<(FileId, SmolStr), Flattened>,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> model::Field {
+    let FlatField {
+        owner,
+        span,
+        field: ref f,
+        ref partial,
+    } = *flat_field;
     let mut flags = build_flags(f.flags());
     // `onDelete`/`onUpdate` are relation metadata, surfaced on `Relation`
     // below (via `resolve_relation`) instead – not one of a field's own
@@ -574,6 +607,9 @@ fn resolve_field(
         note,
         label,
         extensions: custom_keys(f.items()),
+        from_partial: partial
+            .as_ref()
+            .map(|(partial_owner, name)| decl_ref(env.ctx, *partial_owner, name)),
         span,
     }
 }
@@ -675,9 +711,14 @@ fn resolve_relation(
         .and_then(|flat| {
             flat.fields
                 .iter()
-                .find(|(_, _, f)| f.name().text() == field_name)
+                .find(|f| f.field.name().text() == field_name)
         });
-    let Some((field_owner, _, field)) = field_decl else {
+    let Some(FlatField {
+        owner: field_owner,
+        field,
+        ..
+    }) = field_decl
+    else {
         diags.push(Diagnostic::new(
             owner,
             env.dangling_ref_severity,

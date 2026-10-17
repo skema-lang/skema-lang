@@ -93,6 +93,9 @@ pub struct Field {
     pub label: Option<String>,
     /// From the field's body; an `x-` flag stays in `flags`.
     pub extensions: Extensions,
+    /// The innermost `Partial` declaring the field; `None` when written in
+    /// the table itself.
+    pub from_partial: Option<DeclRef>,
     pub span: Span,
 }
 

@@ -130,6 +130,18 @@ fn an_enum_exports_its_default_entry_and_field_note() {
 }
 
 #[test]
+fn a_field_names_its_partial_by_document_namespace_not_alias() {
+    let model: Value = serde_json::from_str(&export_fixture()).expect("export is JSON");
+
+    let customer = find(&model["tables"], "Customer");
+    assert_eq!(
+        find(&customer["fields"], "created_at")["fromPartial"],
+        json!({ "namespace": "shared", "name": "Audited" })
+    );
+    assert_eq!(find(&customer["fields"], "id")["fromPartial"], Value::Null);
+}
+
+#[test]
 fn a_field_type_names_its_declaration_by_document_namespace_not_alias() {
     let model: Value = serde_json::from_str(&export_fixture()).expect("export is JSON");
 

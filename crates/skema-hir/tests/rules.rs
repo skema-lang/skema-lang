@@ -3126,3 +3126,63 @@ Table T {{ id int [pk]; price Price; Example {{ Record {{ id = 1; price = "cheap
     assert_eq!(wrong.len(), 1, "{diags:#?}");
     assert_eq!(diags.len(), 1, "{diags:#?}");
 }
+
+// ===========================================================================
+// Field origin (task 116)
+// ===========================================================================
+
+fn field_origins(
+    table: &skema_hir::model::Table,
+) -> Vec<(&str, Option<skema_hir::model::DeclRef>)> {
+    table
+        .fields
+        .iter()
+        .map(|f| (f.name.as_str(), f.from_partial.clone()))
+        .collect()
+}
+
+#[test]
+fn a_field_names_the_partial_it_was_used_from_and_a_written_one_names_none() {
+    let src = format!(
+        "{HEADER}\nPartial Audited {{ created_at timestamp; }}\nTable T {{ id int [pk]; use Audited; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        field_origins(&model.tables[0]),
+        [("id", None), ("created_at", decl_ref("shop", "Audited"))]
+    );
+}
+
+#[test]
+fn a_field_from_nested_partials_names_the_innermost_one() {
+    let src = format!(
+        "{HEADER}\nPartial Identity {{ id int [pk]; }}\nPartial Base {{ use Identity; created_at timestamp; }}\nTable T {{ use Base; name string; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        field_origins(&model.tables[0]),
+        [
+            ("id", decl_ref("shop", "Identity")),
+            ("created_at", decl_ref("shop", "Base")),
+            ("name", None),
+        ]
+    );
+}
+
+#[test]
+fn a_partial_used_behind_an_import_alias_names_its_document_not_the_alias() {
+    let imported = "spec 1;\nDocument types { }\nPartial Identity { id int [pk]; }\nPartial Base { use Identity; created_at timestamp; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as t;\nTable T { use t.Base; name string; }\n";
+    let (model, diags) = analyze_main_importing_model(main, imported);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        field_origins(&model.tables[0]),
+        [
+            ("id", decl_ref("types", "Identity")),
+            ("created_at", decl_ref("types", "Base")),
+            ("name", None),
+        ]
+    );
+}

@@ -31,6 +31,10 @@
           "extensions": {
             "x-nocobase-interface": "createdAt"
           },
+          "fromPartial": {
+            "namespace": "shared",
+            "name": "Audited"
+          },
           "span": {
             "start": 50,
             "end": 173
@@ -70,6 +74,7 @@
           "note": null,
           "label": null,
           "extensions": {},
+          "fromPartial": null,
           "span": {
             "start": 233,
             "end": 258
@@ -109,6 +114,7 @@
           "extensions": {
             "x-ui-order": "1"
           },
+          "fromPartial": null,
           "span": {
             "start": 261,
             "end": 379
@@ -143,6 +149,7 @@
           "note": null,
           "label": null,
           "extensions": {},
+          "fromPartial": null,
           "span": {
             "start": 382,
             "end": 413
@@ -172,6 +179,7 @@
           "note": null,
           "label": null,
           "extensions": {},
+          "fromPartial": null,
           "span": {
             "start": 416,
             "end": 433
@@ -240,6 +248,7 @@
           "note": null,
           "label": null,
           "extensions": {},
+          "fromPartial": null,
           "span": {
             "start": 552,
             "end": 570
@@ -266,6 +275,7 @@
           "note": null,
           "label": null,
           "extensions": {},
+          "fromPartial": null,
           "span": {
             "start": 573,
             "end": 587
@@ -295,6 +305,7 @@
           "note": null,
           "label": null,
           "extensions": {},
+          "fromPartial": null,
           "span": {
             "start": 590,
             "end": 603
@@ -339,6 +350,7 @@
           "note": null,
           "label": null,
           "extensions": {},
+          "fromPartial": null,
           "span": {
             "start": 606,
             "end": 628

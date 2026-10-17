@@ -310,6 +310,8 @@ pub struct ExportedField {
     pub note: Option<String>,
     pub label: Option<String>,
     pub extensions: BTreeMap<String, String>,
+    /// See `model::Field::from_partial`.
+    pub from_partial: Option<DeclRef>,
     pub span: Span,
     pub location: Option<Location>,
 }
@@ -555,6 +557,7 @@ fn field(f: &model::Field, ctx: &LocateCtx<'_>) -> ExportedField {
         note: f.note.clone(),
         label: f.label.clone(),
         extensions: f.extensions.clone(),
+        from_partial: f.from_partial.as_ref().map(decl_ref),
         span: f.span.into(),
         location: ctx.locate(f.file, f.span),
     }
