@@ -112,6 +112,98 @@ fn table_without_moved_from_resolves_to_none() {
     assert_eq!(model.tables[0].moved_from, None);
 }
 
+fn extensions(pairs: &[(&str, &str)]) -> skema_hir::model::Extensions {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[test]
+fn x_keys_in_meta_reach_the_model_and_standard_keys_do_not() {
+    let src = r#"
+spec 1;
+Document shop { Meta { author = "anna"; "x-source" = "erp"; } }
+Project { mode = draft; dialect = generic; }
+Table T { id int [pk]; Meta { note = "n"; "x-title" = "Things"; } }
+Group G { Meta { author = "anna"; "x-color" = "blue"; } Table T; }
+"#;
+    let (model, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        model.tables[0].extensions,
+        extensions(&[("x-title", "Things")])
+    );
+    assert_eq!(
+        model.groups[0].extensions,
+        extensions(&[("x-color", "blue")])
+    );
+    assert_eq!(model.documents.len(), 1);
+    assert_eq!(model.documents[0].namespace, "shop");
+    assert_eq!(
+        model.documents[0].extensions,
+        extensions(&[("x-source", "erp")])
+    );
+}
+
+#[test]
+fn an_enums_field_block_wins_over_its_meta_on_the_same_x_key() {
+    let src = format!(
+        r#"{HEADER}
+Enum Status {{
+  Meta {{ note = "n"; "x-source" = "meta"; "x-icon" = "flag"; }}
+  Field {{ type = string; note = "f"; "x-source" = "field"; }}
+  active {{ label = "Active"; "x-color" = "green"; }}
+  archived;
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let status = &model.enums[0];
+    assert_eq!(
+        status.extensions,
+        extensions(&[("x-icon", "flag"), ("x-source", "field")])
+    );
+    assert_eq!(
+        status.entries[0].extensions,
+        extensions(&[("x-color", "green")])
+    );
+    assert!(status.entries[1].extensions.is_empty());
+}
+
+#[test]
+fn an_x_flag_stays_in_flags_and_an_x_body_key_goes_to_extensions() {
+    let src = format!(
+        r#"{HEADER}
+Table T {{
+  id   int [pk];
+  name text ["x-widget" = "input"] {{ note = "n"; "x-order" = 1; }}
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let name = &model.tables[0].fields[1];
+    assert_eq!(name.extensions, extensions(&[("x-order", "1")]));
+    assert!(name.flags.contains_key("x-widget"));
+    assert!(model.tables[0].fields[0].extensions.is_empty());
+    assert!(model.tables[0].extensions.is_empty());
+}
+
+#[test]
+fn x_values_are_text_and_the_first_occurrence_in_a_block_wins() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; Meta {{ \"x-a\" = true; \"x-b\" = [one, two]; \
+         \"x-c\" = `now()`; \"x-a\" = false; }} }}\n"
+    );
+    let (model, _) = analyze_src(&src);
+    assert_eq!(
+        model.tables[0].extensions,
+        extensions(&[("x-a", "true"), ("x-b", "one, two"), ("x-c", "now()")])
+    );
+}
+
 #[test]
 fn moved_from_with_a_non_string_value_is_rejected() {
     let src = format!("{HEADER}\nTable T {{ id int [pk]; Meta {{ movedFrom = [foo]; }} }}\n");
@@ -239,6 +331,99 @@ fn duplicate_group_membership_is_rejected() {
         messages(&diags)
             .iter()
             .any(|m| m.contains("already belongs to group")),
+        "{diags:#?}"
+    );
+}
+
+/// `main` is `FileId(0)` and imports `imported` (`FileId(1)`, namespace `a`).
+fn analyze_main_importing(main: &str, imported: &str) -> Vec<Diagnostic> {
+    analyze_main_importing_model(main, imported).1
+}
+
+fn analyze_main_importing_model(main: &str, imported: &str) -> (Model, Vec<Diagnostic>) {
+    let ast_main = skema_syntax::parse(main).0;
+    let ast_imported = skema_syntax::parse(imported).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+    let (model, _, diags) = analyze(&files);
+    (model, diags)
+}
+
+fn diagnostics_containing<'a>(diags: &'a [Diagnostic], needle: &str) -> Vec<&'a Diagnostic> {
+    diags
+        .iter()
+        .filter(|d| d.message.contains(needle))
+        .collect()
+}
+
+#[test]
+fn duplicate_group_membership_across_files_is_reported_in_the_later_file() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nGroup Billing { Table a.X; }\n";
+    let imported =
+        "spec 1;\nDocument a { }\nTable X { id int [pk]; }\nGroup MasterData { Table X; }\n";
+
+    let diags = analyze_main_importing(main, imported);
+    let belongs = diagnostics_containing(&diags, "already belongs to group `Billing`");
+    assert_eq!(belongs.len(), 1, "{diags:#?}");
+    assert_eq!(belongs[0].file, FileId(1));
+}
+
+#[test]
+fn same_named_groups_in_two_files_are_different_groups() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nGroup A { Table a.X; }\n";
+    let imported = "spec 1;\nDocument a { }\nTable X { id int [pk]; }\nGroup A { Table X; }\n";
+
+    let diags = analyze_main_importing(main, imported);
+    assert_eq!(
+        diagnostics_containing(&diags, "already belongs to group `A`").len(),
+        1,
+        "{diags:#?}"
+    );
+    assert!(
+        diagnostics_containing(&diags, "listed twice").is_empty(),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_member_listed_twice_in_one_group_is_reported_and_kept_once() {
+    let src = format!("{HEADER}\nTable X {{ id int [pk]; }}\nGroup A {{ Table X; Table X; }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "`X` is listed twice in group `A`").len(),
+        1,
+        "{diags:#?}"
+    );
+    assert!(
+        diagnostics_containing(&diags, "already belongs").is_empty(),
+        "{diags:#?}"
+    );
+    let members = &model.groups[0].members;
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].name, "X");
+}
+
+#[test]
+fn an_enum_in_two_groups_is_rejected() {
+    let src = format!(
+        "{HEADER}\nEnum Status {{ Field {{ type = string; }} draft; }}\nGroup A {{ Enum Status; }}\nGroup B {{ Enum Status; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "`Status` already belongs to group `A`").len(),
+        1,
         "{diags:#?}"
     );
 }
@@ -666,6 +851,56 @@ fn partial_field_collision_is_rejected() {
 }
 
 #[test]
+fn a_taken_field_name_names_where_it_was_taken_first() {
+    // (declarations, expected message, text starting at the reported field name)
+    let cases = [
+        (
+            "Partial P { id int [pk]; }\nTable T { use P; id uuid [pk]; }",
+            "field name `id` is already taken by a field from `Partial` `P` (docs/09)",
+            "id uuid",
+        ),
+        (
+            "Partial P { a int; }\nTable T { id uuid [pk]; a text; use P; }",
+            "field name `a` is already taken by an earlier field of `T` (docs/09)",
+            "a int",
+        ),
+        (
+            "Table T { id uuid [pk]; a int; a text; }",
+            "field name `a` is already taken by an earlier field of `T` (docs/09)",
+            "a text",
+        ),
+        (
+            "Partial B { a int; a text; }\nTable T { id uuid [pk]; use B; }",
+            "field name `a` is already taken by an earlier field of `B` (docs/09)",
+            "a text",
+        ),
+        (
+            "Partial A { a int; }\nPartial C { a text; }\nTable T { id uuid [pk]; use A; use C; }",
+            "field name `a` is already taken by a field from `Partial` `A` (docs/09)",
+            "a text",
+        ),
+        (
+            "Partial A { a int; }\nPartial B { use A; b int; }\nTable T { id uuid [pk]; use A; use B; }",
+            "field name `a` is already taken – `T` brings in `Partial` `A` twice through `use` (docs/09)",
+            "a int",
+        ),
+    ];
+    for (declarations, expected, reported_at) in cases {
+        let src = format!("{HEADER}\n{declarations}\n");
+        let (_, diags) = analyze_src(&src);
+        let taken = diagnostics_containing(&diags, "already taken");
+        assert_eq!(taken.len(), 1, "{declarations}: {diags:#?}");
+        assert_eq!(taken[0].message, expected, "{declarations}");
+        assert_eq!(taken[0].severity, skema_hir::Severity::Error);
+        assert_eq!(
+            Some(taken[0].span.start as usize),
+            src.find(reported_at),
+            "{declarations}"
+        );
+    }
+}
+
+#[test]
 fn cycle_in_use_is_detected_instead_of_hanging() {
     let src =
         format!("{HEADER}\nPartial A {{ use B; }}\nPartial B {{ use A; }}\nTable T {{ use A; }}\n");
@@ -676,6 +911,122 @@ fn cycle_in_use_is_detected_instead_of_hanging() {
             .any(|m| m.contains("cycle in `use`")),
         "{diags:#?}"
     );
+}
+
+#[test]
+fn a_use_cycle_is_reported_once_without_follow_on_errors() {
+    let src = format!(
+        "{HEADER}\nPartial A {{ use B; a int; }}\nPartial B {{ use A; b int; }}\nTable T {{ id uuid [pk]; use A; }}\nTable U {{ id uuid [pk]; use B; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "cycle in `use`").len(),
+        1,
+        "{diags:#?}"
+    );
+    assert!(
+        diagnostics_containing(&diags, "already taken").is_empty(),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_table_using_a_cycle_member_keeps_every_field_whichever_partial_comes_first() {
+    for partials in [
+        "Partial A { use B; a int; }\nPartial B { use A; b int; }",
+        "Partial B { use A; b int; }\nPartial A { use B; a int; }",
+    ] {
+        let src = format!(
+            "{HEADER}\n{partials}\nTable U {{ id uuid [pk]; use B; Index {{ ix(a); }} }}\nTable V {{ id uuid [pk]; x >U.a; }}\n"
+        );
+        let (model, diags) = analyze_src(&src);
+        assert_eq!(diags.len(), 1, "{partials}: {diags:#?}");
+        assert!(diags[0].message.contains("cycle in `use`"), "{diags:#?}");
+        let table = model.tables.iter().find(|t| t.name == "U").unwrap();
+        let names: Vec<&str> = table.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["id", "a", "b"], "{partials}");
+    }
+}
+
+#[test]
+fn two_use_cycles_through_one_partial_give_one_error_each() {
+    let src = format!(
+        "{HEADER}\nPartial A {{ use B; use C; }}\nPartial B {{ use A; }}\nPartial C {{ use A; }}\nTable T {{ id uuid [pk]; use A; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "cycle in `use`").len(),
+        2,
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_cross_file_use_cycle_is_reported_once_in_the_file_holding_the_use() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as t;\nPartial A { use t.B; a int; }\nTable T { id uuid [pk]; use A; }\n";
+    let imported = "spec 1;\nDocument types { }\nimport \"./main.skema\" as s;\nPartial B { use s.A; b int; }\n";
+    let ast_main = skema_syntax::parse(main).0;
+    let ast_imported = skema_syntax::parse(imported).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![Some(FileId(0))],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let cycles = diagnostics_containing(&diags, "cycle in `use`");
+    assert_eq!(cycles.len(), 1, "{diags:#?}");
+    assert_eq!(cycles[0].file, FileId(1));
+    let span = cycles[0].span;
+    assert_eq!(&imported[span.start as usize..span.end as usize], "A");
+}
+
+#[test]
+fn a_diagnostic_inside_a_shared_partial_is_reported_once() {
+    let src = format!(
+        "{HEADER}\nPartial P {{ use Ghost; x int; }}\nTable T {{ id uuid [pk]; use P; }}\nTable U {{ id uuid [pk]; use P; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "unknown `Partial` `Ghost`").len(),
+        1,
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_cross_file_use_of_an_unknown_partial_is_reported_at_the_use() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as t;\nTable T { id uuid [pk]; use t.Missing; }\n";
+    let imported = "spec 1;\nDocument types { }\nPartial Audit { created timestamp; }\n";
+
+    let diags = analyze_main_importing(main, imported);
+    let unknown = diagnostics_containing(&diags, "unknown `Partial` `Missing`");
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].file, FileId(0));
+    let span = unknown[0].span;
+    assert_eq!(&main[span.start as usize..span.end as usize], "Missing");
+}
+
+#[test]
+fn a_cross_file_use_of_a_non_partial_is_reported_at_the_use() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as t;\nTable T { id uuid [pk]; use t.Status; }\n";
+    let imported = "spec 1;\nDocument types { }\nEnum Status { Field { type = string; } draft; }\n";
+
+    let diags = analyze_main_importing(main, imported);
+    let wrong_kind = diagnostics_containing(&diags, "expects a `Partial`, `Status` is a `Enum`");
+    assert_eq!(wrong_kind.len(), 1, "{diags:#?}");
+    assert_eq!(wrong_kind[0].file, FileId(0));
+    let span = wrong_kind[0].span;
+    assert_eq!(&main[span.start as usize..span.end as usize], "Status");
 }
 
 #[test]
@@ -1103,6 +1454,60 @@ fn enum_field_type_must_be_string_or_int() {
             .any(|m| m.contains("must be `string` or `int`")),
         "{diags:#?}"
     );
+}
+
+#[test]
+fn an_enum_default_naming_an_entry_bare_is_exported_with_the_field_note() {
+    let src = format!(
+        "{HEADER}\nEnum E {{ Field {{ type = string; default = paid; note = \"States\"; }} draft; paid; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(model.enums[0].default.as_deref(), Some("paid"));
+    assert_eq!(model.enums[0].note.as_deref(), Some("States"));
+}
+
+#[test]
+fn an_enum_without_default_or_field_note_exports_none() {
+    let src = format!(
+        "{HEADER}\nEnum E {{ Field {{ type = string; }} Meta {{ note = \"meta only\"; }} draft; }}\nEnum F {{ draft; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    for e in &model.enums {
+        assert_eq!((e.default.as_deref(), e.note.as_deref()), (None, None));
+    }
+}
+
+#[test]
+fn an_enum_default_that_names_no_entry_is_rejected_and_exports_none() {
+    for default in ["shipped", "\"paid\"", "1", "`paid`"] {
+        let src = format!(
+            "{HEADER}\nEnum E {{ Field {{ type = string; default = {default}; }} draft; paid; }}\n"
+        );
+        let (model, diags) = analyze_src(&src);
+        assert_eq!(
+            messages(&diags),
+            ["`Enum.Field.default` must name one of this enum's entries, written bare (docs/08)"],
+            "{default}"
+        );
+        assert_eq!(model.enums[0].default, None, "{default}");
+    }
+}
+
+#[test]
+fn a_qualified_enum_default_is_rejected_with_a_hint_to_write_it_bare() {
+    let src = format!(
+        "{HEADER}\nEnum OrderStatus {{ Field {{ type = string; default = OrderStatus.paid; }} draft; paid; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert_eq!(
+        messages(&diags),
+        [
+            "`Enum.Field.default` must name one of this enum's entries, written bare: `paid`, not `OrderStatus.paid` (docs/08)"
+        ]
+    );
+    assert_eq!(model.enums[0].default, None);
 }
 
 #[test]
@@ -2585,5 +2990,365 @@ fn identifier_length_outside_projects_own_database_is_rejected() {
             .iter()
             .any(|m| m.contains("only legal in `Project`'s own `Database` block")),
         "table-level: {diags:#?}"
+    );
+}
+
+// ===========================================================================
+// Datatype declarations and type targets (task 114)
+// ===========================================================================
+
+// clippy.toml's test allowance covers `#[test]` fns, not their helpers.
+#[allow(clippy::panic)]
+fn datatype<'m>(model: &'m Model, name: &str) -> &'m skema_hir::model::Datatype {
+    model
+        .datatypes
+        .iter()
+        .find(|d| d.name == name)
+        .unwrap_or_else(|| panic!("no Datatype `{name}` in {:#?}", model.datatypes))
+}
+
+fn decl_ref(namespace: &str, name: &str) -> Option<skema_hir::model::DeclRef> {
+    Some(skema_hir::model::DeclRef {
+        namespace: namespace.to_owned(),
+        name: name.to_owned(),
+    })
+}
+
+fn texts(items: &[&str]) -> Vec<String> {
+    items.iter().map(|item| (*item).to_owned()).collect()
+}
+
+#[test]
+fn a_datatype_on_a_builtin_exports_its_field_block_and_params_as_written() {
+    let src = format!(
+        r#"{HEADER}
+Datatype regexstring(pattern string, flags string) {{
+  pattern {{ note = "Pattern the value must match"; }}
+  flags   {{ default = "i"; }}
+  Field {{ type = string; regex = "^{{pattern}}$"; default = "none"; note = "Matched text"; }}
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let regexstring = datatype(&model, "regexstring");
+    assert_eq!(regexstring.namespace, "shop");
+    assert_eq!(regexstring.base_type.as_deref(), Some("string"));
+    assert!(regexstring.base_type_args.is_empty());
+    assert_eq!(regexstring.base_datatype, None);
+    assert_eq!(regexstring.resolved_base_type.as_deref(), Some("string"));
+    assert_eq!(regexstring.regex.as_deref(), Some("^{pattern}$"));
+    assert_eq!(regexstring.default.as_deref(), Some("none"));
+    assert_eq!(regexstring.note.as_deref(), Some("Matched text"));
+    let params: Vec<_> = regexstring
+        .params
+        .iter()
+        .map(|p| {
+            (
+                p.name.as_str(),
+                p.ty.as_deref(),
+                p.default.as_deref(),
+                p.note.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        params,
+        [
+            (
+                "pattern",
+                Some("string"),
+                None,
+                Some("Pattern the value must match")
+            ),
+            ("flags", Some("string"), Some("i"), None),
+        ]
+    );
+}
+
+#[test]
+fn a_datatype_on_an_engine_catalog_type_resolves_to_it_under_its_dialect() {
+    let src = r#"spec 1;
+Document shop { }
+Project { mode = draft; dialect = postgres; }
+Datatype Price { Field { type = numeric(10, 2); } Dialect @postgres { sql = "numeric(10, 2)"; } }
+"#;
+    let (model, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let price = datatype(&model, "Price");
+    assert_eq!(price.base_type.as_deref(), Some("numeric"));
+    assert_eq!(price.base_type_args, texts(&["10", "2"]));
+    assert_eq!(price.base_datatype, None);
+    assert_eq!(price.resolved_base_type.as_deref(), Some("numeric"));
+}
+
+#[test]
+fn a_layered_datatype_resolves_through_an_import_alias_to_its_terminal_type() {
+    let imported = r#"spec 1;
+Document types { }
+Datatype decimal(precision int, scale int) {
+  scale { default = 2; }
+  Field { type = float; }
+}
+Datatype Cents { Field { type = decimal(12, 0); } }
+"#;
+    let main = r#"spec 1;
+Document shop { }
+Project { mode = draft; dialect = generic; }
+import "./a.skema" as types;
+Datatype Money { Field { type = types.decimal(10); } }
+Datatype Fee   { Field { type = types.Cents; } }
+Datatype Total { Field { type = Money; } }
+"#;
+    let (model, diags) = analyze_main_importing_model(main, imported);
+    assert!(diags.is_empty(), "{diags:#?}");
+
+    let money = datatype(&model, "Money");
+    assert_eq!(money.base_type.as_deref(), Some("types.decimal"));
+    assert_eq!(money.base_type_args, texts(&["10"]));
+    assert_eq!(money.base_datatype, decl_ref("types", "decimal"));
+    assert_eq!(money.resolved_base_type.as_deref(), Some("float"));
+
+    // `Cents`' own `decimal` resolves in its own file, where it is local.
+    let fee = datatype(&model, "Fee");
+    assert_eq!(fee.base_datatype, decl_ref("types", "Cents"));
+    assert_eq!(fee.resolved_base_type.as_deref(), Some("float"));
+
+    let total = datatype(&model, "Total");
+    assert_eq!(total.base_datatype, decl_ref("shop", "Money"));
+    assert_eq!(total.resolved_base_type.as_deref(), Some("float"));
+
+    let order: Vec<(&str, &str)> = model
+        .datatypes
+        .iter()
+        .map(|d| (d.namespace.as_str(), d.name.as_str()))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            ("shop", "Fee"),
+            ("shop", "Money"),
+            ("shop", "Total"),
+            ("types", "Cents"),
+            ("types", "decimal"),
+        ]
+    );
+}
+
+#[test]
+fn a_base_datatype_names_the_declaring_document_not_the_import_alias() {
+    let imported =
+        "spec 1;\nDocument numeric { }\nDatatype decimal(p int) { Field { type = float; } }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as num;\nDatatype Money { Field { type = num.decimal(10); } }\nTable T { id int [pk]; amount num.decimal(8); }\n";
+    let (model, diags) = analyze_main_importing_model(main, imported);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let money = datatype(&model, "Money");
+    assert_eq!(money.base_type.as_deref(), Some("num.decimal"));
+    assert_eq!(money.base_datatype, decl_ref("numeric", "decimal"));
+    let amount = &model.tables[0].fields[1].ty;
+    assert_eq!(amount.name, "num.decimal");
+    assert_eq!(amount.datatype, decl_ref("numeric", "decimal"));
+    assert_eq!(amount.enum_, None);
+}
+
+#[test]
+fn an_unknown_or_enum_base_exports_a_null_resolved_type_without_a_diagnostic() {
+    let src = format!(
+        r#"{HEADER}
+Enum Status {{ active; }}
+Datatype Unknown {{ Field {{ type = nope; }} }}
+Datatype OnEnum  {{ Field {{ type = Status; }} }}
+Datatype NoField {{ Meta {{ note = "n"; }} }}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let unknown = datatype(&model, "Unknown");
+    assert_eq!(unknown.base_type.as_deref(), Some("nope"));
+    assert_eq!(unknown.base_datatype, None);
+    assert_eq!(unknown.resolved_base_type, None);
+    let on_enum = datatype(&model, "OnEnum");
+    assert_eq!(on_enum.base_type.as_deref(), Some("Status"));
+    assert_eq!(on_enum.base_datatype, None);
+    assert_eq!(on_enum.resolved_base_type, None);
+    let no_field = datatype(&model, "NoField");
+    assert_eq!(no_field.base_type, None);
+    assert_eq!(no_field.resolved_base_type, None);
+}
+
+#[test]
+fn a_datatype_cycle_is_an_error_at_each_members_field_type() {
+    let src = format!(
+        r#"{HEADER}
+Datatype A {{ Field {{ type = B; }} }}
+Datatype B {{ Field {{ type = A(1); }} }}
+Datatype C {{ Field {{ type = A; }} }}
+Datatype Self {{ Field {{ type = shop.Self; }} }}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    let cycles = diagnostics_containing(&diags, "cycle in `Field.type`");
+    let at: Vec<&str> = cycles
+        .iter()
+        .map(|d| &src[d.span.start as usize..d.span.end as usize])
+        .collect();
+    assert_eq!(at, ["B", "A(1)", "shop.Self"], "{diags:#?}");
+    assert!(
+        cycles
+            .iter()
+            .all(|d| d.severity == skema_hir::Severity::Error)
+    );
+    for name in ["A", "B", "C", "Self"] {
+        assert_eq!(datatype(&model, name).resolved_base_type, None, "{name}");
+    }
+    assert_eq!(datatype(&model, "C").base_datatype, decl_ref("shop", "A"));
+}
+
+#[test]
+fn a_datatypes_field_block_wins_over_its_meta_on_the_same_x_key() {
+    let src = format!(
+        r#"{HEADER}
+Datatype D(size int) {{
+  size {{ note = "n"; "x-param" = "ignored"; }}
+  Meta {{ note = "m"; "x-source" = "meta"; "x-icon" = "coin"; }}
+  Field {{ type = int; "x-source" = "field"; }}
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        datatype(&model, "D").extensions,
+        extensions(&[("x-icon", "coin"), ("x-source", "field")])
+    );
+}
+
+#[test]
+fn a_field_type_points_at_its_enum_or_datatype_and_other_types_at_neither() {
+    let src = format!(
+        r#"{HEADER}
+Enum Status {{ active; }}
+Datatype Email {{ Field {{ type = string; }} }}
+Table Customer {{
+  id     int [pk];
+  email  Email;
+  status shop.Status;
+  owner  >Customer.id;
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let types: Vec<_> = model.tables[0]
+        .fields
+        .iter()
+        .map(|f| (f.name.as_str(), f.ty.datatype.clone(), f.ty.enum_.clone()))
+        .collect();
+    assert_eq!(
+        types,
+        [
+            ("id", None, None),
+            ("email", decl_ref("shop", "Email"), None),
+            ("status", None, decl_ref("shop", "Status")),
+            ("owner", None, None),
+        ]
+    );
+}
+
+/// Pins today's behaviour (`resolve_named_type` checks the catalog first),
+/// not a decision: postgres has `jsonb` in its catalog, but not `json`.
+#[test]
+fn a_bare_engine_catalog_name_shadows_a_same_named_datatype() {
+    let src = r#"spec 1;
+Document shop { }
+Project { mode = draft; dialect = postgres; }
+Datatype jsonb   { Field { type = text; } Dialect @postgres { sql = "jsonb"; } }
+Datatype json    { Field { type = text; } Dialect @postgres { sql = "json"; } }
+Datatype Payload { Field { type = jsonb; } Dialect @postgres { sql = "jsonb"; } }
+Table T { id int [pk]; data jsonb; doc json; }
+"#;
+    let (model, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let fields = &model.tables[0].fields;
+    assert_eq!(fields[1].ty.datatype, None);
+    assert_eq!(fields[2].ty.datatype, decl_ref("shop", "json"));
+    let payload = datatype(&model, "Payload");
+    assert_eq!(payload.base_datatype, None);
+    assert_eq!(payload.resolved_base_type.as_deref(), Some("jsonb"));
+}
+
+#[test]
+fn example_values_follow_layered_datatypes_to_their_builtin() {
+    let src = format!(
+        r#"{HEADER}
+Datatype decimal(precision int) {{ Field {{ type = float; }} }}
+Datatype Money {{ Field {{ type = decimal(10); }} }}
+Datatype Price {{ Field {{ type = Money; }} }}
+Table T {{ id int [pk]; price Price; Example {{ Record {{ id = 1; price = "cheap"; }} Record {{ id = 2; price = 9.5; }} }} }}
+"#
+    );
+    let (_, diags) = analyze_src(&src);
+    let wrong = diagnostics_containing(&diags, "`price` should be `float`");
+    assert_eq!(wrong.len(), 1, "{diags:#?}");
+    assert_eq!(diags.len(), 1, "{diags:#?}");
+}
+
+// ===========================================================================
+// Field origin (task 116)
+// ===========================================================================
+
+fn field_origins(
+    table: &skema_hir::model::Table,
+) -> Vec<(&str, Option<skema_hir::model::DeclRef>)> {
+    table
+        .fields
+        .iter()
+        .map(|f| (f.name.as_str(), f.from_partial.clone()))
+        .collect()
+}
+
+#[test]
+fn a_field_names_the_partial_it_was_used_from_and_a_written_one_names_none() {
+    let src = format!(
+        "{HEADER}\nPartial Audited {{ created_at timestamp; }}\nTable T {{ id int [pk]; use Audited; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        field_origins(&model.tables[0]),
+        [("id", None), ("created_at", decl_ref("shop", "Audited"))]
+    );
+}
+
+#[test]
+fn a_field_from_nested_partials_names_the_innermost_one() {
+    let src = format!(
+        "{HEADER}\nPartial Identity {{ id int [pk]; }}\nPartial Base {{ use Identity; created_at timestamp; }}\nTable T {{ use Base; name string; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        field_origins(&model.tables[0]),
+        [
+            ("id", decl_ref("shop", "Identity")),
+            ("created_at", decl_ref("shop", "Base")),
+            ("name", None),
+        ]
+    );
+}
+
+#[test]
+fn a_partial_used_behind_an_import_alias_names_its_document_not_the_alias() {
+    let imported = "spec 1;\nDocument types { }\nPartial Identity { id int [pk]; }\nPartial Base { use Identity; created_at timestamp; }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as t;\nTable T { use t.Base; name string; }\n";
+    let (model, diags) = analyze_main_importing_model(main, imported);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        field_origins(&model.tables[0]),
+        [
+            ("id", decl_ref("types", "Identity")),
+            ("created_at", decl_ref("types", "Base")),
+            ("name", None),
+        ]
     );
 }

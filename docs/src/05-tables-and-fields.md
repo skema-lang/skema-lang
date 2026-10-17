@@ -173,7 +173,7 @@ Rows are **unnamed** — a `Record` is identified only by its position inside `E
 - Every key in a `Record` must be a real field name on that table (including one pulled in via `use`) — an unknown key is a diagnostic.
 - Every field flagged `required` or `pk` must have a value in every row.
 - No two rows may assign the same value to a `pk`- or `unique`-flagged field.
-- Each value's literal kind must match its field's type: every built-in from [06 — Built-in types](06-data-types.md#built-in-types), or — one level deep — a `Datatype`-typed field's own `Field.type`. A raw expression (`` `…` ``) is accepted for any type, the same as everywhere else in the language (`regex` and `default` included) — it passes through to the target database unvalidated.
+- Each value's literal kind must match its field's type: every built-in from [06 — Built-in types](06-data-types.md#built-in-types), or a `Datatype`-typed field's `Field.type`, followed through layered `Datatype`s ([06 — Layering types](06-data-types.md#layering-types)) to the built-in it ends in. A raw expression (`` `…` ``) is accepted for any type, the same as everywhere else in the language (`regex` and `default` included) — it passes through to the target database unvalidated.
 
 A relationship field's value, and a value assigned to an `Enum`-typed field, are not type-checked — see [Reference → Not enforced yet](13-reference.md#not-enforced-yet).
 

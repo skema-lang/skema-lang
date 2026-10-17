@@ -12,10 +12,10 @@ mod style;
 
 use skema_syntax::Severity;
 use skema_syntax::Span;
-use skema_syntax::ast;
+use skema_syntax::ast::{self, AstNode};
 use smol_str::SmolStr;
 
-use crate::model::Model;
+use crate::model::{self, Model};
 use crate::namespace::{self, Namespaces};
 use crate::symbols::{self, Decl, FileFacts};
 use crate::{Diagnostic, FileId, InputFile};
@@ -112,7 +112,7 @@ pub(crate) fn run(
     let dangling_ref_severity = dangling_ref_severity(project.as_ref(), &mut diags);
 
     let groups = group::check(&ctx, dangling_ref_severity, &mut links, &mut diags);
-    let (tables, enums) = resolve::run(
+    let (tables, enums, datatypes) = resolve::run(
         &ctx,
         project.as_ref(),
         dangling_ref_severity,
@@ -135,6 +135,8 @@ pub(crate) fn run(
             tables,
             enums,
             groups,
+            documents: ctx.facts.iter().filter_map(document).collect(),
+            datatypes,
             dialect: project
                 .as_ref()
                 .and_then(|p| p.dialect.engine_name())
@@ -143,6 +145,16 @@ pub(crate) fn run(
         links,
         diags,
     )
+}
+
+fn document(file: &FileFacts) -> Option<model::Document> {
+    let (namespace, _, block) = file.document.as_ref()?;
+    Some(model::Document {
+        file: file.id,
+        namespace: namespace.to_string(),
+        extensions: resolve::meta_custom_keys(block),
+        span: block.span(),
+    })
 }
 
 /// `mode` and `dialect` from the one `Project` block – or a conservative

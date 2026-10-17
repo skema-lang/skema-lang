@@ -39,7 +39,7 @@ One place shows what belongs together — that's the point. The reverse — assi
 
 Within the same file, the namespace prefix is optional (see [02 — Referencing within vs. across files](02-project-and-documents.md#referencing-within-vs-across-files)) — `Table Order;` is enough there.
 
-## One table, one group
+## One declaration, one group
 
 Groups do not overlap and do not nest:
 
@@ -48,7 +48,7 @@ Group MasterData { Table Customer; }
 Group Billing    { Table Customer; }   # ERROR: already in MasterData
 ```
 
-A table may also belong to **no** group — groups are a tool for large models, not a mandatory step.
+A table or an enum belongs to at most one group. It may also belong to **no** group — groups are a tool for large models, not a mandatory step.
 
 ## Meta and styling
 

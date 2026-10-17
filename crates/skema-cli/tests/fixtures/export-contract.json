@@ -1,0 +1,647 @@
+{
+  "tables": [
+    {
+      "file": "project.skema",
+      "namespace": "shop",
+      "name": "Customer",
+      "physical": {
+        "database": null,
+        "schema": null,
+        "table": null
+      },
+      "fields": [
+        {
+          "file": "shared.skema",
+          "name": "created_at",
+          "ty": {
+            "name": "timestamp",
+            "args": [],
+            "datatype": null,
+            "enum": null
+          },
+          "flags": [
+            {
+              "name": "required",
+              "value": true
+            }
+          ],
+          "relation": null,
+          "note": "Insert time",
+          "label": null,
+          "extensions": {
+            "x-nocobase-interface": "createdAt"
+          },
+          "fromPartial": {
+            "namespace": "shared",
+            "name": "Audited"
+          },
+          "span": {
+            "start": 50,
+            "end": 173
+          },
+          "location": {
+            "file": "shared.skema",
+            "line": 6,
+            "column": 3,
+            "endLine": 9,
+            "endColumn": 4
+          }
+        },
+        {
+          "file": "project.skema",
+          "name": "id",
+          "ty": {
+            "name": "int",
+            "args": [],
+            "datatype": null,
+            "enum": null
+          },
+          "flags": [
+            {
+              "name": "pk",
+              "value": true
+            },
+            {
+              "name": "required",
+              "value": true
+            },
+            {
+              "name": "unique",
+              "value": true
+            }
+          ],
+          "relation": null,
+          "note": null,
+          "label": null,
+          "extensions": {},
+          "fromPartial": null,
+          "span": {
+            "start": 233,
+            "end": 258
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 17,
+            "column": 3,
+            "endLine": 17,
+            "endColumn": 28
+          }
+        },
+        {
+          "file": "project.skema",
+          "name": "name",
+          "ty": {
+            "name": "varchar",
+            "args": [
+              "80"
+            ],
+            "datatype": null,
+            "enum": null
+          },
+          "flags": [
+            {
+              "name": "required",
+              "value": true
+            },
+            {
+              "name": "x-ui-widget",
+              "value": "input"
+            }
+          ],
+          "relation": null,
+          "note": "Display name",
+          "label": null,
+          "extensions": {
+            "x-ui-order": "1"
+          },
+          "fromPartial": null,
+          "span": {
+            "start": 261,
+            "end": 379
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 18,
+            "column": 3,
+            "endLine": 21,
+            "endColumn": 4
+          }
+        },
+        {
+          "file": "project.skema",
+          "name": "status",
+          "ty": {
+            "name": "sh.Status",
+            "args": [],
+            "datatype": null,
+            "enum": {
+              "namespace": "shared",
+              "name": "Status"
+            }
+          },
+          "flags": [
+            {
+              "name": "required",
+              "value": true
+            }
+          ],
+          "relation": null,
+          "note": null,
+          "label": null,
+          "extensions": {},
+          "fromPartial": null,
+          "span": {
+            "start": 382,
+            "end": 413
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 22,
+            "column": 3,
+            "endLine": 22,
+            "endColumn": 34
+          }
+        },
+        {
+          "file": "project.skema",
+          "name": "balance",
+          "ty": {
+            "name": "sh.Money",
+            "args": [],
+            "datatype": {
+              "namespace": "shared",
+              "name": "Money"
+            },
+            "enum": null
+          },
+          "flags": [],
+          "relation": null,
+          "note": null,
+          "label": null,
+          "extensions": {},
+          "fromPartial": null,
+          "span": {
+            "start": 416,
+            "end": 433
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 23,
+            "column": 3,
+            "endLine": 23,
+            "endColumn": 20
+          }
+        }
+      ],
+      "indexes": [],
+      "examples": [],
+      "movedFrom": null,
+      "extensions": {
+        "x-nocobase-title": "Customers"
+      },
+      "span": {
+        "start": 195,
+        "end": 536
+      },
+      "location": {
+        "file": "project.skema",
+        "line": 14,
+        "column": 1,
+        "endLine": 29,
+        "endColumn": 2
+      }
+    },
+    {
+      "file": "project.skema",
+      "namespace": "shop",
+      "name": "Tag",
+      "physical": {
+        "database": null,
+        "schema": null,
+        "table": null
+      },
+      "fields": [
+        {
+          "file": "project.skema",
+          "name": "id",
+          "ty": {
+            "name": "int",
+            "args": [],
+            "datatype": null,
+            "enum": null
+          },
+          "flags": [
+            {
+              "name": "pk",
+              "value": true
+            },
+            {
+              "name": "required",
+              "value": true
+            },
+            {
+              "name": "unique",
+              "value": true
+            }
+          ],
+          "relation": null,
+          "note": null,
+          "label": null,
+          "extensions": {},
+          "fromPartial": null,
+          "span": {
+            "start": 552,
+            "end": 570
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 32,
+            "column": 3,
+            "endLine": 32,
+            "endColumn": 21
+          }
+        },
+        {
+          "file": "project.skema",
+          "name": "label",
+          "ty": {
+            "name": "text",
+            "args": [],
+            "datatype": null,
+            "enum": null
+          },
+          "flags": [],
+          "relation": null,
+          "note": null,
+          "label": null,
+          "extensions": {},
+          "fromPartial": null,
+          "span": {
+            "start": 573,
+            "end": 587
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 33,
+            "column": 3,
+            "endLine": 33,
+            "endColumn": 17
+          }
+        },
+        {
+          "file": "project.skema",
+          "name": "sku",
+          "ty": {
+            "name": "Sku",
+            "args": [],
+            "datatype": {
+              "namespace": "shop",
+              "name": "Sku"
+            },
+            "enum": null
+          },
+          "flags": [],
+          "relation": null,
+          "note": null,
+          "label": null,
+          "extensions": {},
+          "fromPartial": null,
+          "span": {
+            "start": 590,
+            "end": 603
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 34,
+            "column": 3,
+            "endLine": 34,
+            "endColumn": 16
+          }
+        },
+        {
+          "file": "project.skema",
+          "name": "customer",
+          "ty": {
+            "name": "Customer.id",
+            "args": [],
+            "datatype": null,
+            "enum": null
+          },
+          "flags": [],
+          "relation": {
+            "kind": "OneToMany",
+            "targetNamespace": "shop",
+            "targetTable": "Customer",
+            "targetField": "id",
+            "onDelete": null,
+            "onUpdate": null,
+            "span": {
+              "start": 615,
+              "end": 627
+            },
+            "location": {
+              "file": "project.skema",
+              "line": 35,
+              "column": 12,
+              "endLine": 35,
+              "endColumn": 24
+            }
+          },
+          "note": null,
+          "label": null,
+          "extensions": {},
+          "fromPartial": null,
+          "span": {
+            "start": 606,
+            "end": 628
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 35,
+            "column": 3,
+            "endLine": 35,
+            "endColumn": 25
+          }
+        }
+      ],
+      "indexes": [],
+      "examples": [],
+      "movedFrom": null,
+      "extensions": {},
+      "span": {
+        "start": 538,
+        "end": 630
+      },
+      "location": {
+        "file": "project.skema",
+        "line": 31,
+        "column": 1,
+        "endLine": 36,
+        "endColumn": 2
+      }
+    }
+  ],
+  "enums": [
+    {
+      "file": "shared.skema",
+      "namespace": "shared",
+      "name": "Status",
+      "storedType": "string",
+      "default": "active",
+      "note": "Stored as text",
+      "entries": [
+        {
+          "name": "active",
+          "label": "Active",
+          "value": null,
+          "extensions": {
+            "x-color": "green"
+          },
+          "span": {
+            "start": 422,
+            "end": 471
+          },
+          "location": {
+            "file": "shared.skema",
+            "line": 26,
+            "column": 3,
+            "endLine": 26,
+            "endColumn": 52
+          }
+        },
+        {
+          "name": "archived",
+          "label": null,
+          "value": null,
+          "extensions": {},
+          "span": {
+            "start": 474,
+            "end": 483
+          },
+          "location": {
+            "file": "shared.skema",
+            "line": 27,
+            "column": 3,
+            "endLine": 27,
+            "endColumn": 12
+          }
+        }
+      ],
+      "extensions": {
+        "x-icon": "flag",
+        "x-source": "field"
+      },
+      "span": {
+        "start": 177,
+        "end": 485
+      },
+      "location": {
+        "file": "shared.skema",
+        "line": 12,
+        "column": 1,
+        "endLine": 28,
+        "endColumn": 2
+      }
+    }
+  ],
+  "groups": [
+    {
+      "file": "project.skema",
+      "name": "Core",
+      "members": [
+        {
+          "kind": "Table",
+          "namespace": "shop",
+          "name": "Customer",
+          "span": {
+            "start": 881,
+            "end": 896
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 53,
+            "column": 3,
+            "endLine": 53,
+            "endColumn": 18
+          }
+        },
+        {
+          "kind": "Table",
+          "namespace": "shop",
+          "name": "Tag",
+          "span": {
+            "start": 899,
+            "end": 909
+          },
+          "location": {
+            "file": "project.skema",
+            "line": 54,
+            "column": 3,
+            "endLine": 54,
+            "endColumn": 13
+          }
+        }
+      ],
+      "extensions": {
+        "x-color": "blue"
+      },
+      "span": {
+        "start": 804,
+        "end": 911
+      },
+      "location": {
+        "file": "project.skema",
+        "line": 47,
+        "column": 1,
+        "endLine": 55,
+        "endColumn": 2
+      }
+    }
+  ],
+  "documents": [
+    {
+      "file": "project.skema",
+      "namespace": "shop",
+      "extensions": {
+        "x-nocobase-datasource": "main"
+      },
+      "span": {
+        "start": 9,
+        "end": 115
+      },
+      "location": {
+        "file": "project.skema",
+        "line": 3,
+        "column": 1,
+        "endLine": 8,
+        "endColumn": 2
+      }
+    },
+    {
+      "file": "shared.skema",
+      "namespace": "shared",
+      "extensions": {},
+      "span": {
+        "start": 9,
+        "end": 28
+      },
+      "location": {
+        "file": "shared.skema",
+        "line": 3,
+        "column": 1,
+        "endLine": 3,
+        "endColumn": 20
+      }
+    }
+  ],
+  "datatypes": [
+    {
+      "file": "shared.skema",
+      "namespace": "shared",
+      "name": "Money",
+      "params": [],
+      "baseType": "decimal",
+      "baseTypeArgs": [
+        "10"
+      ],
+      "baseDatatype": {
+        "namespace": "shared",
+        "name": "decimal"
+      },
+      "resolvedBaseType": "float",
+      "default": null,
+      "regex": null,
+      "note": "Amount in home currency",
+      "extensions": {
+        "x-nocobase-interface": "number"
+      },
+      "span": {
+        "start": 888,
+        "end": 1057
+      },
+      "location": {
+        "file": "shared.skema",
+        "line": 48,
+        "column": 1,
+        "endLine": 54,
+        "endColumn": 2
+      }
+    },
+    {
+      "file": "shared.skema",
+      "namespace": "shared",
+      "name": "decimal",
+      "params": [
+        {
+          "name": "precision",
+          "type": "int",
+          "default": null,
+          "note": "Total number of digits"
+        },
+        {
+          "name": "scale",
+          "type": "int",
+          "default": "2",
+          "note": "Fixed decimal places"
+        }
+      ],
+      "baseType": "float",
+      "baseTypeArgs": [],
+      "baseDatatype": null,
+      "resolvedBaseType": "float",
+      "default": "0",
+      "regex": null,
+      "note": "Decimal number with fixed precision",
+      "extensions": {
+        "x-source": "field",
+        "x-unit": "none"
+      },
+      "span": {
+        "start": 487,
+        "end": 886
+      },
+      "location": {
+        "file": "shared.skema",
+        "line": 30,
+        "column": 1,
+        "endLine": 46,
+        "endColumn": 2
+      }
+    },
+    {
+      "file": "project.skema",
+      "namespace": "shop",
+      "name": "Sku",
+      "params": [
+        {
+          "name": "length",
+          "type": "int",
+          "default": "8",
+          "note": "Characters after the prefix"
+        }
+      ],
+      "baseType": "varchar",
+      "baseTypeArgs": [
+        "20"
+      ],
+      "baseDatatype": null,
+      "resolvedBaseType": "varchar",
+      "default": null,
+      "regex": "^SKU-[A-Z0-9]{length}$",
+      "note": null,
+      "extensions": {},
+      "span": {
+        "start": 632,
+        "end": 802
+      },
+      "location": {
+        "file": "project.skema",
+        "line": 38,
+        "column": 1,
+        "endLine": 45,
+        "endColumn": 2
+      }
+    }
+  ],
+  "dialect": null
+}

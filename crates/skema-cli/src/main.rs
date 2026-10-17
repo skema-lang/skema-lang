@@ -38,7 +38,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Exports the resolved model (tables, enums, groups) as JSON.
+    /// Exports the resolved model as JSON.
     Export {
         file: PathBuf,
         /// Currently the only format – accepted as a flag so that

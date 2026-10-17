@@ -9,9 +9,37 @@
 #![allow(clippy::expect_used)]
 
 use skema_wasm::{ProjectFile, ProjectInput};
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::*;
 
 const EXAMPLE: &str = include_str!("../../../examples/myexample.skema");
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_name = Map)]
+    type JsMap;
+
+    #[wasm_bindgen(js_namespace = Reflect, js_name = get)]
+    fn reflect_get(target: &JsValue, key: &str) -> JsValue;
+}
+
+/// What JavaScript sees at `path` – the value as it crosses the boundary,
+/// not the Rust struct before conversion.
+fn js_at(value: &JsValue, path: &[&str]) -> JsValue {
+    path.iter()
+        .fold(value.clone(), |current, key| reflect_get(&current, key))
+}
+
+fn assert_plain_object_with(object: &JsValue, key: &str, expected: &str) {
+    assert!(
+        object.is_object() && !object.is_instance_of::<JsMap>(),
+        "expected a plain object, got {object:?}"
+    );
+    assert_eq!(
+        reflect_get(object, key).as_string().as_deref(),
+        Some(expected)
+    );
+}
 
 /// The reference project from `examples/generic/` – the same corpus
 /// `skema-hir`'s own tests load from disk, here as a virtual file set, so
@@ -196,6 +224,70 @@ fn a_relation_target_names_its_namespace_too() {
     assert_eq!(
         copy.target_namespace, "catalog",
         "the alias `cat` resolves to the target file's own Document name"
+    );
+}
+
+#[wasm_bindgen_test]
+fn extensions_cross_export_model_as_a_plain_object() {
+    let source = r#"spec 1;
+        Document shop {}
+        Project { mode = draft; dialect = generic; }
+        Table Customer { id int [pk]; Meta { "x-title" = "Customers"; } }"#;
+    let js = JsValue::from(skema_wasm::export_model_js(source, None, false));
+    assert_plain_object_with(
+        &js_at(&js, &["model", "tables", "0", "extensions"]),
+        "x-title",
+        "Customers",
+    );
+}
+
+#[wasm_bindgen_test]
+fn extensions_cross_analyze_project_as_a_plain_object() {
+    let files = [
+        (
+            "/project.skema",
+            include_str!("../../skema-cli/tests/fixtures/export-contract/project.skema"),
+        ),
+        (
+            "/shared.skema",
+            include_str!("../../skema-cli/tests/fixtures/export-contract/shared.skema"),
+        ),
+    ]
+    .into_iter()
+    .map(|(path, source)| ProjectFile {
+        path: path.to_owned(),
+        source: source.to_owned(),
+    })
+    .collect();
+    let js = JsValue::from(skema_wasm::analyze_project(ProjectInput {
+        files,
+        root_path: "/project.skema".to_owned(),
+        with_locations: false,
+    }));
+
+    assert_eq!(
+        js_at(&js, &["model", "tables", "0", "name"]).as_string(),
+        Some("Customer".to_owned())
+    );
+    assert_plain_object_with(
+        &js_at(&js, &["model", "tables", "0", "extensions"]),
+        "x-nocobase-title",
+        "Customers",
+    );
+    assert_plain_object_with(
+        &js_at(&js, &["model", "documents", "0", "extensions"]),
+        "x-nocobase-datasource",
+        "main",
+    );
+    assert_plain_object_with(
+        &js_at(&js, &["model", "datatypes", "0", "extensions"]),
+        "x-nocobase-interface",
+        "number",
+    );
+    assert_plain_object_with(
+        &js_at(&js, &["model", "tables", "0", "fields", "3", "ty", "enum"]),
+        "namespace",
+        "shared",
     );
 }
 

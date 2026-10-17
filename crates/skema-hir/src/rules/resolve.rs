@@ -14,7 +14,7 @@ use crate::catalog::{
     TypeParams,
 };
 use crate::model;
-use crate::symbols::FileFacts;
+use crate::symbols::{Decl, FileFacts};
 use crate::{Diagnostic, FileId};
 
 /// Bundles what every resolution function needs, so the signatures don't
@@ -36,12 +36,29 @@ struct Env<'c> {
 /// `use`).
 #[derive(Default)]
 struct Flattened {
-    fields: Vec<(FileId, Span, ast::Field)>,
+    fields: Vec<FlatField>,
     indexes: Vec<(FileId, Span, ast::IndexEntry)>,
     /// One entry per `Record` block directly inside the table's own
     /// `Example` block – `Example` is `Table`-only (`docs/05`), so unlike
     /// `fields`/`indexes` this never comes from an inlined `use` `Partial`.
     examples: Vec<(FileId, Span, ast::Block)>,
+}
+
+struct FlatField {
+    owner: FileId,
+    span: Span,
+    field: ast::Field,
+    /// The innermost `Partial` declaring the field; `None` when written in
+    /// the table itself.
+    partial: Option<(FileId, SmolStr)>,
+}
+
+/// A `Partial` reports its diagnostics and links on its first flattening only.
+/// It is not memoized: a cycle member's fields depend on where the cycle is entered.
+#[derive(Default)]
+struct Partials {
+    reported: HashSet<(FileId, SmolStr)>,
+    in_progress: Vec<(FileId, SmolStr)>,
 }
 
 pub(crate) fn run(
@@ -50,7 +67,7 @@ pub(crate) fn run(
     dangling_ref_severity: Severity,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
-) -> (Vec<model::Table>, Vec<model::Enum>) {
+) -> (Vec<model::Table>, Vec<model::Enum>, Vec<model::Datatype>) {
     let env = Env {
         ctx,
         dialect: project.map_or(Dialect::Generic, |p| p.dialect),
@@ -59,14 +76,31 @@ pub(crate) fn run(
     };
     let project_database = project.and_then(|p| p.database.as_ref());
 
+    let mut partials = Partials::default();
+    for file in &ctx.facts {
+        let mut partial_decls: Vec<_> = file
+            .declarations
+            .iter()
+            .filter(|(_, decl)| decl.kind == BlockKind::Partial)
+            .collect();
+        // Source order, so a cycle is always reported at the same `use`.
+        partial_decls.sort_by_key(|(_, decl)| decl.item_span.start);
+        for (name, decl) in partial_decls {
+            let key = (file.id, name.clone());
+            if !partials.reported.contains(&key) {
+                flatten_partial(&env, key, &decl.block, &mut partials, links, diags);
+            }
+        }
+    }
+
     let mut flattened: HashMap<(FileId, SmolStr), Flattened> = HashMap::new();
     for file in &ctx.facts {
         for (name, decl) in &file.declarations {
-            if matches!(decl.kind, BlockKind::Table | BlockKind::Partial) {
-                let mut stack = Vec::new();
+            if decl.kind == BlockKind::Table {
+                let key = (file.id, name.clone());
                 let flat =
-                    flatten_items(&env, file.id, decl.block.items(), &mut stack, links, diags);
-                flattened.insert((file.id, name.clone()), flat);
+                    flatten_items(&env, &key, decl.block.items(), &mut partials, links, diags);
+                flattened.insert(key, flat);
             }
         }
     }
@@ -83,9 +117,7 @@ pub(crate) fn run(
             let fields = flat
                 .fields
                 .iter()
-                .map(|(owner, span, f)| {
-                    resolve_field(&env, *owner, *span, f, &flattened, links, diags)
-                })
+                .map(|field| resolve_field(&env, field, &flattened, links, diags))
                 .collect();
             let indexes = build_indexes(flat, diags);
             let examples = build_examples(&env, flat, diags);
@@ -111,6 +143,7 @@ pub(crate) fn run(
                 indexes,
                 examples,
                 moved_from,
+                extensions: meta_custom_keys(&decl.block),
                 span: decl.item_span,
             });
         }
@@ -128,7 +161,17 @@ pub(crate) fn run(
     }
     enums.sort_by(|a, b| (&a.namespace, &a.name).cmp(&(&b.namespace, &b.name)));
 
-    (tables, enums)
+    let mut datatypes = Vec::new();
+    for file in &ctx.facts {
+        for (name, decl) in &file.declarations {
+            if decl.kind == BlockKind::Datatype {
+                datatypes.push(resolve_datatype(&env, file, name, decl, diags));
+            }
+        }
+    }
+    datatypes.sort_by(|a, b| (&a.namespace, &a.name).cmp(&(&b.namespace, &b.name)));
+
+    (tables, enums, datatypes)
 }
 
 fn document_namespace(file: &FileFacts) -> String {
@@ -137,29 +180,70 @@ fn document_namespace(file: &FileFacts) -> String {
         .map_or_else(String::new, |(name, ..)| name.to_string())
 }
 
+fn decl_ref(ctx: &Ctx, owner: FileId, name: &str) -> model::DeclRef {
+    model::DeclRef {
+        namespace: ctx.file(owner).map_or_else(String::new, document_namespace),
+        name: name.to_owned(),
+    }
+}
+
 // ===========================================================================
 // Inlining `use` partials
 // ===========================================================================
 
 fn flatten_partial(
     env: &Env<'_>,
-    owner: FileId,
-    name: &str,
-    name_span: Span,
-    stack: &mut Vec<(FileId, String)>,
+    key: (FileId, SmolStr),
+    block: &ast::Block,
+    partials: &mut Partials,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Flattened {
-    let key = (owner, name.to_owned());
-    if stack.contains(&key) {
+    let (mut silent_links, mut silent_diags) = (Vec::new(), Vec::new());
+    let (links, diags) = if partials.reported.insert(key.clone()) {
+        (links, diags)
+    } else {
+        (&mut silent_links, &mut silent_diags)
+    };
+    partials.in_progress.push(key.clone());
+    let mut result = flatten_items(env, &key, block.items(), partials, links, diags);
+    partials.in_progress.pop();
+    for field in &mut result.fields {
+        field.partial.get_or_insert_with(|| key.clone());
+    }
+    result
+}
+
+/// Every diagnostic here belongs to `owner`, the file holding the `use` –
+/// not to the file declaring its target.
+fn flatten_use(
+    env: &Env<'_>,
+    owner: FileId,
+    target: &ast::Path,
+    partials: &mut Partials,
+    links: &mut Vec<model::ReferenceLink>,
+    diags: &mut Vec<Diagnostic>,
+) -> Flattened {
+    let ctx = env.ctx;
+    let Some((target_owner, name, name_span, rest)) = ctx.resolve_decl_path(owner, target) else {
+        // A namespace with nothing after it (`use ns;`) – the only
+        // other `None` case, an empty path, cannot occur here.
+        let namespace = first_segment(target);
         diags.push(Diagnostic::error(
             owner,
-            name_span,
-            format!("cycle in `use`: `{name}` uses itself, directly or indirectly"),
+            target.span(),
+            format!("`use` expects a `Partial` after namespace `{namespace}`"),
         ));
         return Flattened::default();
+    };
+    if !rest.is_empty() {
+        diags.push(Diagnostic::error(
+            owner,
+            target.span(),
+            "`use` names only a `Partial`, no further path after it",
+        ));
     }
-    let Some(decl) = env.ctx.lookup_decl(owner, name) else {
+    let Some(decl) = ctx.lookup_decl(target_owner, &name) else {
         diags.push(Diagnostic::new(
             owner,
             env.dangling_ref_severity,
@@ -180,65 +264,57 @@ fn flatten_partial(
         ));
         return Flattened::default();
     }
-
-    stack.push(key);
-    let result = flatten_items(env, owner, decl.block.items(), stack, links, diags);
-    stack.pop();
-    result
+    links.push(model::ReferenceLink {
+        from_file: owner,
+        from_span: name_span,
+        to_file: target_owner,
+        to_span: decl.name_span,
+    });
+    let key = (target_owner, name);
+    if partials.in_progress.contains(&key) {
+        diags.push(Diagnostic::error(
+            owner,
+            name_span,
+            format!(
+                "cycle in `use`: `{}` uses itself, directly or indirectly",
+                key.1
+            ),
+        ));
+        return Flattened::default();
+    }
+    flatten_partial(env, key, &decl.block, partials, links, diags)
 }
 
 fn flatten_items(
     env: &Env<'_>,
-    owner: FileId,
+    block: &(FileId, SmolStr),
     items: impl Iterator<Item = ast::Item>,
-    stack: &mut Vec<(FileId, String)>,
+    partials: &mut Partials,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Flattened {
-    let ctx = env.ctx;
+    let (owner, block_name) = (block.0, &block.1);
     let mut out = Flattened::default();
     for item in items {
         match item.kind() {
             ast::ItemKind::Use(u) => {
-                let target = u.target();
-                let Some((target_owner, name, name_span, rest)) =
-                    ctx.resolve_decl_path(owner, &target)
-                else {
-                    // A namespace with nothing after it (`use ns;`) – the only
-                    // other `None` case, an empty path, cannot occur here.
-                    let namespace = first_segment(&target);
-                    diags.push(Diagnostic::error(
-                        owner,
-                        target.span(),
-                        format!("`use` expects a `Partial` after namespace `{namespace}`"),
-                    ));
-                    continue;
-                };
-                if !rest.is_empty() {
-                    diags.push(Diagnostic::error(
-                        owner,
-                        target.span(),
-                        "`use` names only a `Partial`, no further path after it",
-                    ));
-                }
-                if let Some(decl) = ctx.lookup_decl(target_owner, &name) {
-                    if decl.kind == BlockKind::Partial {
-                        links.push(model::ReferenceLink {
-                            from_file: owner,
-                            from_span: name_span,
-                            to_file: target_owner,
-                            to_span: decl.name_span,
-                        });
-                    }
-                }
-                let inner =
-                    flatten_partial(env, target_owner, &name, name_span, stack, links, diags);
+                let inner = flatten_use(env, owner, &u.target(), partials, links, diags);
                 for field in inner.fields {
-                    push_field(&mut out, field, diags);
+                    push_field(&mut out, field, block_name, diags);
                 }
                 out.indexes.extend(inner.indexes);
             }
-            ast::ItemKind::Field(f) => push_field(&mut out, (owner, item.span(), f), diags),
+            ast::ItemKind::Field(field) => push_field(
+                &mut out,
+                FlatField {
+                    owner,
+                    span: item.span(),
+                    field,
+                    partial: None,
+                },
+                block_name,
+                diags,
+            ),
             ast::ItemKind::Block(b) if b.kind() == BlockKind::Index => {
                 for sub in b.items() {
                     if let ast::ItemKind::IndexEntry(e) = sub.kind() {
@@ -269,26 +345,35 @@ fn first_segment(path: &ast::Path) -> String {
         .unwrap_or_default()
 }
 
-fn push_field(out: &mut Flattened, field: (FileId, Span, ast::Field), diags: &mut Vec<Diagnostic>) {
-    let (owner, span, f) = field;
-    let name = f.name();
-    if let Some((_, _, existing)) = out
+fn push_field(out: &mut Flattened, field: FlatField, block: &str, diags: &mut Vec<Diagnostic>) {
+    let name = field.field.name();
+    if let Some(existing) = out
         .fields
         .iter()
-        .find(|(_, _, e)| e.name().text() == name.text())
+        .find(|e| e.field.name().text() == name.text())
     {
         diags.push(Diagnostic::error(
-            owner,
+            field.owner,
             name.span(),
             format!(
-                "field name `{}` is already taken (at {:?}) – from `use` or an earlier field (docs/09)",
+                "field name `{}` is already taken {} (docs/09)",
                 name.text(),
-                existing.name().span()
+                taken_by(existing, &field, block)
             ),
         ));
         return;
     }
-    out.fields.push((owner, span, f));
+    out.fields.push(field);
+}
+
+fn taken_by(existing: &FlatField, incoming: &FlatField, block: &str) -> String {
+    let Some((_, partial)) = &existing.partial else {
+        return format!("by an earlier field of `{block}`");
+    };
+    if (existing.owner, existing.span) == (incoming.owner, incoming.span) {
+        return format!("– `{block}` brings in `Partial` `{partial}` twice through `use`");
+    }
+    format!("by a field from `Partial` `{partial}`")
 }
 
 // ===========================================================================
@@ -321,7 +406,7 @@ fn build_indexes(flat: &Flattened, diags: &mut Vec<Diagnostic>) -> Vec<model::In
 }
 
 fn has_field(flat: &Flattened, name: &str) -> bool {
-    flat.fields.iter().any(|(_, _, f)| f.name().text() == name)
+    flat.fields.iter().any(|f| f.field.name().text() == name)
 }
 
 // ===========================================================================
@@ -337,10 +422,15 @@ fn build_examples(
     flat: &Flattened,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<model::ExampleRow> {
-    let field_types: Vec<(ast::Ident, Option<SmolStr>)> = flat
+    let field_types: Vec<(ast::Ident, Option<String>)> = flat
         .fields
         .iter()
-        .map(|(owner, _, f)| (f.name(), example_field_terminal_type(env, *owner, f)))
+        .map(|f| {
+            (
+                f.field.name(),
+                example_field_terminal_type(env, f.owner, &f.field),
+            )
+        })
         .collect();
 
     let rows: Vec<model::ExampleRow> = flat
@@ -440,58 +530,35 @@ fn build_examples(
 fn fields_flagged(flat: &Flattened, keys: &[&str]) -> Vec<String> {
     flat.fields
         .iter()
-        .filter(|(_, _, f)| f.flags().any(|a| keys.contains(&a.key().text().as_str())))
-        .map(|(_, _, f)| f.name().text().to_owned())
+        .filter(|f| {
+            f.field
+                .flags()
+                .any(|a| keys.contains(&a.key().text().as_str()))
+        })
+        .map(|f| f.field.name().text().to_owned())
         .collect()
 }
 
 /// The built-in type name an `Example` value should be checked against, or
 /// `None` if this field's type doesn't resolve to one – a relationship
-/// field, an `Enum` (task 12 covers built-ins and `Datatype`s only), or a
-/// name this rule can't resolve. Left unchecked rather than risking a false
-/// positive (`docs/13` "Not enforced yet" already covers the gap this
-/// leaves).
-///
-/// A `Datatype`-typed field resolves one level through to that `Datatype`'s
-/// own `Field.type` (`docs/06`); a `Datatype` naming another custom type
-/// there is not followed further – out of scope for this task.
-fn example_field_terminal_type(
-    env: &Env<'_>,
-    owner: FileId,
-    field: &ast::Field,
-) -> Option<SmolStr> {
+/// field, an `Enum` (task 12 covers built-ins and `Datatype`s only), an
+/// engine-catalog type, or a name this rule can't resolve. Left unchecked
+/// rather than risking a false positive (`docs/13` "Not enforced yet").
+fn example_field_terminal_type(env: &Env<'_>, owner: FileId, field: &ast::Field) -> Option<String> {
     let ast::FieldTypeKind::Named { path, .. } = field.ty()?.kind()? else {
         return None;
     };
-    if let Some(bare) = path.as_ident() {
-        if BUILTIN_TYPES.contains(&bare.text()) {
-            return Some(SmolStr::new(bare.text()));
-        }
-    }
-    let (decl_owner, name, _, rest) = env.ctx.resolve_decl_path(owner, &path)?;
-    if !rest.is_empty() {
-        return None;
-    }
-    let decl = env.ctx.lookup_decl(decl_owner, &name)?;
-    if decl.kind != BlockKind::Datatype {
-        return None;
-    }
-    datatype_field_type(&decl.block).filter(|word| BUILTIN_TYPES.contains(&word.as_str()))
-}
-
-/// Reads `Field { type = …; }` inside a `Datatype` declaration – the same
-/// shape `resolve_enum` reads for `Enum { Field { type = …; } }`, but
-/// without validating the word (an `Enum`'s storage is closed to
-/// `string`/`int`; a `Datatype`'s is any type name, checked elsewhere).
-fn datatype_field_type(datatype: &ast::Block) -> Option<SmolStr> {
-    let field_block = datatype.child(BlockKind::Field)?;
-    field_block.items().find_map(|item| match item.kind() {
-        ast::ItemKind::Setting(a) if a.key().text() == "type" => match a.value()?.kind()? {
-            ValueKind::Path(p) => p.as_ident().map(|i| SmolStr::new(i.text())),
-            _ => None,
+    let terminal = match type_target(env, owner, &path) {
+        TypeTarget::Catalog(name) => name,
+        TypeTarget::Datatype(datatype) => match base_chain_end(env, datatype) {
+            BaseChainEnd::Type(name) => name,
+            BaseChainEnd::Unresolved | BaseChainEnd::Cycle => return None,
         },
-        _ => None,
-    })
+        TypeTarget::Other => return None,
+    };
+    BUILTIN_TYPES
+        .contains(&terminal.as_str())
+        .then_some(terminal)
 }
 
 /// Whether an `Example` value's literal kind is compatible with
@@ -525,13 +592,17 @@ fn is_bool_literal(path: &ast::Path) -> bool {
 
 fn resolve_field(
     env: &Env<'_>,
-    owner: FileId,
-    span: Span,
-    f: &ast::Field,
+    flat_field: &FlatField,
     flattened: &HashMap<(FileId, SmolStr), Flattened>,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> model::Field {
+    let FlatField {
+        owner,
+        span,
+        field: ref f,
+        ref partial,
+    } = *flat_field;
     let mut flags = build_flags(f.flags());
     // `onDelete`/`onUpdate` are relation metadata, surfaced on `Relation`
     // below (via `resolve_relation`) instead – not one of a field's own
@@ -556,10 +627,9 @@ fn resolve_field(
                 };
                 let relation = resolve_relation(env, owner, site, flattened, links, diags);
                 let ty = match &relation {
-                    Some(r) => model::TypeRef {
-                        name: format!("{}.{}", r.target_table, r.target_field),
-                        args: Vec::new(),
-                    },
+                    Some(r) => {
+                        plain_type(format!("{}.{}", r.target_table, r.target_field), Vec::new())
+                    }
                     None => unknown_type(),
                 };
                 (ty, relation)
@@ -583,14 +653,25 @@ fn resolve_field(
         relation,
         note,
         label,
+        extensions: custom_keys(f.items()),
+        from_partial: partial
+            .as_ref()
+            .map(|(partial_owner, name)| decl_ref(env.ctx, *partial_owner, name)),
         span,
     }
 }
 
 fn unknown_type() -> model::TypeRef {
+    plain_type("unknown".to_owned(), Vec::new())
+}
+
+/// A type that is neither an `Enum` nor a `Datatype`.
+fn plain_type(name: String, args: Vec<String>) -> model::TypeRef {
     model::TypeRef {
-        name: "unknown".to_owned(),
-        args: Vec::new(),
+        name,
+        args,
+        datatype: None,
+        enum_: None,
     }
 }
 
@@ -677,9 +758,14 @@ fn resolve_relation(
         .and_then(|flat| {
             flat.fields
                 .iter()
-                .find(|(_, _, f)| f.name().text() == field_name)
+                .find(|f| f.field.name().text() == field_name)
         });
-    let Some((field_owner, _, field)) = field_decl else {
+    let Some(FlatField {
+        owner: field_owner,
+        field,
+        ..
+    }) = field_decl
+    else {
         diags.push(Diagnostic::new(
             owner,
             env.dangling_ref_severity,
@@ -911,12 +997,7 @@ fn resolve_named_type(
 
     if let Some(bare_ident) = path.as_ident() {
         let bare = bare_ident.text();
-        let dialect_entry = env
-            .dialect
-            .engine_name()
-            .and_then(|engine| catalog::dialect_type(engine, bare));
-        if BUILTIN_TYPES.contains(&bare) || dialect_entry.is_some() {
-            let params = dialect_entry.map_or_else(|| builtin_type_params(bare), |e| e.params);
+        if let Some(params) = catalog_type_params(env.dialect, bare) {
             check_type_args(owner, bare, &params, args, span, diags);
             if env.mode == Mode::Strict && DRAFT_TYPES.contains(&bare) {
                 diags.push(Diagnostic::error(
@@ -927,18 +1008,12 @@ fn resolve_named_type(
                     ),
                 ));
             }
-            return model::TypeRef {
-                name: bare.to_owned(),
-                args: str_args,
-            };
+            return plain_type(bare.to_owned(), str_args);
         }
     }
 
     let Some((decl_owner, name, name_span, rest)) = env.ctx.resolve_decl_path(owner, path) else {
-        return model::TypeRef {
-            name: dotted,
-            args: str_args,
-        };
+        return plain_type(dotted, str_args);
     };
     if !rest.is_empty() {
         diags.push(Diagnostic::error(
@@ -946,10 +1021,7 @@ fn resolve_named_type(
             span,
             "unexpected path after the type name",
         ));
-        return model::TypeRef {
-            name: dotted,
-            args: str_args,
-        };
+        return plain_type(dotted, str_args);
     }
 
     let decl = env.ctx.lookup_decl(decl_owner, &name);
@@ -966,15 +1038,15 @@ fn resolve_named_type(
 
     match decl {
         Some(decl) if decl.kind == BlockKind::Enum => model::TypeRef {
-            name: dotted,
-            args: Vec::new(),
+            enum_: Some(decl_ref(env.ctx, decl_owner, &name)),
+            ..plain_type(dotted, Vec::new())
         },
         Some(decl) if decl.kind == BlockKind::Datatype => {
             check_datatype_args(owner, &decl.block, args, span, diags);
             check_datatype_dialect_coverage(env, owner, &dotted, &decl.block, span, diags);
             model::TypeRef {
-                name: dotted,
-                args: str_args,
+                datatype: Some(decl_ref(env.ctx, decl_owner, &name)),
+                ..plain_type(dotted, str_args)
             }
         }
         Some(decl) => {
@@ -983,10 +1055,7 @@ fn resolve_named_type(
                 name_span,
                 format!("`{name}` is not a type, but a `{}`", decl.kind.as_str()),
             ));
-            model::TypeRef {
-                name: dotted,
-                args: str_args,
-            }
+            plain_type(dotted, str_args)
         }
         None if env.dialect == Dialect::Generic => {
             diags.push(Diagnostic::new(
@@ -998,10 +1067,7 @@ fn resolve_named_type(
                      `Enum`/`Datatype`, or (with `dialect`) an engine-specific type (docs/02, docs/06)"
                 ),
             ));
-            model::TypeRef {
-                name: dotted,
-                args: str_args,
-            }
+            plain_type(dotted, str_args)
         }
         None => {
             let engine = env.dialect.engine_name().unwrap_or("this dialect");
@@ -1014,10 +1080,7 @@ fn resolve_named_type(
                      type catalog (docs/06), a custom `Enum`/`Datatype`"
                 ),
             ));
-            model::TypeRef {
-                name: dotted,
-                args: str_args,
-            }
+            plain_type(dotted, str_args)
         }
     }
 }
@@ -1102,6 +1165,21 @@ fn check_datatype_dialect_coverage(
     match env.mode {
         Mode::Draft => diags.push(Diagnostic::warning(owner, span, message)),
         Mode::Strict => diags.push(Diagnostic::error(owner, span, message)),
+    }
+}
+
+/// The argument shape of a built-in or, under `dialect`, engine-catalog
+/// type – `None` for any other name. Checked before declarations, so the
+/// catalog shadows a same-named `Datatype` referenced bare.
+fn catalog_type_params(dialect: Dialect, name: &str) -> Option<TypeParams> {
+    let dialect_entry = dialect
+        .engine_name()
+        .and_then(|engine| catalog::dialect_type(engine, name));
+    match dialect_entry {
+        Some(entry) => Some(entry.params),
+        None => BUILTIN_TYPES
+            .contains(&name)
+            .then(|| builtin_type_params(name)),
     }
 }
 
@@ -1262,12 +1340,198 @@ fn check_arg_type(
 }
 
 fn param_has_default(datatype: &ast::Block, param_name: &str) -> bool {
-    datatype.items().any(|item| match item.kind() {
-        ast::ItemKind::Field(f) if f.name().text() == param_name => f.items().any(
+    param_body(datatype, param_name).is_some_and(|body| {
+        body.items().any(
             |sub| matches!(sub.kind(), ast::ItemKind::Setting(a) if a.key().text() == "default"),
-        ),
-        _ => false,
+        )
     })
+}
+
+/// A parameter's own body inside its `Datatype` (`scale { default = 2; }`).
+fn param_body(datatype: &ast::Block, param_name: &str) -> Option<ast::Field> {
+    datatype.items().find_map(|item| match item.kind() {
+        ast::ItemKind::Field(f) if f.name().text() == param_name => Some(f),
+        _ => None,
+    })
+}
+
+// ===========================================================================
+// Datatypes
+// ===========================================================================
+
+/// What a type name written in `owner` refers to, the catalog first as in
+/// [`resolve_named_type`].
+enum TypeTarget {
+    Catalog(String),
+    Datatype((FileId, SmolStr)),
+    Other,
+}
+
+fn type_target(env: &Env<'_>, owner: FileId, path: &ast::Path) -> TypeTarget {
+    if let Some(bare) = path.as_ident() {
+        if catalog_type_params(env.dialect, bare.text()).is_some() {
+            return TypeTarget::Catalog(bare.text().to_owned());
+        }
+    }
+    let Some((decl_owner, name, _, rest)) = env.ctx.resolve_decl_path(owner, path) else {
+        return TypeTarget::Other;
+    };
+    match env.ctx.lookup_decl(decl_owner, &name) {
+        Some(decl) if rest.is_empty() && decl.kind == BlockKind::Datatype => {
+            TypeTarget::Datatype((decl_owner, name))
+        }
+        _ => TypeTarget::Other,
+    }
+}
+
+/// `Field { type = …; }` of a `Datatype`.
+struct DatatypeBase {
+    path: ast::Path,
+    args: Vec<ast::Value>,
+    /// The whole value, arguments included.
+    span: Span,
+}
+
+fn datatype_base(datatype: &ast::Block) -> Option<DatatypeBase> {
+    let field_block = datatype.child(BlockKind::Field)?;
+    let value = field_block.items().find_map(|item| match item.kind() {
+        ast::ItemKind::Setting(a) if a.key().text() == "type" => a.value(),
+        _ => None,
+    })?;
+    let (path, args) = match value.kind()? {
+        ValueKind::Path(path) => (path, Vec::new()),
+        ValueKind::Type { path, args } => (path, args),
+        _ => return None,
+    };
+    Some(DatatypeBase {
+        path,
+        args,
+        span: value.span(),
+    })
+}
+
+enum BaseChainEnd {
+    /// A built-in or engine-catalog type name.
+    Type(String),
+    /// An unknown name, an `Enum`, or a cycle `start` only leads into.
+    Unresolved,
+    /// The chain leads back to `start`.
+    Cycle,
+}
+
+/// Follows `Field.type` from the `Datatype` `start` through layered
+/// `Datatype`s (`docs/06`, "Layering types"), each step resolved in the file
+/// it is written in. Names only: no argument substitution, no `Dialect` `sql`.
+fn base_chain_end(env: &Env<'_>, start: (FileId, SmolStr)) -> BaseChainEnd {
+    let mut visited = vec![start.clone()];
+    let mut current = start.clone();
+    loop {
+        let Some(base) = env
+            .ctx
+            .lookup_decl(current.0, &current.1)
+            .and_then(|decl| datatype_base(&decl.block))
+        else {
+            return BaseChainEnd::Unresolved;
+        };
+        match type_target(env, current.0, &base.path) {
+            TypeTarget::Catalog(name) => return BaseChainEnd::Type(name),
+            TypeTarget::Other => return BaseChainEnd::Unresolved,
+            TypeTarget::Datatype(next) if next == start => return BaseChainEnd::Cycle,
+            TypeTarget::Datatype(next) if visited.contains(&next) => {
+                return BaseChainEnd::Unresolved;
+            }
+            TypeTarget::Datatype(next) => {
+                visited.push(next.clone());
+                current = next;
+            }
+        }
+    }
+}
+
+fn resolve_datatype(
+    env: &Env<'_>,
+    file: &FileFacts,
+    name: &SmolStr,
+    decl: &Decl,
+    diags: &mut Vec<Diagnostic>,
+) -> model::Datatype {
+    let base = datatype_base(&decl.block);
+    let base_datatype =
+        base.as_ref()
+            .and_then(|base| match type_target(env, file.id, &base.path) {
+                TypeTarget::Datatype((owner, name)) => Some(decl_ref(env.ctx, owner, &name)),
+                TypeTarget::Catalog(_) | TypeTarget::Other => None,
+            });
+    let resolved_base_type = resolved_base_type(env, file.id, name, base.as_ref(), diags);
+    let field_block = decl.block.child(BlockKind::Field);
+    let field_setting = |key: &str| {
+        field_block
+            .as_ref()
+            .and_then(|b| value_setting(b.items(), key))
+    };
+
+    model::Datatype {
+        file: file.id,
+        namespace: document_namespace(file),
+        name: name.to_string(),
+        params: datatype_params(&decl.block),
+        base_type: base.as_ref().map(|base| base.path.to_dotted()),
+        base_type_args: base
+            .as_ref()
+            .map(|base| base.args.iter().map(ast::Value::to_text).collect())
+            .unwrap_or_default(),
+        base_datatype,
+        resolved_base_type,
+        default: field_setting("default"),
+        regex: field_setting("regex"),
+        note: field_setting("note"),
+        extensions: meta_and_field_custom_keys(&decl.block),
+        span: decl.item_span,
+    }
+}
+
+/// A cycle is reported once per member, at its own `Field.type`.
+fn resolved_base_type(
+    env: &Env<'_>,
+    owner: FileId,
+    name: &SmolStr,
+    base: Option<&DatatypeBase>,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    match base_chain_end(env, (owner, name.clone())) {
+        BaseChainEnd::Type(resolved) => Some(resolved),
+        BaseChainEnd::Unresolved => None,
+        BaseChainEnd::Cycle => {
+            if let Some(base) = base {
+                diags.push(Diagnostic::error(
+                    owner,
+                    base.span,
+                    format!(
+                        "cycle in `Field.type`: `{name}` builds on itself, directly or indirectly"
+                    ),
+                ));
+            }
+            None
+        }
+    }
+}
+
+fn datatype_params(datatype: &ast::Block) -> Vec<model::DatatypeParam> {
+    datatype
+        .params()
+        .map(|param| {
+            let name = param_name(&param);
+            let body = param_body(datatype, &name);
+            let body_setting =
+                |key: &str| body.as_ref().and_then(|b| value_setting(b.items(), key));
+            model::DatatypeParam {
+                ty: param.ty().map(|path| path.to_dotted()),
+                default: body_setting("default"),
+                note: body_setting("note"),
+                name,
+            }
+        })
+        .collect()
 }
 
 // ===========================================================================
@@ -1282,7 +1546,9 @@ fn resolve_enum(
     diags: &mut Vec<Diagnostic>,
 ) -> model::Enum {
     let field_block = block.child(BlockKind::Field);
+    let extensions = meta_and_field_custom_keys(block);
     let stored_type = field_block
+        .as_ref()
         .and_then(|b| {
             b.items().find_map(|i| match i.kind() {
                 ast::ItemKind::Setting(a) if a.key().text() == "type" => {
@@ -1310,7 +1576,7 @@ fn resolve_enum(
         })
         .unwrap_or_else(|| "string".to_owned());
 
-    let entries = block
+    let entries: Vec<model::EnumEntry> = block
         .items()
         .filter_map(|item| match item.kind() {
             ast::ItemKind::Field(f) => Some((item.span(), f)),
@@ -1320,6 +1586,7 @@ fn resolve_enum(
             name: f.name().text().to_owned(),
             label: string_setting(f.items(), "label"),
             value: value_setting(f.items(), "value"),
+            extensions: custom_keys(f.items()),
             span: entry_span,
         })
         .collect();
@@ -1329,9 +1596,53 @@ fn resolve_enum(
         namespace: document_namespace(file),
         name: name.to_owned(),
         stored_type,
+        default: field_block
+            .as_ref()
+            .and_then(|b| enum_default(file.id, b, &entries, diags)),
+        note: field_block
+            .as_ref()
+            .and_then(|b| string_setting(b.items(), "note")),
         entries,
+        extensions,
         span,
     }
+}
+
+/// Written bare: inside the enum there is no literal-or-member ambiguity
+/// to qualify away (`docs/08`, "Using an enum").
+fn enum_default(
+    owner: FileId,
+    field_block: &ast::Block,
+    entries: &[model::EnumEntry],
+    diags: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    let value = field_block.items().find_map(|item| match item.kind() {
+        ast::ItemKind::Setting(a) if a.key().text() == "default" => a.value(),
+        _ => None,
+    })?;
+    let is_entry = |name: &str| entries.iter().any(|entry| entry.name == name);
+    let path = match value.kind() {
+        Some(ValueKind::Path(path)) => Some(path),
+        _ => None,
+    };
+    if let Some(name) = path.as_ref().and_then(ast::Path::as_ident)
+        && is_entry(name.text())
+    {
+        return Some(name.text().to_owned());
+    }
+    let bare_hint = path
+        .and_then(|path| path.segments().last())
+        .filter(|last| is_entry(last.text()))
+        .map(|last| format!(": `{}`, not `{}`", last.text(), value.to_text()))
+        .unwrap_or_default();
+    diags.push(Diagnostic::error(
+        owner,
+        value.span(),
+        format!(
+            "`Enum.Field.default` must name one of this enum's entries, written bare{bare_hint} (docs/08)"
+        ),
+    ));
+    None
 }
 
 // ===========================================================================
@@ -1379,6 +1690,44 @@ fn value_setting(mut items: impl Iterator<Item = ast::Item>, key: &str) -> Optio
         ast::ItemKind::Setting(a) if a.key().text() == key => a.value().map(|v| v.to_text()),
         _ => None,
     })
+}
+
+/// The quoted `x-` keys among `items`, values as text; the first occurrence
+/// of a key wins, as in [`string_setting`].
+pub(crate) fn custom_keys(items: impl Iterator<Item = ast::Item>) -> model::Extensions {
+    let mut keys = model::Extensions::new();
+    for item in items {
+        let ast::ItemKind::Setting(attr) = item.kind() else {
+            continue;
+        };
+        let key = attr.key();
+        let name = key.text();
+        if !key.quoted() || !name.starts_with("x-") {
+            continue;
+        }
+        if let Some(value) = attr.value() {
+            keys.entry(name).or_insert_with(|| value.to_text());
+        }
+    }
+    keys
+}
+
+/// [`custom_keys`] of a declaration's own `Meta` block.
+pub(crate) fn meta_custom_keys(declaration: &ast::Block) -> model::Extensions {
+    declaration
+        .child(BlockKind::Meta)
+        .map(|meta| custom_keys(meta.items()))
+        .unwrap_or_default()
+}
+
+/// [`meta_custom_keys`] of an `Enum` or `Datatype` merged with its `Field`
+/// block's; the `Field` block wins a clash.
+fn meta_and_field_custom_keys(declaration: &ast::Block) -> model::Extensions {
+    let mut keys = meta_custom_keys(declaration);
+    if let Some(field_block) = declaration.child(BlockKind::Field) {
+        keys.extend(custom_keys(field_block.items()));
+    }
+    keys
 }
 
 /// Turns a field's or index's `[]`-flags into the export's flat

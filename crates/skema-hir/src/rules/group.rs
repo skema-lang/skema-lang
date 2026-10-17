@@ -6,6 +6,7 @@ use skema_syntax::Severity;
 use skema_syntax::ast::{self, AstNode};
 
 use super::Ctx;
+use super::resolve::meta_custom_keys;
 use crate::model;
 use crate::{Diagnostic, FileId};
 
@@ -16,8 +17,9 @@ pub(crate) fn check(
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<model::Group> {
     // Every declaration may belong to at most one group – for that we keep
-    // track of who claimed it first.
-    let mut claimed: HashMap<(FileId, String), String> = HashMap::new();
+    // track of who claimed it first. Group names are unique per file only,
+    // so a claimant is its file plus its name.
+    let mut claimed: HashMap<(FileId, String), (FileId, String)> = HashMap::new();
     let mut out = Vec::new();
 
     for file in &ctx.facts {
@@ -72,18 +74,19 @@ pub(crate) fn check(
                 });
 
                 let key = (owner, name.to_string());
-                if let Some(existing_group) = claimed.get(&key) {
-                    diags.push(Diagnostic::error(
-                        file.id,
-                        name_span,
+                if let Some((claimant_file, claimant_group)) = claimed.get(&key) {
+                    let message = if *claimant_file == file.id && claimant_group == group_name {
+                        format!("`{name}` is listed twice in group `{group_name}` (docs/12)")
+                    } else {
                         format!(
-                            "`{name}` already belongs to group `{existing_group}` – a declaration \
+                            "`{name}` already belongs to group `{claimant_group}` – a declaration \
                              belongs to at most one group (docs/12)"
-                        ),
-                    ));
+                        )
+                    };
+                    diags.push(Diagnostic::error(file.id, name_span, message));
                     continue;
                 }
-                claimed.insert(key, group_name.to_string());
+                claimed.insert(key, (file.id, group_name.to_string()));
 
                 let namespace = ctx
                     .file(owner)
@@ -102,6 +105,7 @@ pub(crate) fn check(
                 file: file.id,
                 name: group_name.to_string(),
                 members,
+                extensions: meta_custom_keys(block),
                 span: *item_span,
             });
         }

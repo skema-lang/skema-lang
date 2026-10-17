@@ -143,14 +143,40 @@ for table in model["tables"]:
 located = skema.export("project.skema", with_locations=True)["model"]
 ```
 
-Build with [`maturin`](https://www.maturin.rs/) from `crates/skema-py`
-(`maturin develop` in an activated venv). Both functions always return a
-`dict` and never raise: errors are data (`ok: False` plus `diagnostics`),
-not control flow, as everywhere in the core. An unreadable root file is one
-more diagnostic in that same list.
+Both functions always return a `dict` and never raise: errors are data
+(`ok: False` plus `diagnostics`), not control flow, as everywhere in the
+core. An unreadable root file is one more diagnostic in that same list.
 
 The `dict` holds `skema-api`'s structures, so it has the same keys as the
 CLI's `--json`, the language server and the browser editor.
+
+The distribution is `skema-py`, the import is `skema`. Three ways to
+install it:
+
+1. **Released wheel** – Linux x86_64 only, CPython ≥ 3.9. Every release
+   uploads it to the generic package `skema`, under the version without its
+   `v` prefix:
+
+   ```bash
+   uv add https://gitlab.com/api/v4/projects/skema-language%2Fskema/packages/generic/skema/0.4.0/skema_py-0.4.0-cp39-abi3-linux_x86_64.whl
+   # or: pip install <the same URL>
+   ```
+
+   A pre-release keeps its SemVer directory but has a PEP 440 file name:
+   `…/skema/0.4.0-rc.1/skema_py-0.4.0rc1-cp39-abi3-linux_x86_64.whl`.
+
+2. **From git with uv**, built on install. Needs Rust ≥ 1.85 (edition
+   2024), a C linker, and the GitLab project to stay publicly readable:
+
+   ```bash
+   uv add "skema-py @ git+https://gitlab.com/skema-language/skema.git#subdirectory=crates/skema-py"
+   ```
+
+3. **From a checkout**, in an activated venv inside `devenv shell`:
+
+   ```bash
+   cd crates/skema-py && maturin develop
+   ```
 
 ## Layout
 

@@ -17,6 +17,10 @@ pub struct Model {
     pub tables: Vec<Table>,
     pub enums: Vec<Enum>,
     pub groups: Vec<Group>,
+    /// One per file that declares a `Document`, in `FileId` order.
+    pub documents: Vec<Document>,
+    /// Every declared `Datatype`, used or not.
+    pub datatypes: Vec<Datatype>,
     /// The project's `dialect` engine name (`docs/02`) – `None` for
     /// `generic`, or when no `Project` block was found. `rules::ProjectSettings`
     /// stays private to this crate; this is the one fact from it a consumer
@@ -60,13 +64,16 @@ pub struct Table {
     pub fields: Vec<Field>,
     pub indexes: Vec<Index>,
     pub examples: Vec<ExampleRow>,
-    /// `Meta.movedFrom` – the table's previous name, for the planned
-    /// `skema diff` to recognize a rename. The one deliberate exception to
-    /// `Meta` never reaching the model (`skema-api::meta`'s doc comment) –
-    /// see `decisions.md`, "Schema diff & migrations" (tasks 71–75).
+    /// `Meta.movedFrom` – the table's previous name, for `skema diff` to
+    /// recognize a rename. The one standard `Meta` key that reaches the
+    /// model; custom `x-` keys go to `extensions`.
     pub moved_from: Option<String>,
+    pub extensions: Extensions,
     pub span: Span,
 }
+
+/// Custom `x-` keys (`docs/01`, "Custom keys"), each value as text.
+pub type Extensions = BTreeMap<String, String>;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,6 +91,11 @@ pub struct Field {
     /// Text for humans — dropdowns, generated forms, diagrams. Unlike
     /// `note` (a description) this is a display name (`docs/05`).
     pub label: Option<String>,
+    /// From the field's body; an `x-` flag stays in `flags`.
+    pub extensions: Extensions,
+    /// The innermost `Partial` declaring the field; `None` when written in
+    /// the table itself.
+    pub from_partial: Option<DeclRef>,
     pub span: Span,
 }
 
@@ -91,8 +103,20 @@ pub struct Field {
 /// arguments. `varchar(80)` → `{ name: "varchar", args: ["80"] }`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TypeRef {
+    /// As written in the field's own file, import alias included.
     pub name: String,
     pub args: Vec<String>,
+    pub datatype: Option<DeclRef>,
+    #[serde(rename = "enum")]
+    pub enum_: Option<DeclRef>,
+}
+
+/// A declaration identified project-wide. `namespace` is the declaring
+/// file's `Document` name, never an import alias.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DeclRef {
+    pub namespace: String,
+    pub name: String,
 }
 
 /// A field's or index's `[]`-flags, keyed by keyword. A valueless flag
@@ -163,7 +187,13 @@ pub struct Enum {
     pub name: String,
     /// `string` or `int` – from `Field { type = …; }` (`docs/08`).
     pub stored_type: String,
+    /// The entry `Field.default` names; `None` when unset or invalid.
+    pub default: Option<String>,
+    /// `Field.note`; `Meta.note` stays in the editor side channel.
+    pub note: Option<String>,
     pub entries: Vec<EnumEntry>,
+    /// `Meta` merged with the `Field` block; the `Field` block wins a clash.
+    pub extensions: Extensions,
     pub span: Span,
 }
 
@@ -172,6 +202,7 @@ pub struct EnumEntry {
     pub name: String,
     pub label: Option<String>,
     pub value: Option<String>,
+    pub extensions: Extensions,
     pub span: Span,
 }
 
@@ -183,6 +214,7 @@ pub struct Group {
     pub file: FileId,
     pub name: String,
     pub members: Vec<GroupMember>,
+    pub extensions: Extensions,
     pub span: Span,
 }
 
@@ -192,6 +224,48 @@ pub struct GroupMember {
     pub namespace: String,
     pub name: String,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Document {
+    pub file: FileId,
+    pub namespace: String,
+    pub extensions: Extensions,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Datatype {
+    pub file: FileId,
+    pub namespace: String,
+    pub name: String,
+    pub params: Vec<DatatypeParam>,
+    /// `Field.type` as written, without arguments.
+    pub base_type: Option<String>,
+    pub base_type_args: Vec<String>,
+    /// Set when `base_type` names another `Datatype`.
+    pub base_datatype: Option<DeclRef>,
+    /// The built-in or engine-catalog type at the end of the `Field.type`
+    /// chain, by name only; `None` for an unknown name, an `Enum` or a cycle.
+    pub resolved_base_type: Option<String>,
+    pub default: Option<String>,
+    /// Unsubstituted: `{param}` placeholders stay as written.
+    pub regex: Option<String>,
+    pub note: Option<String>,
+    /// `Meta` merged with the `Field` block; the `Field` block wins a clash.
+    pub extensions: Extensions,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DatatypeParam {
+    pub name: String,
+    /// The parameter's type path as dotted text.
+    #[serde(rename = "type")]
+    pub ty: Option<String>,
+    pub default: Option<String>,
+    pub note: Option<String>,
 }
 
 /// Physical names after the `Project` → `Document` → `Table` cascade

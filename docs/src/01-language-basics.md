@@ -177,7 +177,7 @@ See [03 — Meta & Style](03-meta-and-style.md) for the full selector list.
 Anywhere skema accepts key/value pairs, the same rule applies:
 
 - **Known keys** are validated and autocompleted.
-- **Custom keys** must start with `x-` and be quoted. They pass through unchanged into JSON export.
+- **Custom keys** must start with `x-` and be quoted. Where listed [below](#custom-keys-in-the-export), they reach the JSON export.
 - **Anything else is an error** — this is what catches a typo that would otherwise fail silently.
 
 ```skema
@@ -189,6 +189,23 @@ Meta {
 ```
 
 This rule applies in `Meta`, in `Style`, and in field attribute blocks.
+
+### Custom keys in the export
+
+| Where the key is written | Where `skema export --json` carries it |
+|---|---|
+| `Meta` of a `Table` | the table's `extensions` |
+| `Meta` of a `Group` | the group's `extensions` |
+| `Meta` of a `Document` | the `extensions` of that file's entry in `documents` |
+| `Meta` and `Field { }` block of an `Enum` | the enum's `extensions`; for a key in both, the `Field` block wins |
+| `Meta` and `Field { }` block of a `Datatype` | the `extensions` of its entry in `datatypes`; for a key in both, the `Field` block wins |
+| an enum entry's body | the entry's `extensions` |
+| a field's body, also inside a `Partial` | the field's `extensions` |
+| `[]` flags of a field or an index | its `flags`, next to the known flags |
+
+`extensions` maps each key to its value as text, the same way flags do: a string without its quotes, a raw expression without its backticks, a list comma-joined, `true` as `"true"`. Within one block, the first occurrence of a key wins. An entity without custom keys has `extensions: {}`.
+
+Everywhere else a custom key is validated but not exported — for example in the `Meta` of a `Project` or a `Partial`, in a `Datatype` parameter's body, and in `Style`, `Dialect`, `Database` and `Lint` blocks.
 
 ## spec vs Meta.version
 

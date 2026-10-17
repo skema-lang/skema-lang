@@ -243,6 +243,18 @@ build-python-wheel:
       import json
       import skema
       print(json.dumps(skema.check("examples/myexample.skema"))[:200])
+      model = skema.export("crates/skema-cli/tests/fixtures/export-contract/project.skema")["model"]
+      customer = next(t for t in model["tables"] if t["name"] == "Customer")
+      assert customer["extensions"] == {"x-nocobase-title": "Customers"}, customer["extensions"]
+      money = next(d for d in model["datatypes"] if d["name"] == "Money")
+      assert (money["namespace"], money["baseType"], money["resolvedBaseType"]) == ("shared", "decimal", "float"), money
+      balance = next(f for f in customer["fields"] if f["name"] == "balance")
+      assert balance["ty"]["datatype"] == {"namespace": "shared", "name": "Money"}, balance["ty"]
+      status = next(e for e in model["enums"] if e["name"] == "Status")
+      assert (status["default"], status["note"]) == ("active", "Stored as text"), status
+      created_at = next(f for f in customer["fields"] if f["name"] == "created_at")
+      assert created_at["fromPartial"] == {"namespace": "shared", "name": "Audited"}, created_at
+      assert balance["fromPartial"] is None, balance
       PYEOF
   artifacts:
     paths:

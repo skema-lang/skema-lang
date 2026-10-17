@@ -10,6 +10,8 @@
 //! optional `location` needs more context (source text, filename, whether
 //! locations were requested) than a bare `&T` carries.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 use skema_hir::FileId;
 use skema_hir::model;
@@ -202,7 +204,7 @@ pub struct CheckResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
-#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi, hashmap_as_object))]
 pub struct ExportResult {
     pub ok: bool,
     pub model: ExportedModel,
@@ -216,6 +218,10 @@ pub struct ExportedModel {
     pub tables: Vec<ExportedTable>,
     pub enums: Vec<ExportedEnum>,
     pub groups: Vec<ExportedGroup>,
+    /// One per file that declares a `Document`, root file first.
+    pub documents: Vec<ExportedDocument>,
+    /// Every declared `Datatype`, used or not, sorted by namespace and name.
+    pub datatypes: Vec<ExportedDatatype>,
     /// The project's `dialect` engine name (`docs/02`) – `None` for
     /// `generic`, or when no `Project` block was found.
     pub dialect: Option<String>,
@@ -225,11 +231,11 @@ pub struct ExportedModel {
 /// stringified value.
 ///
 /// A list of named entries, not a map. `model::Flags` is a `BTreeMap`,
-/// which crosses the wasm boundary as a JS `Map`, and a bare `pub type`
-/// alias emits no TypeScript declaration at all — the generated `.d.ts`
-/// then referenced an undefined `Flags` and consumers silently got `any`.
-/// A declared struct says exactly what arrives: an array in `BTreeMap`
-/// order.
+/// which crosses the wasm boundary as a JS `Map` unless the top-level type
+/// sets `hashmap_as_object`, and a bare `pub type` alias emits no
+/// TypeScript declaration at all — the generated `.d.ts` then referenced an
+/// undefined `Flags` and consumers silently got `any`. A declared struct
+/// says exactly what arrives: an array in `BTreeMap` order.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
 #[serde(rename_all = "camelCase")]
@@ -267,6 +273,7 @@ fn flags(flags: &model::Flags) -> Vec<ExportedFlag> {
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(hashmap_as_object))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedTable {
     /// Display path of the file this `Table` is declared in – the file a
@@ -281,12 +288,14 @@ pub struct ExportedTable {
     pub examples: Vec<ExportedExampleRow>,
     /// `Meta.movedFrom` – see `model::Table::moved_from`.
     pub moved_from: Option<String>,
+    pub extensions: BTreeMap<String, String>,
     pub span: Span,
     pub location: Option<Location>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(hashmap_as_object))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedField {
     /// Display path of the file this field's own text lives in – **not
@@ -300,6 +309,9 @@ pub struct ExportedField {
     pub relation: Option<ExportedRelation>,
     pub note: Option<String>,
     pub label: Option<String>,
+    pub extensions: BTreeMap<String, String>,
+    /// See `model::Field::from_partial`.
+    pub from_partial: Option<DeclRef>,
     pub span: Span,
     pub location: Option<Location>,
 }
@@ -307,8 +319,21 @@ pub struct ExportedField {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
 pub struct ExportedTypeRef {
+    /// As written in the field's own file, import alias included.
     pub name: String,
     pub args: Vec<String>,
+    pub datatype: Option<DeclRef>,
+    #[serde(rename = "enum")]
+    pub enum_: Option<DeclRef>,
+}
+
+/// A declaration identified project-wide. `namespace` is the declaring
+/// file's `Document` name, never an import alias.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+pub struct DeclRef {
+    pub namespace: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -366,29 +391,36 @@ pub struct ExportedExampleRow {
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(hashmap_as_object))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedEnum {
     pub file: String,
     pub namespace: String,
     pub name: String,
     pub stored_type: String,
+    pub default: Option<String>,
+    pub note: Option<String>,
     pub entries: Vec<ExportedEnumEntry>,
+    pub extensions: BTreeMap<String, String>,
     pub span: Span,
     pub location: Option<Location>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(hashmap_as_object))]
 pub struct ExportedEnumEntry {
     pub name: String,
     pub label: Option<String>,
     pub value: Option<String>,
+    pub extensions: BTreeMap<String, String>,
     pub span: Span,
     pub location: Option<Location>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(hashmap_as_object))]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedGroup {
     /// `Group` members are plain references, never inlined content, so –
@@ -397,6 +429,7 @@ pub struct ExportedGroup {
     pub file: String,
     pub name: String,
     pub members: Vec<ExportedGroupMember>,
+    pub extensions: BTreeMap<String, String>,
     pub span: Span,
     pub location: Option<Location>,
 }
@@ -409,6 +442,52 @@ pub struct ExportedGroupMember {
     pub name: String,
     pub span: Span,
     pub location: Option<Location>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(hashmap_as_object))]
+pub struct ExportedDocument {
+    pub file: String,
+    pub namespace: String,
+    pub extensions: BTreeMap<String, String>,
+    pub span: Span,
+    pub location: Option<Location>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(hashmap_as_object))]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedDatatype {
+    pub file: String,
+    pub namespace: String,
+    pub name: String,
+    pub params: Vec<ExportedDatatypeParam>,
+    /// `Field.type` as written, without arguments.
+    pub base_type: Option<String>,
+    pub base_type_args: Vec<String>,
+    /// Set when `baseType` names another `Datatype`.
+    pub base_datatype: Option<DeclRef>,
+    /// See `model::Datatype::resolved_base_type`.
+    pub resolved_base_type: Option<String>,
+    pub default: Option<String>,
+    /// Unsubstituted: `{param}` placeholders stay as written.
+    pub regex: Option<String>,
+    pub note: Option<String>,
+    pub extensions: BTreeMap<String, String>,
+    pub span: Span,
+    pub location: Option<Location>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+pub struct ExportedDatatypeParam {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: Option<String>,
+    pub default: Option<String>,
+    pub note: Option<String>,
 }
 
 /// Physical names after the `Project` → `Document` → `Table` cascade. No
@@ -427,6 +506,15 @@ fn type_ref(t: &model::TypeRef) -> ExportedTypeRef {
     ExportedTypeRef {
         name: t.name.clone(),
         args: t.args.clone(),
+        datatype: t.datatype.as_ref().map(decl_ref),
+        enum_: t.enum_.as_ref().map(decl_ref),
+    }
+}
+
+fn decl_ref(d: &model::DeclRef) -> DeclRef {
+    DeclRef {
+        namespace: d.namespace.clone(),
+        name: d.name.clone(),
     }
 }
 
@@ -468,6 +556,8 @@ fn field(f: &model::Field, ctx: &LocateCtx<'_>) -> ExportedField {
         relation: f.relation.as_ref().map(|r| relation(r, f.file, ctx)),
         note: f.note.clone(),
         label: f.label.clone(),
+        extensions: f.extensions.clone(),
+        from_partial: f.from_partial.as_ref().map(decl_ref),
         span: f.span.into(),
         location: ctx.locate(f.file, f.span),
     }
@@ -503,6 +593,7 @@ fn table(t: &model::Table, ctx: &LocateCtx<'_>) -> ExportedTable {
         indexes: t.indexes.iter().map(|i| index(i, ctx)).collect(),
         examples: t.examples.iter().map(|e| example_row(e, ctx)).collect(),
         moved_from: t.moved_from.clone(),
+        extensions: t.extensions.clone(),
         span: t.span.into(),
         location: ctx.locate(t.file, t.span),
     }
@@ -516,6 +607,7 @@ fn enum_entry(e: &model::EnumEntry, owner_file: FileId, ctx: &LocateCtx<'_>) -> 
         name: e.name.clone(),
         label: e.label.clone(),
         value: e.value.clone(),
+        extensions: e.extensions.clone(),
         span: e.span.into(),
         location: ctx.locate(owner_file, e.span),
     }
@@ -527,11 +619,14 @@ fn enum_(e: &model::Enum, ctx: &LocateCtx<'_>) -> ExportedEnum {
         namespace: e.namespace.clone(),
         name: e.name.clone(),
         stored_type: e.stored_type.clone(),
+        default: e.default.clone(),
+        note: e.note.clone(),
         entries: e
             .entries
             .iter()
             .map(|en| enum_entry(en, e.file, ctx))
             .collect(),
+        extensions: e.extensions.clone(),
         span: e.span.into(),
         location: ctx.locate(e.file, e.span),
     }
@@ -562,8 +657,47 @@ fn group(g: &model::Group, ctx: &LocateCtx<'_>) -> ExportedGroup {
             .iter()
             .map(|m| group_member(m, g.file, ctx))
             .collect(),
+        extensions: g.extensions.clone(),
         span: g.span.into(),
         location: ctx.locate(g.file, g.span),
+    }
+}
+
+fn document(d: &model::Document, ctx: &LocateCtx<'_>) -> ExportedDocument {
+    ExportedDocument {
+        file: ctx.path(d.file),
+        namespace: d.namespace.clone(),
+        extensions: d.extensions.clone(),
+        span: d.span.into(),
+        location: ctx.locate(d.file, d.span),
+    }
+}
+
+fn datatype_param(p: &model::DatatypeParam) -> ExportedDatatypeParam {
+    ExportedDatatypeParam {
+        name: p.name.clone(),
+        ty: p.ty.clone(),
+        default: p.default.clone(),
+        note: p.note.clone(),
+    }
+}
+
+fn datatype(d: &model::Datatype, ctx: &LocateCtx<'_>) -> ExportedDatatype {
+    ExportedDatatype {
+        file: ctx.path(d.file),
+        namespace: d.namespace.clone(),
+        name: d.name.clone(),
+        params: d.params.iter().map(datatype_param).collect(),
+        base_type: d.base_type.clone(),
+        base_type_args: d.base_type_args.clone(),
+        base_datatype: d.base_datatype.as_ref().map(decl_ref),
+        resolved_base_type: d.resolved_base_type.clone(),
+        default: d.default.clone(),
+        regex: d.regex.clone(),
+        note: d.note.clone(),
+        extensions: d.extensions.clone(),
+        span: d.span.into(),
+        location: ctx.locate(d.file, d.span),
     }
 }
 
@@ -575,6 +709,8 @@ pub fn empty_model() -> ExportedModel {
         tables: Vec::new(),
         enums: Vec::new(),
         groups: Vec::new(),
+        documents: Vec::new(),
+        datatypes: Vec::new(),
         dialect: None,
     }
 }
@@ -584,6 +720,8 @@ pub fn export_model(model: &model::Model, ctx: &LocateCtx<'_>) -> ExportedModel 
         tables: model.tables.iter().map(|t| table(t, ctx)).collect(),
         enums: model.enums.iter().map(|e| enum_(e, ctx)).collect(),
         groups: model.groups.iter().map(|g| group(g, ctx)).collect(),
+        documents: model.documents.iter().map(|d| document(d, ctx)).collect(),
+        datatypes: model.datatypes.iter().map(|d| datatype(d, ctx)).collect(),
         dialect: model.dialect.clone(),
     }
 }

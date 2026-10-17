@@ -119,7 +119,8 @@ of them.
 
 | Rule | Stated in | What the checker does today |
 |---|---|---|
-| `Example` row values for an `Enum`-typed field, or a `Datatype` field whose own `Field.type` names another custom type | [05](05-tables-and-fields.md#example-rows) | not checked — only a built-in or a one-level-resolved `Datatype` is |
+| `Example` row values for an `Enum`-typed field, or a `Datatype` field whose `Field.type` chain does not end in a built-in | [05](05-tables-and-fields.md#example-rows) | not checked — only a built-in, directly or through layered `Datatype`s, is |
+| A `Datatype`'s `Field.type` names a built-in, an engine type or another `Datatype` | [06](06-data-types.md#the-field-block) | not checked beyond a cycle, which is an error; an unresolvable one exports `resolvedBaseType: null` |
 
 ## See also
 
