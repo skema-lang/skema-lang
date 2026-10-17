@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin>=1.14,<2"]
+build-backend = "maturin"
+
+[project]
+name = "skema-py"
+requires-python = ">=3.9"
+# Read from Cargo.toml, whose workspace version the release job patches.
+dynamic = ["version", "description", "license"]
+
+[tool.maturin]
+module-name = "skema"
