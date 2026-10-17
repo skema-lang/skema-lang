@@ -25,3 +25,29 @@ Enum Status {
   active { label = "Active"; "x-color" = "green"; }
   archived;
 }
+
+Datatype decimal(precision int, scale int) {
+  precision { note = "Total number of digits"; }
+  scale     { note = "Fixed decimal places"; default = 2; }
+
+  Meta {
+    note       = "Fixed-point number";
+    "x-source" = "meta";
+    "x-unit"   = "none";
+  }
+
+  Field {
+    type       = float;
+    default    = 0;
+    note       = "Decimal number with fixed precision";
+    "x-source" = "field";
+  }
+}
+
+Datatype Money {
+  Field {
+    type                   = decimal(10);
+    note                   = "Amount in home currency";
+    "x-nocobase-interface" = "number";
+  }
+}

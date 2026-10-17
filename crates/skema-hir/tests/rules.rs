@@ -337,6 +337,10 @@ fn duplicate_group_membership_is_rejected() {
 
 /// `main` is `FileId(0)` and imports `imported` (`FileId(1)`, namespace `a`).
 fn analyze_main_importing(main: &str, imported: &str) -> Vec<Diagnostic> {
+    analyze_main_importing_model(main, imported).1
+}
+
+fn analyze_main_importing_model(main: &str, imported: &str) -> (Model, Vec<Diagnostic>) {
     let ast_main = skema_syntax::parse(main).0;
     let ast_imported = skema_syntax::parse(imported).0;
     let files = [
@@ -353,8 +357,8 @@ fn analyze_main_importing(main: &str, imported: &str) -> Vec<Diagnostic> {
             import_targets: vec![],
         },
     ];
-    let (_, _, diags) = analyze(&files);
-    diags
+    let (model, _, diags) = analyze(&files);
+    (model, diags)
 }
 
 fn diagnostics_containing<'a>(diags: &'a [Diagnostic], needle: &str) -> Vec<&'a Diagnostic> {
@@ -2767,4 +2771,304 @@ fn identifier_length_outside_projects_own_database_is_rejected() {
             .any(|m| m.contains("only legal in `Project`'s own `Database` block")),
         "table-level: {diags:#?}"
     );
+}
+
+// ===========================================================================
+// Datatype declarations and type targets (task 114)
+// ===========================================================================
+
+// clippy.toml's test allowance covers `#[test]` fns, not their helpers.
+#[allow(clippy::panic)]
+fn datatype<'m>(model: &'m Model, name: &str) -> &'m skema_hir::model::Datatype {
+    model
+        .datatypes
+        .iter()
+        .find(|d| d.name == name)
+        .unwrap_or_else(|| panic!("no Datatype `{name}` in {:#?}", model.datatypes))
+}
+
+fn decl_ref(namespace: &str, name: &str) -> Option<skema_hir::model::DeclRef> {
+    Some(skema_hir::model::DeclRef {
+        namespace: namespace.to_owned(),
+        name: name.to_owned(),
+    })
+}
+
+fn texts(items: &[&str]) -> Vec<String> {
+    items.iter().map(|item| (*item).to_owned()).collect()
+}
+
+#[test]
+fn a_datatype_on_a_builtin_exports_its_field_block_and_params_as_written() {
+    let src = format!(
+        r#"{HEADER}
+Datatype regexstring(pattern string, flags string) {{
+  pattern {{ note = "Pattern the value must match"; }}
+  flags   {{ default = "i"; }}
+  Field {{ type = string; regex = "^{{pattern}}$"; default = "none"; note = "Matched text"; }}
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let regexstring = datatype(&model, "regexstring");
+    assert_eq!(regexstring.namespace, "shop");
+    assert_eq!(regexstring.base_type.as_deref(), Some("string"));
+    assert!(regexstring.base_type_args.is_empty());
+    assert_eq!(regexstring.base_datatype, None);
+    assert_eq!(regexstring.resolved_base_type.as_deref(), Some("string"));
+    assert_eq!(regexstring.regex.as_deref(), Some("^{pattern}$"));
+    assert_eq!(regexstring.default.as_deref(), Some("none"));
+    assert_eq!(regexstring.note.as_deref(), Some("Matched text"));
+    let params: Vec<_> = regexstring
+        .params
+        .iter()
+        .map(|p| {
+            (
+                p.name.as_str(),
+                p.ty.as_deref(),
+                p.default.as_deref(),
+                p.note.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        params,
+        [
+            (
+                "pattern",
+                Some("string"),
+                None,
+                Some("Pattern the value must match")
+            ),
+            ("flags", Some("string"), Some("i"), None),
+        ]
+    );
+}
+
+#[test]
+fn a_datatype_on_an_engine_catalog_type_resolves_to_it_under_its_dialect() {
+    let src = r#"spec 1;
+Document shop { }
+Project { mode = draft; dialect = postgres; }
+Datatype Price { Field { type = numeric(10, 2); } Dialect @postgres { sql = "numeric(10, 2)"; } }
+"#;
+    let (model, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let price = datatype(&model, "Price");
+    assert_eq!(price.base_type.as_deref(), Some("numeric"));
+    assert_eq!(price.base_type_args, texts(&["10", "2"]));
+    assert_eq!(price.base_datatype, None);
+    assert_eq!(price.resolved_base_type.as_deref(), Some("numeric"));
+}
+
+#[test]
+fn a_layered_datatype_resolves_through_an_import_alias_to_its_terminal_type() {
+    let imported = r#"spec 1;
+Document types { }
+Datatype decimal(precision int, scale int) {
+  scale { default = 2; }
+  Field { type = float; }
+}
+Datatype Cents { Field { type = decimal(12, 0); } }
+"#;
+    let main = r#"spec 1;
+Document shop { }
+Project { mode = draft; dialect = generic; }
+import "./a.skema" as types;
+Datatype Money { Field { type = types.decimal(10); } }
+Datatype Fee   { Field { type = types.Cents; } }
+Datatype Total { Field { type = Money; } }
+"#;
+    let (model, diags) = analyze_main_importing_model(main, imported);
+    assert!(diags.is_empty(), "{diags:#?}");
+
+    let money = datatype(&model, "Money");
+    assert_eq!(money.base_type.as_deref(), Some("types.decimal"));
+    assert_eq!(money.base_type_args, texts(&["10"]));
+    assert_eq!(money.base_datatype, decl_ref("types", "decimal"));
+    assert_eq!(money.resolved_base_type.as_deref(), Some("float"));
+
+    // `Cents`' own `decimal` resolves in its own file, where it is local.
+    let fee = datatype(&model, "Fee");
+    assert_eq!(fee.base_datatype, decl_ref("types", "Cents"));
+    assert_eq!(fee.resolved_base_type.as_deref(), Some("float"));
+
+    let total = datatype(&model, "Total");
+    assert_eq!(total.base_datatype, decl_ref("shop", "Money"));
+    assert_eq!(total.resolved_base_type.as_deref(), Some("float"));
+
+    let order: Vec<(&str, &str)> = model
+        .datatypes
+        .iter()
+        .map(|d| (d.namespace.as_str(), d.name.as_str()))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            ("shop", "Fee"),
+            ("shop", "Money"),
+            ("shop", "Total"),
+            ("types", "Cents"),
+            ("types", "decimal"),
+        ]
+    );
+}
+
+#[test]
+fn a_base_datatype_names_the_declaring_document_not_the_import_alias() {
+    let imported =
+        "spec 1;\nDocument numeric { }\nDatatype decimal(p int) { Field { type = float; } }\n";
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as num;\nDatatype Money { Field { type = num.decimal(10); } }\nTable T { id int [pk]; amount num.decimal(8); }\n";
+    let (model, diags) = analyze_main_importing_model(main, imported);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let money = datatype(&model, "Money");
+    assert_eq!(money.base_type.as_deref(), Some("num.decimal"));
+    assert_eq!(money.base_datatype, decl_ref("numeric", "decimal"));
+    let amount = &model.tables[0].fields[1].ty;
+    assert_eq!(amount.name, "num.decimal");
+    assert_eq!(amount.datatype, decl_ref("numeric", "decimal"));
+    assert_eq!(amount.enum_, None);
+}
+
+#[test]
+fn an_unknown_or_enum_base_exports_a_null_resolved_type_without_a_diagnostic() {
+    let src = format!(
+        r#"{HEADER}
+Enum Status {{ active; }}
+Datatype Unknown {{ Field {{ type = nope; }} }}
+Datatype OnEnum  {{ Field {{ type = Status; }} }}
+Datatype NoField {{ Meta {{ note = "n"; }} }}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let unknown = datatype(&model, "Unknown");
+    assert_eq!(unknown.base_type.as_deref(), Some("nope"));
+    assert_eq!(unknown.base_datatype, None);
+    assert_eq!(unknown.resolved_base_type, None);
+    let on_enum = datatype(&model, "OnEnum");
+    assert_eq!(on_enum.base_type.as_deref(), Some("Status"));
+    assert_eq!(on_enum.base_datatype, None);
+    assert_eq!(on_enum.resolved_base_type, None);
+    let no_field = datatype(&model, "NoField");
+    assert_eq!(no_field.base_type, None);
+    assert_eq!(no_field.resolved_base_type, None);
+}
+
+#[test]
+fn a_datatype_cycle_is_an_error_at_each_members_field_type() {
+    let src = format!(
+        r#"{HEADER}
+Datatype A {{ Field {{ type = B; }} }}
+Datatype B {{ Field {{ type = A(1); }} }}
+Datatype C {{ Field {{ type = A; }} }}
+Datatype Self {{ Field {{ type = shop.Self; }} }}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    let cycles = diagnostics_containing(&diags, "cycle in `Field.type`");
+    let at: Vec<&str> = cycles
+        .iter()
+        .map(|d| &src[d.span.start as usize..d.span.end as usize])
+        .collect();
+    assert_eq!(at, ["B", "A(1)", "shop.Self"], "{diags:#?}");
+    assert!(
+        cycles
+            .iter()
+            .all(|d| d.severity == skema_hir::Severity::Error)
+    );
+    for name in ["A", "B", "C", "Self"] {
+        assert_eq!(datatype(&model, name).resolved_base_type, None, "{name}");
+    }
+    assert_eq!(datatype(&model, "C").base_datatype, decl_ref("shop", "A"));
+}
+
+#[test]
+fn a_datatypes_field_block_wins_over_its_meta_on_the_same_x_key() {
+    let src = format!(
+        r#"{HEADER}
+Datatype D(size int) {{
+  size {{ note = "n"; "x-param" = "ignored"; }}
+  Meta {{ note = "m"; "x-source" = "meta"; "x-icon" = "coin"; }}
+  Field {{ type = int; "x-source" = "field"; }}
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        datatype(&model, "D").extensions,
+        extensions(&[("x-icon", "coin"), ("x-source", "field")])
+    );
+}
+
+#[test]
+fn a_field_type_points_at_its_enum_or_datatype_and_other_types_at_neither() {
+    let src = format!(
+        r#"{HEADER}
+Enum Status {{ active; }}
+Datatype Email {{ Field {{ type = string; }} }}
+Table Customer {{
+  id     int [pk];
+  email  Email;
+  status shop.Status;
+  owner  >Customer.id;
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let types: Vec<_> = model.tables[0]
+        .fields
+        .iter()
+        .map(|f| (f.name.as_str(), f.ty.datatype.clone(), f.ty.enum_.clone()))
+        .collect();
+    assert_eq!(
+        types,
+        [
+            ("id", None, None),
+            ("email", decl_ref("shop", "Email"), None),
+            ("status", None, decl_ref("shop", "Status")),
+            ("owner", None, None),
+        ]
+    );
+}
+
+/// Pins today's behaviour (`resolve_named_type` checks the catalog first),
+/// not a decision: postgres has `jsonb` in its catalog, but not `json`.
+#[test]
+fn a_bare_engine_catalog_name_shadows_a_same_named_datatype() {
+    let src = r#"spec 1;
+Document shop { }
+Project { mode = draft; dialect = postgres; }
+Datatype jsonb   { Field { type = text; } Dialect @postgres { sql = "jsonb"; } }
+Datatype json    { Field { type = text; } Dialect @postgres { sql = "json"; } }
+Datatype Payload { Field { type = jsonb; } Dialect @postgres { sql = "jsonb"; } }
+Table T { id int [pk]; data jsonb; doc json; }
+"#;
+    let (model, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let fields = &model.tables[0].fields;
+    assert_eq!(fields[1].ty.datatype, None);
+    assert_eq!(fields[2].ty.datatype, decl_ref("shop", "json"));
+    let payload = datatype(&model, "Payload");
+    assert_eq!(payload.base_datatype, None);
+    assert_eq!(payload.resolved_base_type.as_deref(), Some("jsonb"));
+}
+
+#[test]
+fn example_values_follow_layered_datatypes_to_their_builtin() {
+    let src = format!(
+        r#"{HEADER}
+Datatype decimal(precision int) {{ Field {{ type = float; }} }}
+Datatype Money {{ Field {{ type = decimal(10); }} }}
+Datatype Price {{ Field {{ type = Money; }} }}
+Table T {{ id int [pk]; price Price; Example {{ Record {{ id = 1; price = "cheap"; }} Record {{ id = 2; price = 9.5; }} }} }}
+"#
+    );
+    let (_, diags) = analyze_src(&src);
+    let wrong = diagnostics_containing(&diags, "`price` should be `float`");
+    assert_eq!(wrong.len(), 1, "{diags:#?}");
+    assert_eq!(diags.len(), 1, "{diags:#?}");
 }

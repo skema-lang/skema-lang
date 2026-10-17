@@ -19,6 +19,8 @@ pub struct Model {
     pub groups: Vec<Group>,
     /// One per file that declares a `Document`, in `FileId` order.
     pub documents: Vec<Document>,
+    /// Every declared `Datatype`, used or not.
+    pub datatypes: Vec<Datatype>,
     /// The project's `dialect` engine name (`docs/02`) – `None` for
     /// `generic`, or when no `Project` block was found. `rules::ProjectSettings`
     /// stays private to this crate; this is the one fact from it a consumer
@@ -98,8 +100,20 @@ pub struct Field {
 /// arguments. `varchar(80)` → `{ name: "varchar", args: ["80"] }`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TypeRef {
+    /// As written in the field's own file, import alias included.
     pub name: String,
     pub args: Vec<String>,
+    pub datatype: Option<DeclRef>,
+    #[serde(rename = "enum")]
+    pub enum_: Option<DeclRef>,
+}
+
+/// A declaration identified project-wide. `namespace` is the declaring
+/// file's `Document` name, never an import alias.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DeclRef {
+    pub namespace: String,
+    pub name: String,
 }
 
 /// A field's or index's `[]`-flags, keyed by keyword. A valueless flag
@@ -211,6 +225,40 @@ pub struct Document {
     pub namespace: String,
     pub extensions: Extensions,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Datatype {
+    pub file: FileId,
+    pub namespace: String,
+    pub name: String,
+    pub params: Vec<DatatypeParam>,
+    /// `Field.type` as written, without arguments.
+    pub base_type: Option<String>,
+    pub base_type_args: Vec<String>,
+    /// Set when `base_type` names another `Datatype`.
+    pub base_datatype: Option<DeclRef>,
+    /// The built-in or engine-catalog type at the end of the `Field.type`
+    /// chain, by name only; `None` for an unknown name, an `Enum` or a cycle.
+    pub resolved_base_type: Option<String>,
+    pub default: Option<String>,
+    /// Unsubstituted: `{param}` placeholders stay as written.
+    pub regex: Option<String>,
+    pub note: Option<String>,
+    /// `Meta` merged with the `Field` block; the `Field` block wins a clash.
+    pub extensions: Extensions,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DatatypeParam {
+    pub name: String,
+    /// The parameter's type path as dotted text.
+    #[serde(rename = "type")]
+    pub ty: Option<String>,
+    pub default: Option<String>,
+    pub note: Option<String>,
 }
 
 /// Physical names after the `Project` → `Document` → `Table` cascade

@@ -25,12 +25,13 @@ use wasm_bindgen::prelude::*;
 // Re-exported so the generated `.d.ts` keeps naming these types, and so a
 // Rust caller of this crate needs only one import.
 pub use skema_api::{
-    Builtins, CheckResult, Diagnostic, EnumMeta, EnumMetas, ExportResult, ExportedDocument,
-    ExportedEnum, ExportedEnumEntry, ExportedField, ExportedFlag, ExportedGroup,
-    ExportedGroupMember, ExportedIndex, ExportedModel, ExportedPhysical, ExportedRelation,
-    ExportedTable, ExportedTypeRef, FlagValue, GroupMeta, GroupMetas, Location, MetaEntry,
-    ProjectFile, ProjectFileStatus, ProjectInput, ProjectResult, ReferenceLink, RelationKind,
-    Severity, Span, StyleBlock, StyleBlocks, StyleScope, TableMeta, TableMetas, Utf16Range,
+    Builtins, CheckResult, DeclRef, Diagnostic, EnumMeta, EnumMetas, ExportResult,
+    ExportedDatatype, ExportedDatatypeParam, ExportedDocument, ExportedEnum, ExportedEnumEntry,
+    ExportedField, ExportedFlag, ExportedGroup, ExportedGroupMember, ExportedIndex, ExportedModel,
+    ExportedPhysical, ExportedRelation, ExportedTable, ExportedTypeRef, FlagValue, GroupMeta,
+    GroupMetas, Location, MetaEntry, ProjectFile, ProjectFileStatus, ProjectInput, ProjectResult,
+    ReferenceLink, RelationKind, Severity, Span, StyleBlock, StyleBlocks, StyleScope, TableMeta,
+    TableMetas, Utf16Range,
 };
 
 /// Readable panic messages in the browser console instead of an opaque

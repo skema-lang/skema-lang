@@ -198,6 +198,7 @@ This rule applies in `Meta`, in `Style`, and in field attribute blocks.
 | `Meta` of a `Group` | the group's `extensions` |
 | `Meta` of a `Document` | the `extensions` of that file's entry in `documents` |
 | `Meta` and `Field { }` block of an `Enum` | the enum's `extensions`; for a key in both, the `Field` block wins |
+| `Meta` and `Field { }` block of a `Datatype` | the `extensions` of its entry in `datatypes`; for a key in both, the `Field` block wins |
 | an enum entry's body | the entry's `extensions` |
 | a field's body, also inside a `Partial` | the field's `extensions` |
 | `[]` flags of a field or an index | its `flags`, next to the known flags |

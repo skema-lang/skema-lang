@@ -220,6 +220,8 @@ pub struct ExportedModel {
     pub groups: Vec<ExportedGroup>,
     /// One per file that declares a `Document`, root file first.
     pub documents: Vec<ExportedDocument>,
+    /// Every declared `Datatype`, used or not, sorted by namespace and name.
+    pub datatypes: Vec<ExportedDatatype>,
     /// The project's `dialect` engine name (`docs/02`) – `None` for
     /// `generic`, or when no `Project` block was found.
     pub dialect: Option<String>,
@@ -315,8 +317,21 @@ pub struct ExportedField {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
 pub struct ExportedTypeRef {
+    /// As written in the field's own file, import alias included.
     pub name: String,
     pub args: Vec<String>,
+    pub datatype: Option<DeclRef>,
+    #[serde(rename = "enum")]
+    pub enum_: Option<DeclRef>,
+}
+
+/// A declaration identified project-wide. `namespace` is the declaring
+/// file's `Document` name, never an import alias.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+pub struct DeclRef {
+    pub namespace: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -436,6 +451,41 @@ pub struct ExportedDocument {
     pub location: Option<Location>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+#[cfg_attr(feature = "typescript", tsify(hashmap_as_object))]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedDatatype {
+    pub file: String,
+    pub namespace: String,
+    pub name: String,
+    pub params: Vec<ExportedDatatypeParam>,
+    /// `Field.type` as written, without arguments.
+    pub base_type: Option<String>,
+    pub base_type_args: Vec<String>,
+    /// Set when `baseType` names another `Datatype`.
+    pub base_datatype: Option<DeclRef>,
+    /// See `model::Datatype::resolved_base_type`.
+    pub resolved_base_type: Option<String>,
+    pub default: Option<String>,
+    /// Unsubstituted: `{param}` placeholders stay as written.
+    pub regex: Option<String>,
+    pub note: Option<String>,
+    pub extensions: BTreeMap<String, String>,
+    pub span: Span,
+    pub location: Option<Location>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "typescript", derive(Tsify))]
+pub struct ExportedDatatypeParam {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: Option<String>,
+    pub default: Option<String>,
+    pub note: Option<String>,
+}
+
 /// Physical names after the `Project` → `Document` → `Table` cascade. No
 /// span: it's a cascade of up to three independent source blocks, so there
 /// is no single correct source location for it – inventing one would be
@@ -452,6 +502,15 @@ fn type_ref(t: &model::TypeRef) -> ExportedTypeRef {
     ExportedTypeRef {
         name: t.name.clone(),
         args: t.args.clone(),
+        datatype: t.datatype.as_ref().map(decl_ref),
+        enum_: t.enum_.as_ref().map(decl_ref),
+    }
+}
+
+fn decl_ref(d: &model::DeclRef) -> DeclRef {
+    DeclRef {
+        namespace: d.namespace.clone(),
+        name: d.name.clone(),
     }
 }
 
@@ -607,6 +666,34 @@ fn document(d: &model::Document, ctx: &LocateCtx<'_>) -> ExportedDocument {
     }
 }
 
+fn datatype_param(p: &model::DatatypeParam) -> ExportedDatatypeParam {
+    ExportedDatatypeParam {
+        name: p.name.clone(),
+        ty: p.ty.clone(),
+        default: p.default.clone(),
+        note: p.note.clone(),
+    }
+}
+
+fn datatype(d: &model::Datatype, ctx: &LocateCtx<'_>) -> ExportedDatatype {
+    ExportedDatatype {
+        file: ctx.path(d.file),
+        namespace: d.namespace.clone(),
+        name: d.name.clone(),
+        params: d.params.iter().map(datatype_param).collect(),
+        base_type: d.base_type.clone(),
+        base_type_args: d.base_type_args.clone(),
+        base_datatype: d.base_datatype.as_ref().map(decl_ref),
+        resolved_base_type: d.resolved_base_type.clone(),
+        default: d.default.clone(),
+        regex: d.regex.clone(),
+        note: d.note.clone(),
+        extensions: d.extensions.clone(),
+        span: d.span.into(),
+        location: ctx.locate(d.file, d.span),
+    }
+}
+
 /// For the one case where there is no analysis to export at all (no root
 /// file), so the result shape stays the same instead of the model field
 /// becoming nullable for every caller.
@@ -616,6 +703,7 @@ pub fn empty_model() -> ExportedModel {
         enums: Vec::new(),
         groups: Vec::new(),
         documents: Vec::new(),
+        datatypes: Vec::new(),
         dialect: None,
     }
 }
@@ -626,6 +714,7 @@ pub fn export_model(model: &model::Model, ctx: &LocateCtx<'_>) -> ExportedModel 
         enums: model.enums.iter().map(|e| enum_(e, ctx)).collect(),
         groups: model.groups.iter().map(|g| group(g, ctx)).collect(),
         documents: model.documents.iter().map(|d| document(d, ctx)).collect(),
+        datatypes: model.datatypes.iter().map(|d| datatype(d, ctx)).collect(),
         dialect: model.dialect.clone(),
     }
 }

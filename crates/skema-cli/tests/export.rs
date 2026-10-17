@@ -119,3 +119,76 @@ fn only_x_keys_reach_extensions_as_text() {
         ]
     );
 }
+
+#[test]
+fn a_field_type_names_its_declaration_by_document_namespace_not_alias() {
+    let model: Value = serde_json::from_str(&export_fixture()).expect("export is JSON");
+
+    let customer = find(&model["tables"], "Customer");
+    let status = &find(&customer["fields"], "status")["ty"];
+    assert_eq!(status["name"], "sh.Status");
+    assert_eq!(
+        status["enum"],
+        json!({ "namespace": "shared", "name": "Status" })
+    );
+    assert_eq!(status["datatype"], Value::Null);
+    let balance = &find(&customer["fields"], "balance")["ty"];
+    assert_eq!(balance["name"], "sh.Money");
+    assert_eq!(
+        balance["datatype"],
+        json!({ "namespace": "shared", "name": "Money" })
+    );
+    assert_eq!(balance["enum"], Value::Null);
+
+    let tag = find(&model["tables"], "Tag");
+    for builtin_or_relation in ["label", "customer"] {
+        let ty = &find(&tag["fields"], builtin_or_relation)["ty"];
+        assert_eq!(ty["datatype"], Value::Null, "{builtin_or_relation}");
+        assert_eq!(ty["enum"], Value::Null, "{builtin_or_relation}");
+    }
+}
+
+#[test]
+fn every_datatype_is_exported_with_its_base_chain_resolved_by_name() {
+    let model: Value = serde_json::from_str(&export_fixture()).expect("export is JSON");
+
+    let names: Vec<(&Value, &Value)> = model["datatypes"]
+        .as_array()
+        .expect("datatypes is a list")
+        .iter()
+        .map(|d| (&d["namespace"], &d["name"]))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            (&json!("shared"), &json!("Money")),
+            (&json!("shared"), &json!("decimal")),
+            (&json!("shop"), &json!("Sku")),
+        ]
+    );
+
+    let money = find(&model["datatypes"], "Money");
+    assert_eq!(money["baseType"], "decimal");
+    assert_eq!(money["baseTypeArgs"], json!(["10"]));
+    assert_eq!(
+        money["baseDatatype"],
+        json!({ "namespace": "shared", "name": "decimal" })
+    );
+    assert_eq!(money["resolvedBaseType"], "float");
+
+    let decimal = find(&model["datatypes"], "decimal");
+    assert_eq!(
+        decimal["params"][1],
+        json!({ "name": "scale", "type": "int", "default": "2", "note": "Fixed decimal places" })
+    );
+    assert_eq!(decimal["default"], "0");
+    assert_eq!(
+        decimal["extensions"],
+        json!({ "x-source": "field", "x-unit": "none" })
+    );
+
+    let sku = find(&model["datatypes"], "Sku");
+    assert_eq!(sku["regex"], "^SKU-[A-Z0-9]{length}$");
+    assert_eq!(sku["baseDatatype"], Value::Null);
+    assert_eq!(sku["extensions"], json!({}));
+}

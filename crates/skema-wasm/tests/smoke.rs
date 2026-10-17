@@ -279,6 +279,16 @@ fn extensions_cross_analyze_project_as_a_plain_object() {
         "x-nocobase-datasource",
         "main",
     );
+    assert_plain_object_with(
+        &js_at(&js, &["model", "datatypes", "0", "extensions"]),
+        "x-nocobase-interface",
+        "number",
+    );
+    assert_plain_object_with(
+        &js_at(&js, &["model", "tables", "0", "fields", "3", "ty", "enum"]),
+        "namespace",
+        "shared",
+    );
 }
 
 #[wasm_bindgen_test]

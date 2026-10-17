@@ -56,10 +56,11 @@ pub use diff::{
     EnumChange, EnumDiff, IndexIdentity, SchemaDiff, TableChange, TableDiff, diff_models,
 };
 pub use dto::{
-    CheckResult, Diagnostic, ExportResult, ExportedDocument, ExportedEnum, ExportedEnumEntry,
-    ExportedField, ExportedFlag, ExportedGroup, ExportedGroupMember, ExportedIndex, ExportedModel,
-    ExportedPhysical, ExportedRelation, ExportedTable, ExportedTypeRef, FileEntry, FlagValue,
-    LocateCtx, ReferenceLink, RelationKind, Severity, Span,
+    CheckResult, DeclRef, Diagnostic, ExportResult, ExportedDatatype, ExportedDatatypeParam,
+    ExportedDocument, ExportedEnum, ExportedEnumEntry, ExportedField, ExportedFlag, ExportedGroup,
+    ExportedGroupMember, ExportedIndex, ExportedModel, ExportedPhysical, ExportedRelation,
+    ExportedTable, ExportedTypeRef, FileEntry, FlagValue, LocateCtx, ReferenceLink, RelationKind,
+    Severity, Span,
 };
 pub use highlight::{highlight_class_names, highlight_tokens};
 pub use location::Location;

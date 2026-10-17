@@ -112,7 +112,7 @@ pub(crate) fn run(
     let dangling_ref_severity = dangling_ref_severity(project.as_ref(), &mut diags);
 
     let groups = group::check(&ctx, dangling_ref_severity, &mut links, &mut diags);
-    let (tables, enums) = resolve::run(
+    let (tables, enums, datatypes) = resolve::run(
         &ctx,
         project.as_ref(),
         dangling_ref_severity,
@@ -136,6 +136,7 @@ pub(crate) fn run(
             enums,
             groups,
             documents: ctx.facts.iter().filter_map(document).collect(),
+            datatypes,
             dialect: project
                 .as_ref()
                 .and_then(|p| p.dialect.engine_name())

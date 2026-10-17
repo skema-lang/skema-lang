@@ -7,19 +7,20 @@ Document shop {
   }
 }
 
-import "./shared.skema";
+import "./shared.skema" as sh;
 
 Project { mode = draft; dialect = generic; }
 
 Table Customer {
-  use shared.Audited;
+  use sh.Audited;
 
-  id     int           [pk];
-  name   varchar(80)   [required, "x-ui-widget" = "input"] {
+  id      int         [pk];
+  name    varchar(80) [required, "x-ui-widget" = "input"] {
     note         = "Display name";
     "x-ui-order" = 1;
   }
-  status shared.Status [required];
+  status  sh.Status   [required];
+  balance sh.Money;
 
   Meta {
     note               = "Customer master data";
@@ -28,8 +29,19 @@ Table Customer {
 }
 
 Table Tag {
-  id    int [pk];
-  label text;
+  id       int [pk];
+  label    text;
+  sku      Sku;
+  customer >Customer.id;
+}
+
+Datatype Sku(length int) {
+  length { note = "Characters after the prefix"; default = 8; }
+
+  Field {
+    type  = varchar(20);
+    regex = "^SKU-[A-Z0-9]{length}$";
+  }
 }
 
 Group Core {
