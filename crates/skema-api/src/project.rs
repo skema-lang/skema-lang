@@ -73,7 +73,7 @@ pub struct ProjectFileStatus {
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "typescript", derive(Tsify))]
-#[cfg_attr(feature = "typescript", tsify(into_wasm_abi))]
+#[cfg_attr(feature = "typescript", tsify(into_wasm_abi, hashmap_as_object))]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectResult {
     pub ok: bool,

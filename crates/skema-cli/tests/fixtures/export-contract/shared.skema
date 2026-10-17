@@ -1,0 +1,27 @@
+spec 1;
+
+Document shared { }
+
+Partial Audited {
+  created_at timestamp [required] {
+    note                   = "Insert time";
+    "x-nocobase-interface" = "createdAt";
+  }
+}
+
+Enum Status {
+  Meta {
+    note       = "Customer lifecycle";
+    "x-source" = "meta";
+    "x-icon"   = "flag";
+  }
+
+  Field {
+    type       = string;
+    note       = "Stored as text";
+    "x-source" = "field";
+  }
+
+  active { label = "Active"; "x-color" = "green"; }
+  archived;
+}

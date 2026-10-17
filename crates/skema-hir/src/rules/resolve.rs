@@ -111,6 +111,7 @@ pub(crate) fn run(
                 indexes,
                 examples,
                 moved_from,
+                extensions: meta_custom_keys(&decl.block),
                 span: decl.item_span,
             });
         }
@@ -583,6 +584,7 @@ fn resolve_field(
         relation,
         note,
         label,
+        extensions: custom_keys(f.items()),
         span,
     }
 }
@@ -1282,6 +1284,10 @@ fn resolve_enum(
     diags: &mut Vec<Diagnostic>,
 ) -> model::Enum {
     let field_block = block.child(BlockKind::Field);
+    let mut extensions = meta_custom_keys(block);
+    if let Some(field_block) = &field_block {
+        extensions.extend(custom_keys(field_block.items()));
+    }
     let stored_type = field_block
         .and_then(|b| {
             b.items().find_map(|i| match i.kind() {
@@ -1320,6 +1326,7 @@ fn resolve_enum(
             name: f.name().text().to_owned(),
             label: string_setting(f.items(), "label"),
             value: value_setting(f.items(), "value"),
+            extensions: custom_keys(f.items()),
             span: entry_span,
         })
         .collect();
@@ -1330,6 +1337,7 @@ fn resolve_enum(
         name: name.to_owned(),
         stored_type,
         entries,
+        extensions,
         span,
     }
 }
@@ -1379,6 +1387,34 @@ fn value_setting(mut items: impl Iterator<Item = ast::Item>, key: &str) -> Optio
         ast::ItemKind::Setting(a) if a.key().text() == key => a.value().map(|v| v.to_text()),
         _ => None,
     })
+}
+
+/// The quoted `x-` keys among `items`, values as text; the first occurrence
+/// of a key wins, as in [`string_setting`].
+pub(crate) fn custom_keys(items: impl Iterator<Item = ast::Item>) -> model::Extensions {
+    let mut keys = model::Extensions::new();
+    for item in items {
+        let ast::ItemKind::Setting(attr) = item.kind() else {
+            continue;
+        };
+        let key = attr.key();
+        let name = key.text();
+        if !key.quoted() || !name.starts_with("x-") {
+            continue;
+        }
+        if let Some(value) = attr.value() {
+            keys.entry(name).or_insert_with(|| value.to_text());
+        }
+    }
+    keys
+}
+
+/// [`custom_keys`] of a declaration's own `Meta` block.
+pub(crate) fn meta_custom_keys(declaration: &ast::Block) -> model::Extensions {
+    declaration
+        .child(BlockKind::Meta)
+        .map(|meta| custom_keys(meta.items()))
+        .unwrap_or_default()
 }
 
 /// Turns a field's or index's `[]`-flags into the export's flat

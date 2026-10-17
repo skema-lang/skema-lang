@@ -112,6 +112,98 @@ fn table_without_moved_from_resolves_to_none() {
     assert_eq!(model.tables[0].moved_from, None);
 }
 
+fn extensions(pairs: &[(&str, &str)]) -> skema_hir::model::Extensions {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[test]
+fn x_keys_in_meta_reach_the_model_and_standard_keys_do_not() {
+    let src = r#"
+spec 1;
+Document shop { Meta { author = "anna"; "x-source" = "erp"; } }
+Project { mode = draft; dialect = generic; }
+Table T { id int [pk]; Meta { note = "n"; "x-title" = "Things"; } }
+Group G { Meta { author = "anna"; "x-color" = "blue"; } Table T; }
+"#;
+    let (model, diags) = analyze_src(src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(
+        model.tables[0].extensions,
+        extensions(&[("x-title", "Things")])
+    );
+    assert_eq!(
+        model.groups[0].extensions,
+        extensions(&[("x-color", "blue")])
+    );
+    assert_eq!(model.documents.len(), 1);
+    assert_eq!(model.documents[0].namespace, "shop");
+    assert_eq!(
+        model.documents[0].extensions,
+        extensions(&[("x-source", "erp")])
+    );
+}
+
+#[test]
+fn an_enums_field_block_wins_over_its_meta_on_the_same_x_key() {
+    let src = format!(
+        r#"{HEADER}
+Enum Status {{
+  Meta {{ note = "n"; "x-source" = "meta"; "x-icon" = "flag"; }}
+  Field {{ type = string; note = "f"; "x-source" = "field"; }}
+  active {{ label = "Active"; "x-color" = "green"; }}
+  archived;
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let status = &model.enums[0];
+    assert_eq!(
+        status.extensions,
+        extensions(&[("x-icon", "flag"), ("x-source", "field")])
+    );
+    assert_eq!(
+        status.entries[0].extensions,
+        extensions(&[("x-color", "green")])
+    );
+    assert!(status.entries[1].extensions.is_empty());
+}
+
+#[test]
+fn an_x_flag_stays_in_flags_and_an_x_body_key_goes_to_extensions() {
+    let src = format!(
+        r#"{HEADER}
+Table T {{
+  id   int [pk];
+  name text ["x-widget" = "input"] {{ note = "n"; "x-order" = 1; }}
+}}
+"#
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let name = &model.tables[0].fields[1];
+    assert_eq!(name.extensions, extensions(&[("x-order", "1")]));
+    assert!(name.flags.contains_key("x-widget"));
+    assert!(model.tables[0].fields[0].extensions.is_empty());
+    assert!(model.tables[0].extensions.is_empty());
+}
+
+#[test]
+fn x_values_are_text_and_the_first_occurrence_in_a_block_wins() {
+    let src = format!(
+        "{HEADER}\nTable T {{ id int [pk]; Meta {{ \"x-a\" = true; \"x-b\" = [one, two]; \
+         \"x-c\" = `now()`; \"x-a\" = false; }} }}\n"
+    );
+    let (model, _) = analyze_src(&src);
+    assert_eq!(
+        model.tables[0].extensions,
+        extensions(&[("x-a", "true"), ("x-b", "one, two"), ("x-c", "now()")])
+    );
+}
+
 #[test]
 fn moved_from_with_a_non_string_value_is_rejected() {
     let src = format!("{HEADER}\nTable T {{ id int [pk]; Meta {{ movedFrom = [foo]; }} }}\n");

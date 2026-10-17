@@ -6,6 +6,7 @@ use skema_syntax::Severity;
 use skema_syntax::ast::{self, AstNode};
 
 use super::Ctx;
+use super::resolve::meta_custom_keys;
 use crate::model;
 use crate::{Diagnostic, FileId};
 
@@ -104,6 +105,7 @@ pub(crate) fn check(
                 file: file.id,
                 name: group_name.to_string(),
                 members,
+                extensions: meta_custom_keys(block),
                 span: *item_span,
             });
         }

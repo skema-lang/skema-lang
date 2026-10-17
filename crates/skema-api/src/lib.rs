@@ -56,8 +56,8 @@ pub use diff::{
     EnumChange, EnumDiff, IndexIdentity, SchemaDiff, TableChange, TableDiff, diff_models,
 };
 pub use dto::{
-    CheckResult, Diagnostic, ExportResult, ExportedEnum, ExportedEnumEntry, ExportedField,
-    ExportedFlag, ExportedGroup, ExportedGroupMember, ExportedIndex, ExportedModel,
+    CheckResult, Diagnostic, ExportResult, ExportedDocument, ExportedEnum, ExportedEnumEntry,
+    ExportedField, ExportedFlag, ExportedGroup, ExportedGroupMember, ExportedIndex, ExportedModel,
     ExportedPhysical, ExportedRelation, ExportedTable, ExportedTypeRef, FileEntry, FlagValue,
     LocateCtx, ReferenceLink, RelationKind, Severity, Span,
 };

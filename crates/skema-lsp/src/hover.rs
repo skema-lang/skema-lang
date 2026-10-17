@@ -67,9 +67,8 @@ pub fn hover(analysis: &Analysis, display_path: &str, offset: u32) -> Option<lsp
 }
 
 /// The innermost block keyword whose own word contains `offset`, walked
-/// from the syntax tree rather than the model: `Document`, `Meta`,
-/// `Project` and the other settings blocks carry no schema meaning of their
-/// own, so they never appear in [`ExportedModel`] at all.
+/// from the syntax tree rather than the model: `Meta`, `Project` and the
+/// other settings blocks have no entity of their own in [`ExportedModel`].
 fn keyword_at(
     items: impl Iterator<Item = Item>,
     offset: u32,

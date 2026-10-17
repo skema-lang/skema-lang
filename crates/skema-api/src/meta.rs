@@ -2,10 +2,10 @@
 //! raw AST, with the offsets an editor needs to change one entry without
 //! touching anything else in the file.
 //!
-//! **Why the raw AST, not the resolved model**: `skema-hir` validates `Meta`
-//! keys but never copies them into `model::Table`, and the custom `x-…` keys
-//! this is mostly about (`docs/01`, "Custom keys") are by definition outside
-//! the checked model. The syntax tree is where they survive.
+//! **Why the raw AST, not the resolved model**: the standard keys
+//! (`author`, `note`, …) never reach the model – only `movedFrom` and the
+//! custom `x-…` keys do (`docs/01`, "Custom keys") – and the model carries
+//! no offsets to edit an entry at. The syntax tree has both.
 //!
 //! **Why UTF-16 offsets**, unlike the model's byte `span`s: this drives
 //! *edits* in a browser editor, so it speaks the editor's coordinates. The

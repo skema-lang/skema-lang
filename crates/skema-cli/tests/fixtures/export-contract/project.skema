@@ -1,0 +1,43 @@
+spec 1;
+
+Document shop {
+  Meta {
+    author                  = "anna";
+    "x-nocobase-datasource" = "main";
+  }
+}
+
+import "./shared.skema";
+
+Project { mode = draft; dialect = generic; }
+
+Table Customer {
+  use shared.Audited;
+
+  id     int           [pk];
+  name   varchar(80)   [required, "x-ui-widget" = "input"] {
+    note         = "Display name";
+    "x-ui-order" = 1;
+  }
+  status shared.Status [required];
+
+  Meta {
+    note               = "Customer master data";
+    "x-nocobase-title" = "Customers";
+  }
+}
+
+Table Tag {
+  id    int [pk];
+  label text;
+}
+
+Group Core {
+  Meta {
+    author    = "anna";
+    "x-color" = "blue";
+  }
+
+  Table Customer;
+  Table Tag;
+}

@@ -243,6 +243,9 @@ build-python-wheel:
       import json
       import skema
       print(json.dumps(skema.check("examples/myexample.skema"))[:200])
+      model = skema.export("crates/skema-cli/tests/fixtures/export-contract/project.skema")["model"]
+      customer = next(t for t in model["tables"] if t["name"] == "Customer")
+      assert customer["extensions"] == {"x-nocobase-title": "Customers"}, customer["extensions"]
       PYEOF
   artifacts:
     paths:

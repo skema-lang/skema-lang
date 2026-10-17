@@ -33,7 +33,7 @@ Table Customer {
 | `styleClasses` | list | Assigns style classes — see [Style classes](#style-classes) below. |
 | `movedFrom` | string, `Table` only | This table's previous name, read by the planned `skema diff` to recognize a rename instead of a drop and an unrelated add. |
 
-Custom keys follow the `x-` rule from [01 — Custom keys](01-language-basics.md#custom-keys).
+Custom keys follow the `x-` rule from [01 — Custom keys](01-language-basics.md#custom-keys). Standard keys never reach the JSON export (`movedFrom` excepted); custom keys do, as `extensions` — see [01 — Custom keys in the export](01-language-basics.md#custom-keys-in-the-export).
 
 ### Where Meta is allowed
 

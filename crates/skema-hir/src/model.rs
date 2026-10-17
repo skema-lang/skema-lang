@@ -17,6 +17,8 @@ pub struct Model {
     pub tables: Vec<Table>,
     pub enums: Vec<Enum>,
     pub groups: Vec<Group>,
+    /// One per file that declares a `Document`, in `FileId` order.
+    pub documents: Vec<Document>,
     /// The project's `dialect` engine name (`docs/02`) – `None` for
     /// `generic`, or when no `Project` block was found. `rules::ProjectSettings`
     /// stays private to this crate; this is the one fact from it a consumer
@@ -60,13 +62,16 @@ pub struct Table {
     pub fields: Vec<Field>,
     pub indexes: Vec<Index>,
     pub examples: Vec<ExampleRow>,
-    /// `Meta.movedFrom` – the table's previous name, for the planned
-    /// `skema diff` to recognize a rename. The one deliberate exception to
-    /// `Meta` never reaching the model (`skema-api::meta`'s doc comment) –
-    /// see `decisions.md`, "Schema diff & migrations" (tasks 71–75).
+    /// `Meta.movedFrom` – the table's previous name, for `skema diff` to
+    /// recognize a rename. The one standard `Meta` key that reaches the
+    /// model; custom `x-` keys go to `extensions`.
     pub moved_from: Option<String>,
+    pub extensions: Extensions,
     pub span: Span,
 }
+
+/// Custom `x-` keys (`docs/01`, "Custom keys"), each value as text.
+pub type Extensions = BTreeMap<String, String>;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,6 +89,8 @@ pub struct Field {
     /// Text for humans — dropdowns, generated forms, diagrams. Unlike
     /// `note` (a description) this is a display name (`docs/05`).
     pub label: Option<String>,
+    /// From the field's body; an `x-` flag stays in `flags`.
+    pub extensions: Extensions,
     pub span: Span,
 }
 
@@ -164,6 +171,8 @@ pub struct Enum {
     /// `string` or `int` – from `Field { type = …; }` (`docs/08`).
     pub stored_type: String,
     pub entries: Vec<EnumEntry>,
+    /// `Meta` merged with the `Field` block; the `Field` block wins a clash.
+    pub extensions: Extensions,
     pub span: Span,
 }
 
@@ -172,6 +181,7 @@ pub struct EnumEntry {
     pub name: String,
     pub label: Option<String>,
     pub value: Option<String>,
+    pub extensions: Extensions,
     pub span: Span,
 }
 
@@ -183,6 +193,7 @@ pub struct Group {
     pub file: FileId,
     pub name: String,
     pub members: Vec<GroupMember>,
+    pub extensions: Extensions,
     pub span: Span,
 }
 
@@ -191,6 +202,14 @@ pub struct GroupMember {
     pub kind: String,
     pub namespace: String,
     pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Document {
+    pub file: FileId,
+    pub namespace: String,
+    pub extensions: Extensions,
     pub span: Span,
 }
 
