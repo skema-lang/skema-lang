@@ -53,6 +53,14 @@ struct FlatField {
     partial: Option<(FileId, SmolStr)>,
 }
 
+/// A `Partial` reports its diagnostics and links on its first flattening only.
+/// It is not memoized: a cycle member's fields depend on where the cycle is entered.
+#[derive(Default)]
+struct Partials {
+    reported: HashSet<(FileId, SmolStr)>,
+    in_progress: Vec<(FileId, SmolStr)>,
+}
+
 pub(crate) fn run(
     ctx: &Ctx,
     project: Option<&ProjectSettings>,
@@ -68,13 +76,35 @@ pub(crate) fn run(
     };
     let project_database = project.and_then(|p| p.database.as_ref());
 
+    let mut partials = Partials::default();
+    for file in &ctx.facts {
+        let mut partial_decls: Vec<_> = file
+            .declarations
+            .iter()
+            .filter(|(_, decl)| decl.kind == BlockKind::Partial)
+            .collect();
+        // Source order, so a cycle is always reported at the same `use`.
+        partial_decls.sort_by_key(|(_, decl)| decl.item_span.start);
+        for (name, decl) in partial_decls {
+            let key = (file.id, name.clone());
+            if !partials.reported.contains(&key) {
+                flatten_partial(&env, key, &decl.block, &mut partials, links, diags);
+            }
+        }
+    }
+
     let mut flattened: HashMap<(FileId, SmolStr), Flattened> = HashMap::new();
     for file in &ctx.facts {
         for (name, decl) in &file.declarations {
-            if matches!(decl.kind, BlockKind::Table | BlockKind::Partial) {
-                let mut stack = Vec::new();
-                let flat =
-                    flatten_items(&env, file.id, decl.block.items(), &mut stack, links, diags);
+            if decl.kind == BlockKind::Table {
+                let flat = flatten_items(
+                    &env,
+                    file.id,
+                    decl.block.items(),
+                    &mut partials,
+                    links,
+                    diags,
+                );
                 flattened.insert((file.id, name.clone()), flat);
             }
         }
@@ -168,23 +198,57 @@ fn decl_ref(ctx: &Ctx, owner: FileId, name: &str) -> model::DeclRef {
 
 fn flatten_partial(
     env: &Env<'_>,
-    owner: FileId,
-    name: &str,
-    name_span: Span,
-    stack: &mut Vec<(FileId, String)>,
+    key: (FileId, SmolStr),
+    block: &ast::Block,
+    partials: &mut Partials,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Flattened {
-    let key = (owner, name.to_owned());
-    if stack.contains(&key) {
+    let (mut silent_links, mut silent_diags) = (Vec::new(), Vec::new());
+    let (links, diags) = if partials.reported.insert(key.clone()) {
+        (links, diags)
+    } else {
+        (&mut silent_links, &mut silent_diags)
+    };
+    partials.in_progress.push(key.clone());
+    let mut result = flatten_items(env, key.0, block.items(), partials, links, diags);
+    partials.in_progress.pop();
+    for field in &mut result.fields {
+        field.partial.get_or_insert_with(|| key.clone());
+    }
+    result
+}
+
+/// Every diagnostic here belongs to `owner`, the file holding the `use` –
+/// not to the file declaring its target.
+fn flatten_use(
+    env: &Env<'_>,
+    owner: FileId,
+    target: &ast::Path,
+    partials: &mut Partials,
+    links: &mut Vec<model::ReferenceLink>,
+    diags: &mut Vec<Diagnostic>,
+) -> Flattened {
+    let ctx = env.ctx;
+    let Some((target_owner, name, name_span, rest)) = ctx.resolve_decl_path(owner, target) else {
+        // A namespace with nothing after it (`use ns;`) – the only
+        // other `None` case, an empty path, cannot occur here.
+        let namespace = first_segment(target);
         diags.push(Diagnostic::error(
             owner,
-            name_span,
-            format!("cycle in `use`: `{name}` uses itself, directly or indirectly"),
+            target.span(),
+            format!("`use` expects a `Partial` after namespace `{namespace}`"),
         ));
         return Flattened::default();
+    };
+    if !rest.is_empty() {
+        diags.push(Diagnostic::error(
+            owner,
+            target.span(),
+            "`use` names only a `Partial`, no further path after it",
+        ));
     }
-    let Some(decl) = env.ctx.lookup_decl(owner, name) else {
+    let Some(decl) = ctx.lookup_decl(target_owner, &name) else {
         diags.push(Diagnostic::new(
             owner,
             env.dangling_ref_severity,
@@ -205,64 +269,40 @@ fn flatten_partial(
         ));
         return Flattened::default();
     }
-
-    stack.push(key);
-    let mut result = flatten_items(env, owner, decl.block.items(), stack, links, diags);
-    stack.pop();
-    for field in &mut result.fields {
-        field
-            .partial
-            .get_or_insert_with(|| (owner, SmolStr::from(name)));
+    links.push(model::ReferenceLink {
+        from_file: owner,
+        from_span: name_span,
+        to_file: target_owner,
+        to_span: decl.name_span,
+    });
+    let key = (target_owner, name);
+    if partials.in_progress.contains(&key) {
+        diags.push(Diagnostic::error(
+            owner,
+            name_span,
+            format!(
+                "cycle in `use`: `{}` uses itself, directly or indirectly",
+                key.1
+            ),
+        ));
+        return Flattened::default();
     }
-    result
+    flatten_partial(env, key, &decl.block, partials, links, diags)
 }
 
 fn flatten_items(
     env: &Env<'_>,
     owner: FileId,
     items: impl Iterator<Item = ast::Item>,
-    stack: &mut Vec<(FileId, String)>,
+    partials: &mut Partials,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Flattened {
-    let ctx = env.ctx;
     let mut out = Flattened::default();
     for item in items {
         match item.kind() {
             ast::ItemKind::Use(u) => {
-                let target = u.target();
-                let Some((target_owner, name, name_span, rest)) =
-                    ctx.resolve_decl_path(owner, &target)
-                else {
-                    // A namespace with nothing after it (`use ns;`) – the only
-                    // other `None` case, an empty path, cannot occur here.
-                    let namespace = first_segment(&target);
-                    diags.push(Diagnostic::error(
-                        owner,
-                        target.span(),
-                        format!("`use` expects a `Partial` after namespace `{namespace}`"),
-                    ));
-                    continue;
-                };
-                if !rest.is_empty() {
-                    diags.push(Diagnostic::error(
-                        owner,
-                        target.span(),
-                        "`use` names only a `Partial`, no further path after it",
-                    ));
-                }
-                if let Some(decl) = ctx.lookup_decl(target_owner, &name) {
-                    if decl.kind == BlockKind::Partial {
-                        links.push(model::ReferenceLink {
-                            from_file: owner,
-                            from_span: name_span,
-                            to_file: target_owner,
-                            to_span: decl.name_span,
-                        });
-                    }
-                }
-                let inner =
-                    flatten_partial(env, target_owner, &name, name_span, stack, links, diags);
+                let inner = flatten_use(env, owner, &u.target(), partials, links, diags);
                 for field in inner.fields {
                     push_field(&mut out, field, diags);
                 }

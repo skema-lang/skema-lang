@@ -864,6 +864,122 @@ fn cycle_in_use_is_detected_instead_of_hanging() {
 }
 
 #[test]
+fn a_use_cycle_is_reported_once_without_follow_on_errors() {
+    let src = format!(
+        "{HEADER}\nPartial A {{ use B; a int; }}\nPartial B {{ use A; b int; }}\nTable T {{ id uuid [pk]; use A; }}\nTable U {{ id uuid [pk]; use B; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "cycle in `use`").len(),
+        1,
+        "{diags:#?}"
+    );
+    assert!(
+        diagnostics_containing(&diags, "already taken").is_empty(),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_table_using_a_cycle_member_keeps_every_field_whichever_partial_comes_first() {
+    for partials in [
+        "Partial A { use B; a int; }\nPartial B { use A; b int; }",
+        "Partial B { use A; b int; }\nPartial A { use B; a int; }",
+    ] {
+        let src = format!(
+            "{HEADER}\n{partials}\nTable U {{ id uuid [pk]; use B; Index {{ ix(a); }} }}\nTable V {{ id uuid [pk]; x >U.a; }}\n"
+        );
+        let (model, diags) = analyze_src(&src);
+        assert_eq!(diags.len(), 1, "{partials}: {diags:#?}");
+        assert!(diags[0].message.contains("cycle in `use`"), "{diags:#?}");
+        let table = model.tables.iter().find(|t| t.name == "U").unwrap();
+        let names: Vec<&str> = table.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["id", "a", "b"], "{partials}");
+    }
+}
+
+#[test]
+fn two_use_cycles_through_one_partial_give_one_error_each() {
+    let src = format!(
+        "{HEADER}\nPartial A {{ use B; use C; }}\nPartial B {{ use A; }}\nPartial C {{ use A; }}\nTable T {{ id uuid [pk]; use A; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "cycle in `use`").len(),
+        2,
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_cross_file_use_cycle_is_reported_once_in_the_file_holding_the_use() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as t;\nPartial A { use t.B; a int; }\nTable T { id uuid [pk]; use A; }\n";
+    let imported = "spec 1;\nDocument types { }\nimport \"./main.skema\" as s;\nPartial B { use s.A; b int; }\n";
+    let ast_main = skema_syntax::parse(main).0;
+    let ast_imported = skema_syntax::parse(imported).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![Some(FileId(0))],
+        },
+    ];
+
+    let (_, _, diags) = analyze(&files);
+    let cycles = diagnostics_containing(&diags, "cycle in `use`");
+    assert_eq!(cycles.len(), 1, "{diags:#?}");
+    assert_eq!(cycles[0].file, FileId(1));
+    let span = cycles[0].span;
+    assert_eq!(&imported[span.start as usize..span.end as usize], "A");
+}
+
+#[test]
+fn a_diagnostic_inside_a_shared_partial_is_reported_once() {
+    let src = format!(
+        "{HEADER}\nPartial P {{ use Ghost; x int; }}\nTable T {{ id uuid [pk]; use P; }}\nTable U {{ id uuid [pk]; use P; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "unknown `Partial` `Ghost`").len(),
+        1,
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_cross_file_use_of_an_unknown_partial_is_reported_at_the_use() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as t;\nTable T { id uuid [pk]; use t.Missing; }\n";
+    let imported = "spec 1;\nDocument types { }\nPartial Audit { created timestamp; }\n";
+
+    let diags = analyze_main_importing(main, imported);
+    let unknown = diagnostics_containing(&diags, "unknown `Partial` `Missing`");
+    assert_eq!(unknown.len(), 1, "{diags:#?}");
+    assert_eq!(unknown[0].file, FileId(0));
+    let span = unknown[0].span;
+    assert_eq!(&main[span.start as usize..span.end as usize], "Missing");
+}
+
+#[test]
+fn a_cross_file_use_of_a_non_partial_is_reported_at_the_use() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\" as t;\nTable T { id uuid [pk]; use t.Status; }\n";
+    let imported = "spec 1;\nDocument types { }\nEnum Status { Field { type = string; } draft; }\n";
+
+    let diags = analyze_main_importing(main, imported);
+    let wrong_kind = diagnostics_containing(&diags, "expects a `Partial`, `Status` is a `Enum`");
+    assert_eq!(wrong_kind.len(), 1, "{diags:#?}");
+    assert_eq!(wrong_kind[0].file, FileId(0));
+    let span = wrong_kind[0].span;
+    assert_eq!(&main[span.start as usize..span.end as usize], "Status");
+}
+
+#[test]
 fn relation_target_without_table_is_rejected() {
     let src = format!("{HEADER}\nTable Order {{ customer >Customer.id; }}\n");
     let (_, diags) = analyze_src(&src);
