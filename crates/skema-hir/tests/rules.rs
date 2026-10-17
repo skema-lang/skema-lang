@@ -243,6 +243,95 @@ fn duplicate_group_membership_is_rejected() {
     );
 }
 
+/// `main` is `FileId(0)` and imports `imported` (`FileId(1)`, namespace `a`).
+fn analyze_main_importing(main: &str, imported: &str) -> Vec<Diagnostic> {
+    let ast_main = skema_syntax::parse(main).0;
+    let ast_imported = skema_syntax::parse(imported).0;
+    let files = [
+        InputFile {
+            id: FileId(0),
+            display_path: "main.skema".to_owned(),
+            ast: &ast_main,
+            import_targets: vec![Some(FileId(1))],
+        },
+        InputFile {
+            id: FileId(1),
+            display_path: "a.skema".to_owned(),
+            ast: &ast_imported,
+            import_targets: vec![],
+        },
+    ];
+    let (_, _, diags) = analyze(&files);
+    diags
+}
+
+fn diagnostics_containing<'a>(diags: &'a [Diagnostic], needle: &str) -> Vec<&'a Diagnostic> {
+    diags
+        .iter()
+        .filter(|d| d.message.contains(needle))
+        .collect()
+}
+
+#[test]
+fn duplicate_group_membership_across_files_is_reported_in_the_later_file() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nGroup Billing { Table a.X; }\n";
+    let imported =
+        "spec 1;\nDocument a { }\nTable X { id int [pk]; }\nGroup MasterData { Table X; }\n";
+
+    let diags = analyze_main_importing(main, imported);
+    let belongs = diagnostics_containing(&diags, "already belongs to group `Billing`");
+    assert_eq!(belongs.len(), 1, "{diags:#?}");
+    assert_eq!(belongs[0].file, FileId(1));
+}
+
+#[test]
+fn same_named_groups_in_two_files_are_different_groups() {
+    let main = "spec 1;\nDocument shop { }\nProject { mode = draft; dialect = generic; }\nimport \"./a.skema\";\nGroup A { Table a.X; }\n";
+    let imported = "spec 1;\nDocument a { }\nTable X { id int [pk]; }\nGroup A { Table X; }\n";
+
+    let diags = analyze_main_importing(main, imported);
+    assert_eq!(
+        diagnostics_containing(&diags, "already belongs to group `A`").len(),
+        1,
+        "{diags:#?}"
+    );
+    assert!(
+        diagnostics_containing(&diags, "listed twice").is_empty(),
+        "{diags:#?}"
+    );
+}
+
+#[test]
+fn a_member_listed_twice_in_one_group_is_reported_and_kept_once() {
+    let src = format!("{HEADER}\nTable X {{ id int [pk]; }}\nGroup A {{ Table X; Table X; }}\n");
+    let (model, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "`X` is listed twice in group `A`").len(),
+        1,
+        "{diags:#?}"
+    );
+    assert!(
+        diagnostics_containing(&diags, "already belongs").is_empty(),
+        "{diags:#?}"
+    );
+    let members = &model.groups[0].members;
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].name, "X");
+}
+
+#[test]
+fn an_enum_in_two_groups_is_rejected() {
+    let src = format!(
+        "{HEADER}\nEnum Status {{ Field {{ type = string; }} draft; }}\nGroup A {{ Enum Status; }}\nGroup B {{ Enum Status; }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        diagnostics_containing(&diags, "`Status` already belongs to group `A`").len(),
+        1,
+        "{diags:#?}"
+    );
+}
+
 #[test]
 fn dangling_group_ref_is_an_error_by_default() {
     let src = format!("{HEADER}\nGroup G {{ Table Ghost; }}\n");
