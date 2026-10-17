@@ -184,6 +184,10 @@ pub struct Enum {
     pub name: String,
     /// `string` or `int` – from `Field { type = …; }` (`docs/08`).
     pub stored_type: String,
+    /// The entry `Field.default` names; `None` when unset or invalid.
+    pub default: Option<String>,
+    /// `Field.note`; `Meta.note` stays in the editor side channel.
+    pub note: Option<String>,
     pub entries: Vec<EnumEntry>,
     /// `Meta` merged with the `Field` block; the `Field` block wins a clash.
     pub extensions: Extensions,

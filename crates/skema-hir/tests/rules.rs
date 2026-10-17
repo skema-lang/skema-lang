@@ -1291,6 +1291,60 @@ fn enum_field_type_must_be_string_or_int() {
 }
 
 #[test]
+fn an_enum_default_naming_an_entry_bare_is_exported_with_the_field_note() {
+    let src = format!(
+        "{HEADER}\nEnum E {{ Field {{ type = string; default = paid; note = \"States\"; }} draft; paid; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    assert_eq!(model.enums[0].default.as_deref(), Some("paid"));
+    assert_eq!(model.enums[0].note.as_deref(), Some("States"));
+}
+
+#[test]
+fn an_enum_without_default_or_field_note_exports_none() {
+    let src = format!(
+        "{HEADER}\nEnum E {{ Field {{ type = string; }} Meta {{ note = \"meta only\"; }} draft; }}\nEnum F {{ draft; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    for e in &model.enums {
+        assert_eq!((e.default.as_deref(), e.note.as_deref()), (None, None));
+    }
+}
+
+#[test]
+fn an_enum_default_that_names_no_entry_is_rejected_and_exports_none() {
+    for default in ["shipped", "\"paid\"", "1", "`paid`"] {
+        let src = format!(
+            "{HEADER}\nEnum E {{ Field {{ type = string; default = {default}; }} draft; paid; }}\n"
+        );
+        let (model, diags) = analyze_src(&src);
+        assert_eq!(
+            messages(&diags),
+            ["`Enum.Field.default` must name one of this enum's entries, written bare (docs/08)"],
+            "{default}"
+        );
+        assert_eq!(model.enums[0].default, None, "{default}");
+    }
+}
+
+#[test]
+fn a_qualified_enum_default_is_rejected_with_a_hint_to_write_it_bare() {
+    let src = format!(
+        "{HEADER}\nEnum OrderStatus {{ Field {{ type = string; default = OrderStatus.paid; }} draft; paid; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert_eq!(
+        messages(&diags),
+        [
+            "`Enum.Field.default` must name one of this enum's entries, written bare: `paid`, not `OrderStatus.paid` (docs/08)"
+        ]
+    );
+    assert_eq!(model.enums[0].default, None);
+}
+
+#[test]
 fn too_many_datatype_arguments_are_rejected() {
     let src = format!(
         "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; }} }}\nTable T {{ x D(1, 2, 3); }}\n"

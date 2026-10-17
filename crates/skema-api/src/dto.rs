@@ -396,6 +396,8 @@ pub struct ExportedEnum {
     pub namespace: String,
     pub name: String,
     pub stored_type: String,
+    pub default: Option<String>,
+    pub note: Option<String>,
     pub entries: Vec<ExportedEnumEntry>,
     pub extensions: BTreeMap<String, String>,
     pub span: Span,
@@ -614,6 +616,8 @@ fn enum_(e: &model::Enum, ctx: &LocateCtx<'_>) -> ExportedEnum {
         namespace: e.namespace.clone(),
         name: e.name.clone(),
         stored_type: e.stored_type.clone(),
+        default: e.default.clone(),
+        note: e.note.clone(),
         entries: e
             .entries
             .iter()

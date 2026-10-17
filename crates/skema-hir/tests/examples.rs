@@ -233,6 +233,7 @@ fn myexample_runs_standalone_and_analyzes_without_errors() {
         .find(|e| e.name == "OrderStatus")
         .expect("Enum OrderStatus");
     assert_eq!(order_status.stored_type, "string");
+    assert_eq!(order_status.default.as_deref(), Some("paid"));
     let entries: Vec<_> = order_status
         .entries
         .iter()

@@ -18,6 +18,7 @@ Enum Status {
 
   Field {
     type       = string;
+    default    = active;
     note       = "Stored as text";
     "x-source" = "field";
   }

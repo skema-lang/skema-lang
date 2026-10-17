@@ -250,6 +250,8 @@ build-python-wheel:
       assert (money["namespace"], money["baseType"], money["resolvedBaseType"]) == ("shared", "decimal", "float"), money
       balance = next(f for f in customer["fields"] if f["name"] == "balance")
       assert balance["ty"]["datatype"] == {"namespace": "shared", "name": "Money"}, balance["ty"]
+      status = next(e for e in model["enums"] if e["name"] == "Status")
+      assert (status["default"], status["note"]) == ("active", "Stored as text"), status
       PYEOF
   artifacts:
     paths:

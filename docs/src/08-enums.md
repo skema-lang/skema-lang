@@ -29,6 +29,8 @@ Identical in shape to the `Field` block in [`Datatype`](06-data-types.md#the-fie
 | `default` | default value for fields of this enum type |
 | `note` | description of the enum |
 
+`default` names one of the enum's own entries, written bare (`default = paid;`, never `OrderStatus.paid`).
+
 `type` doubles as the physical storage decision: `string` stores readable values, `int` stores positions.
 
 ## Entries

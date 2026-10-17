@@ -121,6 +121,15 @@ fn only_x_keys_reach_extensions_as_text() {
 }
 
 #[test]
+fn an_enum_exports_its_default_entry_and_field_note() {
+    let model: Value = serde_json::from_str(&export_fixture()).expect("export is JSON");
+
+    let status = find(&model["enums"], "Status");
+    assert_eq!(status["default"], "active");
+    assert_eq!(status["note"], "Stored as text");
+}
+
+#[test]
 fn a_field_type_names_its_declaration_by_document_namespace_not_alias() {
     let model: Value = serde_json::from_str(&export_fixture()).expect("export is JSON");
 

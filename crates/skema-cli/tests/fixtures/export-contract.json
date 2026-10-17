@@ -375,6 +375,8 @@
       "namespace": "shared",
       "name": "Status",
       "storedType": "string",
+      "default": "active",
+      "note": "Stored as text",
       "entries": [
         {
           "name": "active",
@@ -384,14 +386,14 @@
             "x-color": "green"
           },
           "span": {
-            "start": 397,
-            "end": 446
+            "start": 422,
+            "end": 471
           },
           "location": {
             "file": "shared.skema",
-            "line": 25,
+            "line": 26,
             "column": 3,
-            "endLine": 25,
+            "endLine": 26,
             "endColumn": 52
           }
         },
@@ -401,14 +403,14 @@
           "value": null,
           "extensions": {},
           "span": {
-            "start": 449,
-            "end": 458
+            "start": 474,
+            "end": 483
           },
           "location": {
             "file": "shared.skema",
-            "line": 26,
+            "line": 27,
             "column": 3,
-            "endLine": 26,
+            "endLine": 27,
             "endColumn": 12
           }
         }
@@ -419,13 +421,13 @@
       },
       "span": {
         "start": 177,
-        "end": 460
+        "end": 485
       },
       "location": {
         "file": "shared.skema",
         "line": 12,
         "column": 1,
-        "endLine": 27,
+        "endLine": 28,
         "endColumn": 2
       }
     }
@@ -542,14 +544,14 @@
         "x-nocobase-interface": "number"
       },
       "span": {
-        "start": 863,
-        "end": 1032
+        "start": 888,
+        "end": 1057
       },
       "location": {
         "file": "shared.skema",
-        "line": 47,
+        "line": 48,
         "column": 1,
-        "endLine": 53,
+        "endLine": 54,
         "endColumn": 2
       }
     },
@@ -583,14 +585,14 @@
         "x-unit": "none"
       },
       "span": {
-        "start": 462,
-        "end": 861
+        "start": 487,
+        "end": 886
       },
       "location": {
         "file": "shared.skema",
-        "line": 29,
+        "line": 30,
         "column": 1,
-        "endLine": 45,
+        "endLine": 46,
         "endColumn": 2
       }
     },

@@ -1460,6 +1460,7 @@ fn resolve_enum(
     let field_block = block.child(BlockKind::Field);
     let extensions = meta_and_field_custom_keys(block);
     let stored_type = field_block
+        .as_ref()
         .and_then(|b| {
             b.items().find_map(|i| match i.kind() {
                 ast::ItemKind::Setting(a) if a.key().text() == "type" => {
@@ -1487,7 +1488,7 @@ fn resolve_enum(
         })
         .unwrap_or_else(|| "string".to_owned());
 
-    let entries = block
+    let entries: Vec<model::EnumEntry> = block
         .items()
         .filter_map(|item| match item.kind() {
             ast::ItemKind::Field(f) => Some((item.span(), f)),
@@ -1507,10 +1508,53 @@ fn resolve_enum(
         namespace: document_namespace(file),
         name: name.to_owned(),
         stored_type,
+        default: field_block
+            .as_ref()
+            .and_then(|b| enum_default(file.id, b, &entries, diags)),
+        note: field_block
+            .as_ref()
+            .and_then(|b| string_setting(b.items(), "note")),
         entries,
         extensions,
         span,
     }
+}
+
+/// Written bare: inside the enum there is no literal-or-member ambiguity
+/// to qualify away (`docs/08`, "Using an enum").
+fn enum_default(
+    owner: FileId,
+    field_block: &ast::Block,
+    entries: &[model::EnumEntry],
+    diags: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    let value = field_block.items().find_map(|item| match item.kind() {
+        ast::ItemKind::Setting(a) if a.key().text() == "default" => a.value(),
+        _ => None,
+    })?;
+    let is_entry = |name: &str| entries.iter().any(|entry| entry.name == name);
+    let path = match value.kind() {
+        Some(ValueKind::Path(path)) => Some(path),
+        _ => None,
+    };
+    if let Some(name) = path.as_ref().and_then(ast::Path::as_ident)
+        && is_entry(name.text())
+    {
+        return Some(name.text().to_owned());
+    }
+    let bare_hint = path
+        .and_then(|path| path.segments().last())
+        .filter(|last| is_entry(last.text()))
+        .map(|last| format!(": `{}`, not `{}`", last.text(), value.to_text()))
+        .unwrap_or_default();
+    diags.push(Diagnostic::error(
+        owner,
+        value.span(),
+        format!(
+            "`Enum.Field.default` must name one of this enum's entries, written bare{bare_hint} (docs/08)"
+        ),
+    ));
+    None
 }
 
 // ===========================================================================
