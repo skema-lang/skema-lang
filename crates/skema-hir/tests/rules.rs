@@ -851,6 +851,56 @@ fn partial_field_collision_is_rejected() {
 }
 
 #[test]
+fn a_taken_field_name_names_where_it_was_taken_first() {
+    // (declarations, expected message, text starting at the reported field name)
+    let cases = [
+        (
+            "Partial P { id int [pk]; }\nTable T { use P; id uuid [pk]; }",
+            "field name `id` is already taken by a field from `Partial` `P` (docs/09)",
+            "id uuid",
+        ),
+        (
+            "Partial P { a int; }\nTable T { id uuid [pk]; a text; use P; }",
+            "field name `a` is already taken by an earlier field of `T` (docs/09)",
+            "a int",
+        ),
+        (
+            "Table T { id uuid [pk]; a int; a text; }",
+            "field name `a` is already taken by an earlier field of `T` (docs/09)",
+            "a text",
+        ),
+        (
+            "Partial B { a int; a text; }\nTable T { id uuid [pk]; use B; }",
+            "field name `a` is already taken by an earlier field of `B` (docs/09)",
+            "a text",
+        ),
+        (
+            "Partial A { a int; }\nPartial C { a text; }\nTable T { id uuid [pk]; use A; use C; }",
+            "field name `a` is already taken by a field from `Partial` `A` (docs/09)",
+            "a text",
+        ),
+        (
+            "Partial A { a int; }\nPartial B { use A; b int; }\nTable T { id uuid [pk]; use A; use B; }",
+            "field name `a` is already taken – `T` brings in `Partial` `A` twice through `use` (docs/09)",
+            "a int",
+        ),
+    ];
+    for (declarations, expected, reported_at) in cases {
+        let src = format!("{HEADER}\n{declarations}\n");
+        let (_, diags) = analyze_src(&src);
+        let taken = diagnostics_containing(&diags, "already taken");
+        assert_eq!(taken.len(), 1, "{declarations}: {diags:#?}");
+        assert_eq!(taken[0].message, expected, "{declarations}");
+        assert_eq!(taken[0].severity, skema_hir::Severity::Error);
+        assert_eq!(
+            Some(taken[0].span.start as usize),
+            src.find(reported_at),
+            "{declarations}"
+        );
+    }
+}
+
+#[test]
 fn cycle_in_use_is_detected_instead_of_hanging() {
     let src =
         format!("{HEADER}\nPartial A {{ use B; }}\nPartial B {{ use A; }}\nTable T {{ use A; }}\n");

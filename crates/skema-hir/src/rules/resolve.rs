@@ -97,15 +97,10 @@ pub(crate) fn run(
     for file in &ctx.facts {
         for (name, decl) in &file.declarations {
             if decl.kind == BlockKind::Table {
-                let flat = flatten_items(
-                    &env,
-                    file.id,
-                    decl.block.items(),
-                    &mut partials,
-                    links,
-                    diags,
-                );
-                flattened.insert((file.id, name.clone()), flat);
+                let key = (file.id, name.clone());
+                let flat =
+                    flatten_items(&env, &key, decl.block.items(), &mut partials, links, diags);
+                flattened.insert(key, flat);
             }
         }
     }
@@ -211,7 +206,7 @@ fn flatten_partial(
         (&mut silent_links, &mut silent_diags)
     };
     partials.in_progress.push(key.clone());
-    let mut result = flatten_items(env, key.0, block.items(), partials, links, diags);
+    let mut result = flatten_items(env, &key, block.items(), partials, links, diags);
     partials.in_progress.pop();
     for field in &mut result.fields {
         field.partial.get_or_insert_with(|| key.clone());
@@ -292,19 +287,20 @@ fn flatten_use(
 
 fn flatten_items(
     env: &Env<'_>,
-    owner: FileId,
+    block: &(FileId, SmolStr),
     items: impl Iterator<Item = ast::Item>,
     partials: &mut Partials,
     links: &mut Vec<model::ReferenceLink>,
     diags: &mut Vec<Diagnostic>,
 ) -> Flattened {
+    let (owner, block_name) = (block.0, &block.1);
     let mut out = Flattened::default();
     for item in items {
         match item.kind() {
             ast::ItemKind::Use(u) => {
                 let inner = flatten_use(env, owner, &u.target(), partials, links, diags);
                 for field in inner.fields {
-                    push_field(&mut out, field, diags);
+                    push_field(&mut out, field, block_name, diags);
                 }
                 out.indexes.extend(inner.indexes);
             }
@@ -316,6 +312,7 @@ fn flatten_items(
                     field,
                     partial: None,
                 },
+                block_name,
                 diags,
             ),
             ast::ItemKind::Block(b) if b.kind() == BlockKind::Index => {
@@ -348,7 +345,7 @@ fn first_segment(path: &ast::Path) -> String {
         .unwrap_or_default()
 }
 
-fn push_field(out: &mut Flattened, field: FlatField, diags: &mut Vec<Diagnostic>) {
+fn push_field(out: &mut Flattened, field: FlatField, block: &str, diags: &mut Vec<Diagnostic>) {
     let name = field.field.name();
     if let Some(existing) = out
         .fields
@@ -359,14 +356,24 @@ fn push_field(out: &mut Flattened, field: FlatField, diags: &mut Vec<Diagnostic>
             field.owner,
             name.span(),
             format!(
-                "field name `{}` is already taken (at {:?}) – from `use` or an earlier field (docs/09)",
+                "field name `{}` is already taken {} (docs/09)",
                 name.text(),
-                existing.field.name().span()
+                taken_by(existing, &field, block)
             ),
         ));
         return;
     }
     out.fields.push(field);
+}
+
+fn taken_by(existing: &FlatField, incoming: &FlatField, block: &str) -> String {
+    let Some((_, partial)) = &existing.partial else {
+        return format!("by an earlier field of `{block}`");
+    };
+    if (existing.owner, existing.span) == (incoming.owner, incoming.span) {
+        return format!("– `{block}` brings in `Partial` `{partial}` twice through `use`");
+    }
+    format!("by a field from `Partial` `{partial}`")
 }
 
 // ===========================================================================
