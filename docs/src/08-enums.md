@@ -27,9 +27,11 @@ Identical in shape to the `Field` block in [`Datatype`](06-data-types.md#the-fie
 |---|---|
 | `type` | stored type: `string` or `int` |
 | `default` | default value for fields of this enum type |
-| `note` | description of the enum |
+| `note` | description of the enum; a string |
 
-`default` names one of the enum's own entries, written bare (`default = paid;`, never `OrderStatus.paid`).
+Each key appears at most once; a repeat is an error, and the first value is the one the model keeps. `regex` is not available here — it constrains a value range, and an enum's values are its entries.
+
+`default` names one of the enum's own entries, written bare (`default = paid;`, never `OrderStatus.paid`); any other value is an error.
 
 `type` doubles as the physical storage decision: `string` stores readable values, `int` stores positions.
 
@@ -59,7 +61,7 @@ Table Order {
 }
 ```
 
-The enum name is written where a data type would go. A default at the field level uses the full path `OrderStatus.draft`, never a bare `draft` — otherwise it is ambiguous whether a string literal or an enum member is meant.
+The enum name is written where a data type would go. A default at the field level uses the full path `OrderStatus.draft`, never a bare `draft` — otherwise it is ambiguous whether a string literal or an enum member is meant. It must name one of the enum's entries; any other value is an error.
 
 ## Order is significant
 

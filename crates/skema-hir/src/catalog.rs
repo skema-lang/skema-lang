@@ -30,7 +30,10 @@ pub const LINT_KEYS: &[&str] = &[
 pub const SEVERITY_OVERRIDABLE_LINT_KEYS: &[&str] = &["fieldNaming", "tableNaming", "enumNaming"];
 pub const DATABASE_KEYS: &[&str] = &["database", "schema", "table"];
 pub const PROJECT_KEYS: &[&str] = &["mode", "dialect"];
-pub const FIELD_BLOCK_KEYS: &[&str] = &["type", "default", "regex", "note"];
+/// Keys of a `Datatype`'s `Field` block (`docs/06`).
+pub const DATATYPE_FIELD_BLOCK_KEYS: &[&str] = &["type", "default", "regex", "note"];
+/// Keys of an `Enum`'s `Field` block (`docs/08`) – no `regex`.
+pub const ENUM_FIELD_BLOCK_KEYS: &[&str] = &["type", "default", "note"];
 pub const PARAM_BODY_KEYS: &[&str] = &["note", "default"];
 pub const ENTRY_BODY_KEYS: &[&str] = &["label", "value"];
 pub const COLUMN_BODY_KEYS: &[&str] = &["note", "exampleValue", "label"];

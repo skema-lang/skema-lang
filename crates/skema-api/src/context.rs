@@ -40,6 +40,9 @@ pub struct CursorContext {
     /// The block the caret is inside, e.g. `Table`, `Meta`, `Project`.
     /// `None` at the top level of a file.
     pub block_keyword: Option<String>,
+    /// The block enclosing [`Self::block_keyword`] – tells a `Datatype`'s
+    /// `Field` block from an `Enum`'s.
+    pub parent_block_keyword: Option<String>,
     /// For [`ContextKind::MemberOf`]: the table or namespace whose members
     /// are being asked for. For [`ContextKind::FlagValue`]: the flag whose
     /// value is being typed.
@@ -123,6 +126,12 @@ pub fn cursor_context(source: &str, offset: u32) -> CursorContext {
     }
 
     let block_keyword = blocks.last().filter(|b| !b.is_empty()).cloned();
+    let parent_block_keyword = blocks
+        .len()
+        .checked_sub(2)
+        .and_then(|i| blocks.get(i))
+        .filter(|b| !b.is_empty())
+        .cloned();
 
     // Only the tokens the caret is actually touching matter from here on: a
     // half-typed word is its own token and must not count as "already named".
@@ -147,12 +156,14 @@ pub fn cursor_context(source: &str, offset: u32) -> CursorContext {
             return CursorContext {
                 kind: ContextKind::FlagValue,
                 block_keyword,
+                parent_block_keyword,
                 qualifier: flag,
             };
         }
         return CursorContext {
             kind: ContextKind::Flags,
             block_keyword,
+            parent_block_keyword,
             qualifier: None,
         };
     }
@@ -167,6 +178,7 @@ pub fn cursor_context(source: &str, offset: u32) -> CursorContext {
             return CursorContext {
                 kind: ContextKind::MemberOf,
                 block_keyword,
+                parent_block_keyword,
                 qualifier,
             };
         }
@@ -181,6 +193,7 @@ pub fn cursor_context(source: &str, offset: u32) -> CursorContext {
     CursorContext {
         kind,
         block_keyword,
+        parent_block_keyword,
         qualifier: None,
     }
 }
@@ -194,6 +207,13 @@ mod tests {
         let offset = source_with_caret.find('|').expect("a | marking the caret");
         let source = source_with_caret.replace('|', "");
         cursor_context(&source, offset as u32)
+    }
+
+    #[test]
+    fn a_field_block_knows_its_parent_declaration() {
+        let ctx = context_at("Enum E { Field { | } }");
+        assert_eq!(ctx.block_keyword.as_deref(), Some("Field"));
+        assert_eq!(ctx.parent_block_keyword.as_deref(), Some("Enum"));
     }
 
     #[test]
