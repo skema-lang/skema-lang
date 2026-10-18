@@ -115,7 +115,8 @@ pub fn builtins() -> Builtins {
         lint_keys: owned(catalog::LINT_KEYS),
         database_keys: owned(catalog::DATABASE_KEYS),
         project_keys: owned(catalog::PROJECT_KEYS),
-        field_block_keys: owned(catalog::FIELD_BLOCK_KEYS),
+        datatype_field_block_keys: owned(catalog::DATATYPE_FIELD_BLOCK_KEYS),
+        enum_field_block_keys: owned(catalog::ENUM_FIELD_BLOCK_KEYS),
         param_body_keys: owned(catalog::PARAM_BODY_KEYS),
         entry_body_keys: owned(catalog::ENTRY_BODY_KEYS),
         column_body_keys: owned(catalog::COLUMN_BODY_KEYS),
@@ -137,8 +138,10 @@ pub struct Builtins {
     pub lint_keys: Vec<String>,
     pub database_keys: Vec<String>,
     pub project_keys: Vec<String>,
-    /// Keys inside a `Field { … }` description block (`docs/06`, `docs/08`).
-    pub field_block_keys: Vec<String>,
+    /// Keys inside a `Datatype`'s `Field { … }` block (`docs/06`).
+    pub datatype_field_block_keys: Vec<String>,
+    /// Keys inside an `Enum`'s `Field { … }` block (`docs/08`).
+    pub enum_field_block_keys: Vec<String>,
     /// Keys in a `Datatype` parameter's body.
     pub param_body_keys: Vec<String>,
     /// Keys in an `Enum` entry's body.

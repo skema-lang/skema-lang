@@ -108,12 +108,16 @@ fn markdown_doc(value: impl Into<String>) -> Documentation {
 }
 
 fn setting_keys(context: &CursorContext, catalog: &Builtins) -> Vec<CompletionItem> {
-    let keys = match context.block_keyword.as_deref() {
-        Some("Meta") => &catalog.meta_keys,
-        Some("Database") => &catalog.database_keys,
-        Some("Project") => &catalog.project_keys,
-        Some("Lint") => &catalog.lint_keys,
-        Some("Field") => &catalog.field_block_keys,
+    let keys = match (
+        context.block_keyword.as_deref(),
+        context.parent_block_keyword.as_deref(),
+    ) {
+        (Some("Meta"), _) => &catalog.meta_keys,
+        (Some("Database"), _) => &catalog.database_keys,
+        (Some("Project"), _) => &catalog.project_keys,
+        (Some("Lint"), _) => &catalog.lint_keys,
+        (Some("Field"), Some("Datatype")) => &catalog.datatype_field_block_keys,
+        (Some("Field"), Some("Enum")) => &catalog.enum_field_block_keys,
         // `Style`/`Dialect` word lists are explicitly unfinished in
         // `docs/13`, so there is nothing trustworthy to offer there yet.
         _ => return Vec::new(),

@@ -27,7 +27,16 @@ pub fn block_reference_markdown(kind: BlockKind, builtins: &Builtins) -> String 
     if !children.is_empty() {
         facts.push(format!("Contains: {}", children.join(", ")));
     }
-    if let Some(keys) = block_keys(kind, builtins).filter(|k| !k.is_empty()) {
+    if kind == BlockKind::Field {
+        facts.push(format!(
+            "Keys in a `Datatype`: {}",
+            code_list(&builtins.datatype_field_block_keys)
+        ));
+        facts.push(format!(
+            "Keys in an `Enum`: {}",
+            code_list(&builtins.enum_field_block_keys)
+        ));
+    } else if let Some(keys) = block_keys(kind, builtins).filter(|k| !k.is_empty()) {
         facts.push(format!("Keys: {}", code_list(keys)));
     }
     append_facts(&mut out, &facts);
@@ -85,7 +94,6 @@ fn block_keys(kind: BlockKind, builtins: &Builtins) -> Option<&[String]> {
         BlockKind::Project => Some(&builtins.project_keys),
         BlockKind::Database => Some(&builtins.database_keys),
         BlockKind::Lint => Some(&builtins.lint_keys),
-        BlockKind::Field => Some(&builtins.field_block_keys),
         _ => None,
     }
 }
