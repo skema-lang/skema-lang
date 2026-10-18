@@ -17,6 +17,22 @@ Model files use the **`.skema`** extension. The language definition lives in
 
 ## Getting started
 
+### Install the CLI
+
+Linux x86_64:
+
+```bash
+curl -fsSL https://gitlab.com/skema-language/skema/-/raw/main/scripts/install.sh | sh
+```
+
+It installs `skema` into `~/.local/bin` (`SKEMA_INSTALL_DIR` to change,
+`SKEMA_VERSION` to pin) after verifying the release's `SHA256SUMS`. Windows:
+download `skema-x86_64-pc-windows-gnu.exe` from the
+[latest release](https://gitlab.com/skema-language/skema/-/releases). Other
+platforms: `cargo install --git https://gitlab.com/skema-language/skema.git skema-cli`.
+
+### Develop
+
 ```bash
 direnv allow          # once; the toolchain is then available automatically
 # or without direnv:
