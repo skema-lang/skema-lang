@@ -219,10 +219,32 @@ build-release-binaries:
       else
         cp "target/$TARGET/release/skema-lsp" "dist/skema-lsp-$TARGET"
       fi
+    # A full runner disk can truncate the job without failing it.
+    - |
+      if [ "$TARGET" = "x86_64-pc-windows-gnu" ]; then ASSET="dist/skema-lsp-$TARGET.exe"; else ASSET="dist/skema-lsp-$TARGET"; fi
+      test -s "$ASSET" || { echo "build-release-binaries: $ASSET missing or empty"; exit 1; }
   artifacts:
     paths:
       - dist/skema-lsp-*
     expire_in: 1 week
+    when: on_success
+
+verify-release-binaries:
+  stage: build
+  before_script: []
+  needs:
+    - job: version
+      artifacts: true
+    - job: build-release-binaries
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
+  script:
+    - '[ -n "$RELEASE_VERSION" ] || { echo "verify-release-binaries: nothing to release, skipping."; exit 0; }'
+    - |
+      for asset in dist/skema-lsp-x86_64-unknown-linux-musl dist/skema-lsp-x86_64-pc-windows-gnu.exe; do
+        test -s "$asset" || { echo "verify-release-binaries: $asset missing or empty"; exit 1; }
+      done
 
 build-python-wheel:
   stage: build
@@ -302,6 +324,7 @@ release:
       artifacts: true
     - job: build-release-binaries
       artifacts: true
+    - job: verify-release-binaries
     - job: build-python-wheel
       artifacts: true
     - job: build-wasm-package
