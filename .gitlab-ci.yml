@@ -33,7 +33,7 @@ include:
       version_file_kind: cargo
       version_file_paths: "Cargo.toml Cargo.lock"
       generic_package_name: skema
-      asset_globs: "target/release/skema target/release/skema-lsp dist/skema-lsp-* dist/*.whl dist/skema-wasm.tar.gz"
+      asset_globs: "dist/skema-lsp-* dist/skema-x86_64-* dist/SHA256SUMS dist/*.whl dist/skema-wasm.tar.gz"
       dependants: "skema-language/skema-lib"
       handoff_input_name: skema_lang_version
       version_stage: version
@@ -184,7 +184,8 @@ build:
       - target/release/skema-lsp
     expire_in: 1 week
 
-# The language server, per platform, for the VSCode extension to bundle.
+# The language server (for the VSCode extension to bundle) and the CLI (for
+# scripts/install.sh), per platform.
 # Cross-compiled via devenv.nix's `cross` profile: musl-static for linux (one
 # binary regardless of glibc version), the GNU ABI for windows (what
 # cross-compiles from Linux). No macOS runner exists yet - those users fall
@@ -208,20 +209,47 @@ build-release-binaries:
         PROFILE: cross-windows
   script:
     - '[ -n "$RELEASE_VERSION" ] || { echo "build-release-binaries: nothing to release, skipping."; exit 0; }'
-    - devenv --profile "$PROFILE" shell -- cargo build --release -p skema-lsp --target "$TARGET"
+    - devenv --profile "$PROFILE" shell -- cargo build --release -p skema-lsp -p skema-cli --target "$TARGET"
     - mkdir -p dist
     # Named by target triple: the extension's fetch script asks for exactly
-    # this name, and one unqualified `skema-lsp` per tag could only ever be
-    # one platform's.
+    # this name, and one unqualified binary per tag could only ever be one
+    # platform's.
     - |
-      if [ "$TARGET" = "x86_64-pc-windows-gnu" ]; then
-        cp "target/$TARGET/release/skema-lsp.exe" "dist/skema-lsp-$TARGET.exe"
-      else
-        cp "target/$TARGET/release/skema-lsp" "dist/skema-lsp-$TARGET"
-      fi
+      EXT=""; [ "$TARGET" = "x86_64-pc-windows-gnu" ] && EXT=".exe"
+      for BIN in skema skema-lsp; do
+        cp "target/$TARGET/release/$BIN$EXT" "dist/$BIN-$TARGET$EXT"
+        # A full runner disk can truncate the job without failing it.
+        test -s "dist/$BIN-$TARGET$EXT" || { echo "build-release-binaries: dist/$BIN-$TARGET$EXT missing or empty"; exit 1; }
+      done
   artifacts:
     paths:
       - dist/skema-lsp-*
+      - dist/skema-x86_64-*
+    expire_in: 1 week
+    when: on_success
+
+verify-release-binaries:
+  stage: build
+  before_script: []
+  needs:
+    - job: version
+      artifacts: true
+    - job: build-release-binaries
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "development"'
+  script:
+    - '[ -n "$RELEASE_VERSION" ] || { echo "verify-release-binaries: nothing to release, skipping."; exit 0; }'
+    - |
+      cd dist
+      ASSETS="skema-lsp-x86_64-unknown-linux-musl skema-lsp-x86_64-pc-windows-gnu.exe skema-x86_64-unknown-linux-musl skema-x86_64-pc-windows-gnu.exe"
+      for asset in $ASSETS; do
+        test -s "$asset" || { echo "verify-release-binaries: dist/$asset missing or empty"; exit 1; }
+      done
+      sha256sum $ASSETS > SHA256SUMS
+  artifacts:
+    paths:
+      - dist/SHA256SUMS
     expire_in: 1 week
 
 build-python-wheel:
@@ -301,6 +329,8 @@ release:
     - job: build
       artifacts: true
     - job: build-release-binaries
+      artifacts: true
+    - job: verify-release-binaries
       artifacts: true
     - job: build-python-wheel
       artifacts: true

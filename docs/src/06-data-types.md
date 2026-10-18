@@ -162,7 +162,9 @@ Describes the type **at the model level** — what a field of this type is befor
 | `type` | what this type is built on: a built-in type, or another `Datatype` — see [Layering types](#layering-types) |
 | `default` | default value for fields of this type |
 | `regex` | value-range constraint, descriptive — see [05](05-tables-and-fields.md#regexes-are-strings-not-raw-expressions) |
-| `note` | description of the type |
+| `note` | description of the type; a string |
+
+Each key appears at most once; a repeat is an error, and the first value is the one the model keeps.
 
 ### default in two places
 

@@ -88,7 +88,7 @@ created  timestamp [default=`now()`];
 | `unique` | uniqueness constraint |
 | `required` | `NOT NULL` |
 | `optional` | `NULL` allowed — the default, written explicitly |
-| `default=…` | default value; a raw expression in backticks is allowed |
+| `default=…` | default value; a raw expression in backticks is allowed. On an `Enum`-typed field it names one of the enum's entries instead — see [08 — Using an enum](08-enums.md#using-an-enum) |
 | `column="…"` | physical column name — see [11 — Physical column name](11-physical-mapping.md#physical-column-name) |
 | `onDelete=…` | delete behavior of a relationship — see [07 — Relationships](07-relationships.md) |
 | `onUpdate=…` | update behavior of a relationship |

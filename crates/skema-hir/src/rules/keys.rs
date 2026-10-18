@@ -15,9 +15,9 @@
 use skema_syntax::ast::{self, BlockKind};
 
 use crate::catalog::{
-    COLUMN_BODY_KEYS, DATABASE_KEYS, ENTRY_BODY_KEYS, FIELD_BLOCK_KEYS, FLAG_KEYS, INDEX_FLAG_KEYS,
-    LINT_KEYS, META_KEYS, PARAM_BODY_KEYS, PROJECT_KEYS, SEVERITY_OVERRIDABLE_LINT_KEYS,
-    TABLE_ONLY_META_KEYS,
+    COLUMN_BODY_KEYS, DATABASE_KEYS, DATATYPE_FIELD_BLOCK_KEYS, ENTRY_BODY_KEYS,
+    ENUM_FIELD_BLOCK_KEYS, FLAG_KEYS, INDEX_FLAG_KEYS, LINT_KEYS, META_KEYS, PARAM_BODY_KEYS,
+    PROJECT_KEYS, SEVERITY_OVERRIDABLE_LINT_KEYS, TABLE_ONLY_META_KEYS,
 };
 use crate::{Diagnostic, FileId};
 
@@ -57,6 +57,59 @@ fn known_field_body_for(enclosing: BlockKind) -> Option<&'static [&'static str]>
     }
 }
 
+/// A `Field` block's keys depend on its parent: `regex` exists only in a
+/// `Datatype`'s. Elsewhere `placement` already rejects the block.
+fn known_field_block_for(enclosing: Option<BlockKind>) -> Option<&'static [&'static str]> {
+    match enclosing? {
+        BlockKind::Datatype => Some(DATATYPE_FIELD_BLOCK_KEYS),
+        BlockKind::Enum => Some(ENUM_FIELD_BLOCK_KEYS),
+        _ => None,
+    }
+}
+
+fn check_field_block(
+    id: FileId,
+    block: &ast::Block,
+    enclosing: Option<BlockKind>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let known = known_field_block_for(enclosing);
+    let mut first_value_of: Vec<(String, Option<String>)> = Vec::new();
+    for sub in block.items() {
+        let ast::ItemKind::Setting(attr) = sub.kind() else {
+            continue;
+        };
+        check_attr(id, &attr, known, Some(block.kind()), diags);
+
+        let key = attr.key();
+        let is_known = !key.quoted() && known.is_some_and(|k| k.contains(&key.text().as_str()));
+        if !is_known {
+            continue;
+        }
+        let Some((_, first_value)) = first_value_of.iter().find(|(k, _)| *k == key.text()) else {
+            first_value_of.push((key.text(), attr.value().map(|v| v.to_text())));
+            continue;
+        };
+        let kept = first_value
+            .as_ref()
+            .map(|v| format!(", `{v}`,"))
+            .unwrap_or_default();
+        diags.push(Diagnostic::error(
+            id,
+            key.span(),
+            format!(
+                "`{}` is already set in this `Field` block – the first{kept} is kept ({})",
+                key.text(),
+                if enclosing == Some(BlockKind::Enum) {
+                    "docs/08"
+                } else {
+                    "docs/06"
+                }
+            ),
+        ));
+    }
+}
+
 pub(crate) fn check(id: FileId, file: &ast::SourceFile, diags: &mut Vec<Diagnostic>) {
     walk(id, file.items(), None, None, diags);
 }
@@ -75,11 +128,7 @@ fn walk(
                 check_attr(id, &a, known.as_deref(), enclosing, diags);
             }
             ast::ItemKind::Block(b) if b.kind() == BlockKind::Field => {
-                for sub in b.items() {
-                    if let ast::ItemKind::Setting(a) = sub.kind() {
-                        check_attr(id, &a, Some(FIELD_BLOCK_KEYS), Some(b.kind()), diags);
-                    }
-                }
+                check_field_block(id, &b, enclosing, diags);
             }
             ast::ItemKind::Block(b) => {
                 let kind = b.kind();

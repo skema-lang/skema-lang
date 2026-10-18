@@ -634,10 +634,13 @@ fn resolve_field(
                 };
                 (ty, relation)
             }
-            ast::FieldTypeKind::Named { path, args } => (
-                resolve_named_type(env, owner, &path, &args, type_span, links, diags),
-                None,
-            ),
+            ast::FieldTypeKind::Named { path, args } => {
+                check_enum_flag_default(env, owner, f, &path, diags);
+                (
+                    resolve_named_type(env, owner, &path, &args, type_span, links, diags),
+                    None,
+                )
+            }
         },
         None => (unknown_type(), None),
     };
@@ -658,6 +661,67 @@ fn resolve_field(
             .as_ref()
             .map(|(partial_owner, name)| decl_ref(env.ctx, *partial_owner, name)),
         span,
+    }
+}
+
+/// `[default=OrderStatus.draft]` on an enum-typed field names one of the
+/// enum's entries, qualified (`docs/08`, "Using an enum").
+fn check_enum_flag_default(
+    env: &Env<'_>,
+    owner: FileId,
+    field: &ast::Field,
+    type_path: &ast::Path,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Some((enum_owner, enum_name, _, rest)) = env.ctx.resolve_decl_path(owner, type_path) else {
+        return;
+    };
+    let Some(decl) = env.ctx.lookup_decl(enum_owner, &enum_name) else {
+        return;
+    };
+    if !rest.is_empty() || decl.kind != BlockKind::Enum {
+        return;
+    }
+    let is_entry = |name: &str| {
+        decl.block
+            .items()
+            .any(|item| matches!(item.kind(), ast::ItemKind::Field(f) if f.name().text() == name))
+    };
+    let names_entry = |value: &ast::Value| match value.kind() {
+        Some(ValueKind::Path(path)) => {
+            matches!(
+                env.ctx.resolve_decl_path(owner, &path),
+                Some((target_owner, target, _, member))
+                    if (target_owner, &target) == (enum_owner, &enum_name)
+                        && matches!(member.as_slice(), [entry] if is_entry(entry.text()))
+            )
+        }
+        _ => false,
+    };
+    let written = type_path.to_dotted();
+    for flag in field.flags() {
+        if flag.key().quoted() || flag.key().text() != "default" {
+            continue;
+        }
+        let Some(value) = flag.value() else { continue };
+        if names_entry(&value) {
+            continue;
+        }
+        let bare_hint = match value.kind() {
+            Some(ValueKind::Path(path)) => path
+                .as_ident()
+                .filter(|bare| is_entry(bare.text()))
+                .map(|bare| format!(": `{written}.{0}`, not `{0}`", bare.text()))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        diags.push(Diagnostic::error(
+            owner,
+            value.span(),
+            format!(
+                "`default` on a field of type `{written}` must name one of its entries, written `{written}.<entry>`{bare_hint} (docs/08)"
+            ),
+        ));
     }
 }
 
@@ -1484,7 +1548,9 @@ fn resolve_datatype(
         resolved_base_type,
         default: field_setting("default"),
         regex: field_setting("regex"),
-        note: field_setting("note"),
+        note: field_block
+            .as_ref()
+            .and_then(|b| field_block_note(file.id, b, "docs/06", diags)),
         extensions: meta_and_field_custom_keys(&decl.block),
         span: decl.item_span,
     }
@@ -1601,11 +1667,34 @@ fn resolve_enum(
             .and_then(|b| enum_default(file.id, b, &entries, diags)),
         note: field_block
             .as_ref()
-            .and_then(|b| string_setting(b.items(), "note")),
+            .and_then(|b| field_block_note(file.id, b, "docs/08", diags)),
         entries,
         extensions,
         span,
     }
+}
+
+/// The first `note` of a `Field` block, which must be a string; any other
+/// value is reported and exported as `None`.
+fn field_block_note(
+    owner: FileId,
+    field_block: &ast::Block,
+    doc: &str,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    let value = field_block.items().find_map(|item| match item.kind() {
+        ast::ItemKind::Setting(a) if a.key().text() == "note" => Some(a.value()),
+        _ => None,
+    })??;
+    if let Some(ValueKind::Str(note)) = value.kind() {
+        return Some(note);
+    }
+    diags.push(Diagnostic::error(
+        owner,
+        value.span(),
+        format!("`note` must be a string ({doc})"),
+    ));
+    None
 }
 
 /// Written bare: inside the enum there is no literal-or-member ambiguity

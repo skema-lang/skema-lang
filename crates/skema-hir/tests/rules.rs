@@ -3352,3 +3352,75 @@ fn a_partial_used_behind_an_import_alias_names_its_document_not_the_alias() {
         ]
     );
 }
+
+#[test]
+fn a_non_string_field_block_note_is_rejected_and_exports_none() {
+    for (block, doc) in [("Enum E", "docs/08"), ("Datatype D(a int)", "docs/06")] {
+        let src = format!("{HEADER}\n{block} {{ Field {{ type = string; note = 5; }} }}\n");
+        let (model, diags) = analyze_src(&src);
+        let expected = format!("`note` must be a string ({doc})");
+        assert_eq!(messages(&diags), [expected.as_str()], "{block}");
+        let note = match block {
+            "Enum E" => &model.enums[0].note,
+            _ => &model.datatypes[0].note,
+        };
+        assert_eq!(note, &None, "{block}");
+    }
+}
+
+#[test]
+fn a_repeated_field_block_key_names_the_first_and_the_export_keeps_it() {
+    let src = format!(
+        "{HEADER}\nDatatype D(a int) {{ Field {{ type = int; default = 1; default = 2; }} }}\nEnum E {{ Field {{ type = string; default = a; note = \"x\"; note = \"y\"; }} a; }}\n"
+    );
+    let (model, diags) = analyze_src(&src);
+    assert_eq!(
+        messages(&diags),
+        [
+            "`default` is already set in this `Field` block – the first, `1`, is kept (docs/06)",
+            "`note` is already set in this `Field` block – the first, `x`, is kept (docs/08)",
+        ]
+    );
+    assert_eq!(model.datatypes[0].default.as_deref(), Some("1"));
+    assert_eq!(model.enums[0].note.as_deref(), Some("x"));
+    let repeat = src.rfind("default = 2").expect("repeat") as u32;
+    assert_eq!(diags[0].span.start, repeat);
+}
+
+#[test]
+fn regex_is_rejected_in_an_enum_field_block_but_not_in_a_datatype_one() {
+    let src = format!(
+        "{HEADER}\nEnum E {{ Field {{ type = string; regex = \"a\"; }} }}\nDatatype D(a int) {{ Field {{ type = string; regex = \"a\"; }} }}\n"
+    );
+    let (_, diags) = analyze_src(&src);
+    assert_eq!(
+        messages(&diags),
+        ["unknown key `regex` – allowed here: type, default, note (custom keys: `\"x-…\"`)"]
+    );
+}
+
+#[test]
+fn an_enum_typed_field_default_flag_must_name_a_qualified_entry() {
+    let ok = format!(
+        "{HEADER}\nEnum S {{ Field {{ type = string; }} draft; paid; }}\nTable T {{ a S [default=S.paid]; }}\n"
+    );
+    assert_eq!(messages(&analyze_src(&ok).1), Vec::<&str>::new());
+
+    for (written, hint) in [
+        ("S.shipped", ""),
+        ("\"paid\"", ""),
+        ("`paid`", ""),
+        ("paid", ": `S.paid`, not `paid`"),
+    ] {
+        let src = format!(
+            "{HEADER}\nEnum S {{ Field {{ type = string; }} draft; paid; }}\nTable T {{ a S [default={written}]; }}\n"
+        );
+        let expected = format!(
+            "`default` on a field of type `S` must name one of its entries, written `S.<entry>`{hint} (docs/08)"
+        );
+        let (_, diags) = analyze_src(&src);
+        assert_eq!(messages(&diags), [expected.as_str()], "{written}");
+        let value = src.find(&format!("default={written}")).expect("flag") + "default=".len();
+        assert_eq!(diags[0].span.start as usize, value, "{written}");
+    }
+}
