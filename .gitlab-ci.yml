@@ -42,6 +42,13 @@ include:
       adopt_stage: check
       trigger_downstream: $[[ inputs.trigger_downstream ]]
       republish_version: $[[ inputs.republish_version ]]
+  - component: $CI_SERVER_FQDN/skema-language/skema-ci/ftp-deploy@0.1.12
+    inputs:
+      source_dir: public
+      environment_name: docs.skema-lang.eu
+      environment_url: https://docs.skema-lang.eu
+      final_release_only: true
+      stage: pages
 
 workflow:
   rules:
@@ -417,3 +424,10 @@ pages:
   artifacts:
     paths:
       - public
+
+ftp-deploy:
+  needs:
+    - job: release
+      artifacts: true
+    - job: pages
+      artifacts: true
